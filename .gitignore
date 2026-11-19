@@ -1,0 +1,9 @@
+node_modules
+.wrangler
+.bench-token
+.local-do
+.dist
+config.capnp
+.valkey-password
+private/
+results/

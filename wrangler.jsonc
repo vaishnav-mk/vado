@@ -1,0 +1,25 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "valkey-do",
+  "main": "src/index.js",
+  "compatibility_date": "2026-11-01",
+  "durable_objects": {
+    "bindings": [
+      { "name": "SHARD", "class_name": "ValkeyShard" },
+      { "name": "CATALOG", "class_name": "Catalog" }
+    ]
+  },
+  "migrations": [
+    { "tag": "v1", "new_sqlite_classes": ["Valkey"] },
+    { "tag": "v2", "new_sqlite_classes": ["ValkeyShard", "Catalog"], "deleted_classes": ["Valkey"] }
+  ],
+  // Self-binding: bench requests reach the TCP connect() handler the way a client Worker would.
+  "services": [{ "binding": "SELF", "service": "valkey-do" }],
+  "vars": {
+    // Shard epochs: a database's creation time picks its shard count for life.
+    // Databases created from this epoch on start at 1 shard (64 MB); create bigger ones explicitly.
+    "SHARD_EPOCHS": "[{\"from\":0,\"shards\":16},{\"from\":1795002173433,\"shards\":1}]",
+    "LOCATION_HINT": "apac"
+  },
+  "observability": { "enabled": true }
+}

@@ -1,0 +1,14 @@
+{
+  "name": "vado",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "scripts/local.sh",
+    "test": "scripts/test-local.sh",
+    "deploy": "wrangler deploy"
+  },
+  "devDependencies": {
+    "ioredis": "^5.4.1",
+    "workerd": "^1.20261115.1"
+  }
+}
