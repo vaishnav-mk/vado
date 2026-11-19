@@ -507,7 +507,7 @@ export class Router {
       const shard = !ks.length || this.db.shards === 1 ? 0 : this.#shardsOf(ks);
       if (shard < 0) return this.#resolve(s, CROSSSLOT);
       this.#up(shard).send(copy, (f) => this.#resolve(s, f));
-    }, (e) => this.#resolve(s, error(`ERR ${e.message}`))));
+    }, this.#lost(s)));
   }
 
   #groups(keys, step = 1) {
@@ -734,6 +734,9 @@ export class Router {
   #afterEarlierReplies(s) {
     return this.#queue[0] === s ? Promise.resolve() : new Promise((r) => this.#onHead.set(s, r));
   }
+  // An RPC rejects only when its shard can't answer (Valkey errors come back as values), so the
+  // command may or may not have run: say so, as the socket path does.
+  #lost(s) { return () => this.#resolve(s, LOST); }
   #hold(p) {
     const held = p.catch(() => {}).finally(() => { if (this.#pending === held) this.#pending = null; });
     this.#pending = held;
@@ -753,14 +756,14 @@ export class Router {
   #fanout(argv, merge) {
     const s = this.#slot();
     this.#hold(this.#afterEarlierReplies(s).then(() => this.#all([argv.map(str)], false))
-      .then((rs) => this.#resolve(s, merge(rs.map((r) => r[0]))), (e) => this.#resolve(s, error(`ERR ${e.message}`))));
+      .then((rs) => this.#resolve(s, merge(rs.map((r) => r[0]))), this.#lost(s)));
   }
   #fanoutRaw(argv, merge) {
     const s = this.#slot();
     this.#hold(this.#afterEarlierReplies(s).then(() => this.#all([argv.map(str)], true)).then((rs) => {
       const bad = rs.find((r) => r[0] === 45);
       this.#resolve(s, bad ?? merge(rs));
-    }, (e) => this.#resolve(s, error(`ERR ${e.message}`))));
+    }, this.#lost(s)));
   }
 
   // SCAN cursor = inner cursor * shards + shard index, so it stays one integer.
@@ -776,7 +779,7 @@ export class Router {
       const innerNext = BigInt(decode(next)[0]);
       const composite = innerNext !== 0n ? innerNext * N + BigInt(shard) : BigInt(shard + 1) < N ? BigInt(shard + 1) : 0n;
       this.#resolve(s, arrayOf([bulk(composite.toString()), keys]));
-    }, (e) => this.#resolve(s, error(`ERR ${e.message}`))));
+    }, this.#lost(s)));
   }
 
   #randomkey() {
@@ -788,7 +791,7 @@ export class Router {
       }
       this.#resolve(s, bulk(null));
     };
-    this.#hold(this.#afterEarlierReplies(s).then(() => tryShard(0)).catch((e) => this.#resolve(s, error(`ERR ${e.message}`))));
+    this.#hold(this.#afterEarlierReplies(s).then(() => tryShard(0)).catch(this.#lost(s)));
   }
 
   #info(argv) {
@@ -804,7 +807,7 @@ export class Router {
         `# Keyspace\r\n${keys ? `db0:keys=${keys},expires=${expires},avg_ttl=0\r\n` : ""}` +
         `\r\n# Router\r\nrouter_db:${this.db.name}\r\nrouter_shards:${this.db.shards}\r\n`;
       this.#resolve(s, bulk(body));
-    }, (e) => this.#resolve(s, error(`ERR ${e.message}`))));
+    }, this.#lost(s)));
   }
 
   // SCRIPT LOAD/FLUSH and FUNCTION LOAD/DELETE/FLUSH/RESTORE go to every shard, so EVALSHA and

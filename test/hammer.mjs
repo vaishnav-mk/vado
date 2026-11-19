@@ -196,7 +196,7 @@ async function bigValues() {
   const over = R({ maxRetriesPerRequest: 0, retryStrategy: () => null });
   over.on("error", () => {});
   out["16MB"] = await over.set("big:16", crypto.randomBytes(16 << 20)).then(() => "accepted", (e) => e.message.slice(0, 60));
-  ok &&= /invalid bulk length|ECONNRESET|EPIPE|Connection is closed/.test(out["16MB"]) || !!env.CHAOS;
+  ok &&= /invalid bulk length|ECONNRESET|EPIPE|Connection is closed/.test(out["16MB"]) || (!!env.CHAOS && /shard connection lost/.test(out["16MB"]));
   over.disconnect();
   check("large values round-trip", ok, out);
   c.disconnect();
@@ -260,6 +260,10 @@ for (const [name, fn] of Object.entries(all)) {
 }
 chaosStop = true;
 await chaosTask;
+// A failure says what it knows: a shard reset reaches clients as LOST or a dropped connection, never as
+// some other error (such as the runtime's reason for the reset).
+const unexpected = Object.keys(errors).filter((k) => !/shard connection lost|Connection is closed|ECONNRESET|max retries per request/.test(k));
+check("failures are reported as LOST", unexpected.length === 0, { unexpected });
 const failed = results.filter((r) => !r.ok);
 console.log(JSON.stringify({ summary: { checks: results.length, failed: failed.length, chaosAborts: chaosRuns, seconds: Math.round((Date.now() - t0) / 1000), errors } }));
 process.exit(failed.length ? 1 : 0);
