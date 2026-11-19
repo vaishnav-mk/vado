@@ -17,4 +17,9 @@ KILL_AFTER_MS=4000 t 120 node test/kill9.mjs
 export VALKEY_PASSWORD=local-pass ROUTER_IDLE_MS=3000
 scripts/local.sh || exit 1
 t 180 node test/auth.mjs
+# No BENCH_TOKEN: the bench API is refused, whatever the header says.
+BENCH_TOKEN= scripts/local.sh || exit 1
+for h in "Bearer undefined" "Bearer " ""; do
+  [ "$(curl -s -o /dev/null -w "%{http_code}" -H "authorization: $h" http://127.0.0.1:8787/stats)" = 401 ] || { echo "bench API open without BENCH_TOKEN ($h)"; exit 1; }
+done
 echo "local suite passed"

@@ -7,7 +7,7 @@ python3 - <<'PY'
 import os
 mods = ['    (name = "index.js", esModule = embed ".dist/index.js"),']
 mods += [f'    (name = "{f}", wasm = embed ".dist/{f}"),' for f in os.listdir(".dist") if f.endswith(".wasm")]
-open("config.capnp", "w").write(open("config.capnp.in").read().replace("@MODULES@", "\n".join(mods)).replace("@BUDGET@", os.environ.get("ROUTER_SOCKET_BUDGET", "128")).replace("@PASSWORD@", os.environ.get("VALKEY_PASSWORD", "")).replace("@IDLE_MS@", os.environ.get("ROUTER_IDLE_MS", "30000")))
+open("config.capnp", "w").write(open("config.capnp.in").read().replace("@MODULES@", "\n".join(mods)).replace("@BUDGET@", os.environ.get("ROUTER_SOCKET_BUDGET", "128")).replace("@PASSWORD@", os.environ.get("VALKEY_PASSWORD", "")).replace("@IDLE_MS@", os.environ.get("ROUTER_IDLE_MS", "30000")).replace("@BENCH_TOKEN@", os.environ.get("BENCH_TOKEN", "local")))
 PY
 pkill -9 -f "workerd serve config.capnp" 2>/dev/null
 while lsof -nP -iTCP:6380 -sTCP:LISTEN >/dev/null 2>&1; do sleep 0.2; done

@@ -38,7 +38,7 @@ const NULL_ARRAY = new TextEncoder().encode("*-1\r\n"), NULL3 = new TextEncoder(
 const WRONGPASS = error("WRONGPASS invalid username-password pair or user is disabled.");
 const te = new TextEncoder();
 // Length leaks; contents don't.
-const sameSecret = (a, b) => { const x = te.encode(a), y = te.encode(b); return x.length === y.length && crypto.subtle.timingSafeEqual(x, y); };
+export const sameSecret = (a, b) => { const x = te.encode(a), y = te.encode(b); return x.length === y.length && crypto.subtle.timingSafeEqual(x, y); };
 
 const SUBSCRIBE = new Set(["subscribe", "psubscribe", "ssubscribe"]);
 const PUBSUB = new Set(["publish", "spublish", "pubsub", "unsubscribe", "punsubscribe", "sunsubscribe", ...SUBSCRIBE]);

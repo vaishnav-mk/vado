@@ -29,7 +29,7 @@ const worker :Workerd.Worker = (
     (name = "SHARD", durableObjectNamespace = "ValkeyShard"),
     (name = "CATALOG", durableObjectNamespace = "Catalog"),
     (name = "SELF", service = "main"),
-    (name = "BENCH_TOKEN", text = "local"),
+    (name = "BENCH_TOKEN", text = "@BENCH_TOKEN@"),
     (name = "SHARD_EPOCHS", text = "[{\"from\":0,\"shards\":4}]"),
     (name = "VALKEY_LOGLEVEL", text = "notice"),
     (name = "ROUTER_SOCKET_BUDGET", text = "@BUDGET@"),

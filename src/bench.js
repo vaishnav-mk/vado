@@ -4,6 +4,7 @@
 import { database, shardStub } from "./index.js";
 import Redis from "ioredis";
 import { bindingConnector } from "./client.js";
+import { sameSecret } from "./router.js";
 
 const enc = new TextEncoder();
 const cmd = (...a) => `*${a.length}\r\n` + a.map((x) => ((x = String(x)), `$${enc.encode(x).length}\r\n${x}\r\n`)).join("");
@@ -346,7 +347,8 @@ const tests = {
 
 export async function bench(req, env) {
   const url = new URL(req.url);
-  if (req.headers.get("authorization") !== `Bearer ${env.BENCH_TOKEN}`) return new Response("unauthorized", { status: 401 });
+  // Unset BENCH_TOKEN means no bench API, not a token of "undefined".
+  if (!env.BENCH_TOKEN || !sameSecret(req.headers.get("authorization") ?? "", `Bearer ${env.BENCH_TOKEN}`)) return new Response("unauthorized", { status: 401 });
   const name = url.pathname.slice(1);
   const test = tests[name];
   if (!test) return new Response(`tests: ${Object.keys(tests).join(", ")}`, { status: 404 });
