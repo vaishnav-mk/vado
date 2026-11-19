@@ -29,6 +29,7 @@ assert.match(await raw([["SET", "k", "v"]]), /^-NOAUTH/);
 assert.match(await raw([["AUTH", "wrong"], ["PING"]]), /^-WRONGPASS.*\r\n-NOAUTH/s);
 assert.match(await raw([["HELLO", "3"]]), /^-NOAUTH HELLO must be called/);
 assert.match(await raw([["AUTH", "bad name!", PW]]), /^-ERR database names/);
+assert.match(await raw([["AUTH", "MyDB", PW], ["PING"]]), /^-ERR database names.*\r\n-NOAUTH/s); // the catalog's rule, checked before any lookup
 assert.match(await raw([["AUTH", PW], ["PING"]]), /^\+OK\r\n\+PONG\r\n$/);
 
 // --- database selection by AUTH user, isolation, ordering across the async switch ---

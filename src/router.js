@@ -4,6 +4,7 @@
 import { arrayOf, bulk, command, concat, decode, elements, error, frameEnd, integer, lower, request, simple, str } from "./resp.js";
 import { keyIndexes } from "./commands.js";
 import { shardOfSlot, slotOf } from "./slots.js";
+import { DB_NAME, DB_NAME_RULE } from "./catalog.js";
 import { FAN_OUT, GREETING_MS, IDLE_MS, ISOLATE_HIGH, ISOLATE_LOW, MAX_REQUEST, MAX_UNAUTHED, PROBE_AFTER_MS, ROUTER_HIGH_WATER, ROUTER_LOW_WATER, RPC_BATCH_BYTES, SOCKET_BUDGET } from "./constants.js";
 
 const enc = new TextEncoder();
@@ -35,7 +36,6 @@ const unsupported = (name) => error(`ERR '${name}' is not supported by the shard
 const NOAUTH = error("NOAUTH Authentication required.");
 const NULL_ARRAY = new TextEncoder().encode("*-1\r\n"), NULL3 = new TextEncoder().encode("_\r\n"); // EXEC aborted
 const WRONGPASS = error("WRONGPASS invalid username-password pair or user is disabled.");
-const DB_NAME = /^[A-Za-z0-9_.-]{1,64}$/;
 const te = new TextEncoder();
 // Length leaks; contents don't.
 const sameSecret = (a, b) => { const x = te.encode(a), y = te.encode(b); return x.length === y.length && crypto.subtle.timingSafeEqual(x, y); };
@@ -681,7 +681,7 @@ export class Router {
   #login(user, pass, then) {
     if (this.#password !== undefined && !sameSecret(pass, this.#password)) return this.#reply(WRONGPASS);
     if (!user || user === "default" || user === this.db.name) { this.#authed = true; return then(); }
-    if (!DB_NAME.test(user)) return this.#reply(error("ERR database names are 1-64 characters of A-Z a-z 0-9 _ . -"));
+    if (!DB_NAME.test(user)) return this.#reply(error(`ERR ${DB_NAME_RULE}`));
     this.#pending = this.#open(user).then((next) => {
       for (const up of this.#ups.values()) up.close();
       this.#ups.clear();

@@ -4,7 +4,9 @@
 import { DurableObject } from "cloudflare:workers";
 import { epochAt, parseEpochs } from "./slots.js";
 
-const NAME = /^[a-z0-9][a-z0-9_-]{0,62}$/;
+/** Database names. They become part of shard object names, so the catalog is the one place that defines them. */
+export const DB_NAME = /^[a-z0-9][a-z0-9_-]{0,62}$/;
+export const DB_NAME_RULE = "database names are 1-63 characters of a-z 0-9 _ -, starting with a letter or digit";
 
 export class Catalog extends DurableObject {
   #sql;
@@ -19,7 +21,7 @@ export class Catalog extends DurableObject {
 
   /** The database's record, created on first use. `shards` applies only to a new database. */
   get(name, shards) {
-    if (!NAME.test(name)) throw new Error(`invalid database name ${JSON.stringify(name)}`);
+    if (!DB_NAME.test(name)) throw new Error(DB_NAME_RULE);
     const row = this.#sql.exec(`SELECT name, created, shards FROM dbs WHERE name = ?`, name).toArray()[0];
     if (row) return row;
     const created = Date.now();
