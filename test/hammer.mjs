@@ -16,7 +16,7 @@ const results = [];
 const errors = {}; // error message -> count, across all checks
 const note = (e) => { const k = String(e?.message ?? e).slice(0, 60); errors[k] = (errors[k] ?? 0) + 1; };
 const R = (o = {}) => new Redis({
-  port: PORT, host: "127.0.0.1", username: PW ? DB : undefined, password: PW,
+  port: PORT, host: env.HOST ?? "127.0.0.1", username: PW ? DB : undefined, password: PW,
   maxRetriesPerRequest: 2, retryStrategy: (n) => Math.min(n * 100, 2000), enableAutoPipelining: false,
   // A command in flight when the connection drops may have run; resending it could apply it twice.
   autoResendUnfulfilledCommands: false,
