@@ -70,8 +70,19 @@ valkey-cli -p 6379 --user mydb --pass "$VALKEY_PASSWORD"     # AUTH <database> <
 ```
 
 `/ws` is only served when `VALKEY_PASSWORD` is set. Connections start unauthenticated, and `AUTH <db> <password>` or
-`HELLO 3 AUTH <db> <password>` picks the database. Raw TCP from the internet works through a TCP Worker (a Spectrum
-application with a Worker origin) where that is available; `AUTH` selects the database there too.
+`HELLO 3 AUTH <db> <password>` picks the database.
+
+### Over raw TCP
+
+With a TCP Worker (a Spectrum application of type Workers (tcp) with this Worker as origin), stock clients connect
+directly:
+
+```sh
+valkey-cli -h <app-hostname> -p 6379 --user mydb --pass "$VALKEY_PASSWORD"
+```
+
+The database comes from `AUTH`, as with the WebSocket path. Without TLS on the Spectrum application the password
+travels in plaintext.
 
 ## Configure
 
