@@ -56,12 +56,24 @@ const UNSUPPORTED = new Set(["monitor", "sync", "psync", "replicaof", "slaveof",
   "migrate", "move", "swapdb", "bgsave", "lpush_x"]);
 const BLOCKED_SUB = { client: new Set(["tracking", "caching", "getredir", "trackinginfo", "kill", "pause", "unpause", "unblock", "reply", "list", "no-evict", "no-touch", "capa", "import-source"]) };
 
+// Appends a chunk to the unparsed tail `a`. Grows into spare capacity (doubling) so a frame that
+// arrives in many chunks is copied O(size) times, not O(size²). It only writes past the last byte
+// it wrote into buffers it allocated, so views already handed out (argv, frames) never change.
+const written = new WeakMap(); // our ArrayBuffer -> end of written bytes
 function append(a, b) {
   if (!a.length) return b;
-  const out = new Uint8Array(a.length + b.length);
+  const end = a.byteOffset + a.length;
+  if (written.get(a.buffer) === end && end + b.length <= a.buffer.byteLength) {
+    new Uint8Array(a.buffer).set(b, end);
+    written.set(a.buffer, end + b.length);
+    return new Uint8Array(a.buffer, a.byteOffset, a.length + b.length);
+  }
+  // First join is exact-size (the common split-frame case); doubling starts once a frame keeps growing.
+  const n = a.length + b.length, out = new Uint8Array(written.has(a.buffer) ? 2 * n : n);
   out.set(a);
   out.set(b, a.length);
-  return out;
+  written.set(out.buffer, n);
+  return out.subarray(0, n);
 }
 
 class Upstream {
