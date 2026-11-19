@@ -16,6 +16,7 @@ const raw = (cmds, port = 6380, ms = 400) => new Promise((res) => {
   const s = net.connect(port, "127.0.0.1");
   let out = "";
   s.on("data", (d) => (out += d));
+  s.on("error", () => {}); // the server may close while we're still writing (oversized requests)
   s.write(cmds.map(enc).join(""));
   setTimeout(() => { s.destroy(); res(out); }, ms);
 });
@@ -41,6 +42,10 @@ assert.match(await raw([["HELLO", "3", "AUTH", "authx", PW], ["GET", "k"]]), /^%
 const d2 = R({ username: "default" });
 assert.equal(await d2.get("k"), "dflt");
 d2.disconnect();
+// Size limits: before AUTH a request is capped like Valkey's unauthenticated limits; after an AUTH
+// that switches databases (async), the same write's next request already gets the full limit.
+assert.equal(await raw([["ECHO", "x".repeat(100 << 10)]]), "-ERR Protocol error: invalid bulk length\r\n");
+assert.equal(await raw([["AUTH", "authx", PW], ["SET", "big", "v".repeat(1 << 20)], ["STRLEN", "big"]], 6380, 3000), `+OK\r\n+OK\r\n:${1 << 20}\r\n`);
 console.log("auth gate and database selection ok");
 
 // --- WebSocket ingress through the shim ---

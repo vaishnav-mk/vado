@@ -26,6 +26,11 @@ const PROBE_AFTER_MS = 5000;
 const GREETING_MS = 20000; // a cold shard can take seconds to boot before it greets // a reply this late makes us ask whether the shard instance changed
 const HIGH_WATER = 1 << 20; // unacknowledged bytes on any hop before we stop reading the client
 const LOW_WATER = 256 << 10;
+// Largest request (all arguments) the router buffers: an 8 MB value plus its command. A 64 MB shard
+// in a 128 MB isolate can't take a much bigger one at once (it needs the query buffer, the value and
+// the AOF buffer together). Before AUTH, requests are capped like Valkey's unauthenticated limits.
+const MAX_REQUEST = (8 << 20) + (64 << 10);
+const MAX_UNAUTHED = 64 << 10;
 // All routers in an isolate share its 128 MB: past ISOLATE_HIGH unacknowledged shard-bound bytes in
 // total, every router stops reading its client until they drain below ISOLATE_LOW. Shards always
 // read, so these drain on their own.
@@ -330,14 +335,15 @@ export class Router {
         if (done) break;
         buf = start < buf.length ? append(buf.subarray(start), chunk) : chunk;
         start = 0;
-        for (let r; !this.#closed && (r = request(buf, start, buf.length)); start = r.end) {
-          if (this.#pending) await this.#pending;
+        for (let r; !this.#closed; start = r.end) {
+          if (this.#pending) await this.#pending; // before parsing: an AUTH in flight changes the limit
+          if (!(r = request(buf, start, buf.length, this.#authed ? MAX_REQUEST : MAX_UNAUTHED))) break;
           if (r.argv.length) this.#handle(r.argv, buf.subarray(start, r.end));
         }
         if (this.#closed) break;
       }
     } catch (e) {
-      this.#write(error(`ERR ${e.message}`));
+      this.#reply(error(`ERR ${e.message}`)); // after the replies to earlier requests, then close
     }
     await this.#drain();
     clearInterval(watchdog);

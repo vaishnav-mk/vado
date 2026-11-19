@@ -130,20 +130,23 @@ export function elements(frame) {
   return out;
 }
 
+const INLINE_MAX = 64 << 10; // Valkey's PROTO_INLINE_MAX_SIZE
+
 /**
  * Parses one client request at `i`: a RESP array of bulk strings, or an inline command.
- * Returns { argv: Uint8Array[], end } or null when incomplete.
+ * Returns { argv: Uint8Array[], end } or null when incomplete. Throws Valkey's protocol errors for a
+ * request over `max` bytes or an over-long line, so a client can't make the caller buffer unboundedly.
  */
-export function request(b, i, end) {
+export function request(b, i, end, max = Infinity) {
   if (i >= end) return null;
   if (b[i] !== 42) {
     const le = lineEnd(b, i, end);
-    if (le < 0) return null;
+    if (le < 0) { if (end - i > Math.min(max, INLINE_MAX)) throw new Error("Protocol error: too big inline request"); return null; }
     const words = dec.decode(b.subarray(i, le)).trim().split(/\s+/).filter(Boolean).map((w) => enc.encode(w));
     return { argv: words, end: le + 2 };
   }
   const le = lineEnd(b, i + 1, end);
-  if (le < 0) return null;
+  if (le < 0) { if (end - i > INLINE_MAX) throw new Error("Protocol error: too big mbulk count string"); return null; }
   const n = num(b, i + 1, le);
   const argv = [];
   let j = le + 2;
@@ -151,8 +154,9 @@ export function request(b, i, end) {
     if (j >= end) return null;
     if (b[j] !== 36) throw new Error("RESP protocol error: expected bulk string in request");
     const l = lineEnd(b, j + 1, end);
-    if (l < 0) return null;
+    if (l < 0) { if (end - j > INLINE_MAX) throw new Error("Protocol error: too big bulk count string"); return null; }
     const len = num(b, j + 1, l);
+    if (len < 0 || l + 2 + len + 2 - i > max) throw new Error("Protocol error: invalid bulk length");
     if (l + 2 + len + 2 > end) return null;
     argv.push(b.subarray(l + 2, l + 2 + len));
     j = l + 2 + len + 2;

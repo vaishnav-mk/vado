@@ -113,8 +113,8 @@ wrangler secret put VALKEY_PASSWORD && wrangler secret put BENCH_TOKEN && wrangl
 
 - `test/ioredis.mjs`: stock ioredis, covering MULTI, Lua, BLPOP, streams, pub/sub, pipelining and expiry.
 - `test/resp3.mjs`: HELLO 3, maps and pushes.
-- `test/chunked.mjs`: requests split into 1-byte to 4 KB writes must reassemble exactly; a 16 MB value must
-  round-trip in linear time.
+- `test/chunked.mjs`: requests split into 1-byte to 4 KB writes must reassemble exactly; an 8 MB value in 4 KB
+  pieces must be parsed in linear time.
 - `test/differential.mjs`: the same random command stream against a 1-shard and an N-shard database must give
   identical replies.
 - `test/kill9.mjs`: `kill -9` the runtime mid-write; every acknowledged write must survive.
@@ -127,6 +127,9 @@ wrangler secret put VALKEY_PASSWORD && wrangler secret put BENCH_TOKEN && wrangl
 ## Limits
 
 - **Memory:** 64 MB of data per shard, since the data lives in Valkey's memory. Larger databases need more shards.
+- **Request size:** one request (all its arguments) is at most about 8 MB, since a shard has to hold the request,
+  the value and its AOF entry at once. Bigger requests get `ERR Protocol error: invalid bulk length` and that
+  connection is closed, as Valkey does. Before AUTH the limit is 64 KB.
 - **Cold start:** a shard evicted while idle reloads its AOF on the next command, which takes about 1-2 s for a full
   shard.
 - **CPU:** one command is limited to about 30 s of CPU. A shard kept near 100% CPU gets reset by the runtime, so spread

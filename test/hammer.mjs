@@ -180,7 +180,7 @@ async function bigValues() {
   const c = R({ maxRetriesPerRequest: 0 });
   const out = {};
   let ok = true;
-  for (const mb of [1, 4, 16]) {
+  for (const mb of [1, 4, 8]) {
     const v = crypto.randomBytes(mb << 20);
     const key = `big:${mb}`;
     try {
@@ -192,6 +192,12 @@ async function bigValues() {
       await c.del(key);
     } catch (e) { out[`${mb}MB`] = e.message.slice(0, 80); ok &&= !!env.CHAOS; }
   }
+  // Over the request limit: refused up front (this connection only), not a shard reset for everyone.
+  const over = R({ maxRetriesPerRequest: 0, retryStrategy: () => null });
+  over.on("error", () => {});
+  out["16MB"] = await over.set("big:16", crypto.randomBytes(16 << 20)).then(() => "accepted", (e) => e.message.slice(0, 60));
+  ok &&= /invalid bulk length|ECONNRESET|EPIPE|Connection is closed/.test(out["16MB"]) || !!env.CHAOS;
+  over.disconnect();
   check("large values round-trip", ok, out);
   c.disconnect();
 }

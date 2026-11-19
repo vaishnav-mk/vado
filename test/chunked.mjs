@@ -24,18 +24,18 @@ await until(expected.length);
 assert.equal(buf.length, expected.length);
 assert.ok(buf === expected, "replies differ from what was written");
 
-// Linear copying: a 16 MB value sent in 16 KB pieces round-trips in well under the ~4 s it took when
-// every chunk re-copied the whole partial frame.
+// Linear copying: an 8 MB value sent in 4 KB pieces (2048 chunks) takes well under a second here;
+// re-copying the partial frame on every chunk made it take many seconds.
 buf = "";
-const mb16 = Buffer.alloc(16 << 20, 113);
+const mb8 = Buffer.alloc(8 << 20, 113);
 const t0 = performance.now();
-const key16 = `${k}:16m`;
-await write(`*3\r\n$3\r\nSET\r\n$${key16.length}\r\n${key16}\r\n$${mb16.length}\r\n`);
-for (let i = 0; i < mb16.length; i += 16 << 10) await write(mb16.subarray(i, i + (16 << 10)));
+const key8 = `${k}:8m`;
+await write(`*3\r\n$3\r\nSET\r\n$${key8.length}\r\n${key8}\r\n$${mb8.length}\r\n`);
+for (let i = 0; i < mb8.length; i += 4 << 10) await write(mb8.subarray(i, i + (4 << 10)));
 await write("\r\n");
 await until(5);
 assert.equal(buf, "+OK\r\n");
 const ms = performance.now() - t0;
-assert.ok(ms < 3000 || process.env.HOST, `16 MB SET took ${ms.toFixed(0)} ms`);
+assert.ok(ms < 3000 || process.env.HOST, `8 MB SET took ${ms.toFixed(0)} ms`);
 s.end();
-console.log(`chunked passed; 16 MB SET in ${ms.toFixed(0)} ms`);
+console.log(`chunked passed; 8 MB SET in 4 KB pieces took ${ms.toFixed(0)} ms`);
