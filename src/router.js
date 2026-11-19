@@ -4,6 +4,7 @@
 import { arrayOf, bulk, command, concat, decode, elements, error, frameEnd, integer, lower, request, simple, str } from "./resp.js";
 import { keyIndexes } from "./commands.js";
 import { shardOfSlot, slotOf } from "./slots.js";
+import { FAN_OUT, GREETING_MS, IDLE_MS, ISOLATE_HIGH, ISOLATE_LOW, MAX_REQUEST, MAX_UNAUTHED, PROBE_AFTER_MS, ROUTER_HIGH_WATER, ROUTER_LOW_WATER, RPC_BATCH_BYTES, SOCKET_BUDGET } from "./constants.js";
 
 const enc = new TextEncoder();
 const OK = simple("OK");
@@ -14,28 +15,12 @@ const MULTI = command(["MULTI"]);
 const EXEC = command(["EXEC"]);
 const UNWATCH = command(["UNWATCH"]);
 const noop = () => {};
-const FAN_OUT = 32;
 const HELLO3 = command(["HELLO", "3"]);
-const RPC_BATCH_BYTES = 4 << 20; // well under the 32 MiB RPC message cap
 // Sockets this isolate holds to shards. The runtime drops sockets past a few hundred per isolate,
 // so beyond the budget new upstreams carry stateless batches over RPC instead (RpcUpstream).
 let socketsOpen = 0;
-let socketBudget = 128;
+let socketBudget = SOCKET_BUDGET;
 export const setSocketBudget = (n) => { socketBudget = n; };
-const PROBE_AFTER_MS = 5000;
-const GREETING_MS = 20000; // a cold shard can take seconds to boot before it greets // a reply this late makes us ask whether the shard instance changed
-const HIGH_WATER = 1 << 20; // unacknowledged bytes on any hop before we stop reading the client
-const LOW_WATER = 256 << 10;
-// Largest request (all arguments) the router buffers: an 8 MB value plus its command. A 64 MB shard
-// in a 128 MB isolate can't take a much bigger one at once (it needs the query buffer, the value and
-// the AOF buffer together). Before AUTH, requests are capped like Valkey's unauthenticated limits.
-const MAX_REQUEST = (8 << 20) + (64 << 10);
-const MAX_UNAUTHED = 64 << 10;
-// All routers in an isolate share its 128 MB: past ISOLATE_HIGH unacknowledged shard-bound bytes in
-// total, every router stops reading its client until they drain below ISOLATE_LOW. Shards always
-// read, so these drain on their own.
-const ISOLATE_HIGH = 32 << 20;
-const ISOLATE_LOW = 16 << 20;
 let isolateBytes = 0;
 const waitingRouters = new Set();
 function isolateAdd(n) {
@@ -288,7 +273,7 @@ export class Router {
   #onHead = new Map(); // reply slot -> wake, for RPC-path commands waiting on every earlier reply
   #idleMs;
 
-  constructor(socket, { db, table, shard, pubsub, password, open, idleMs = 30000 }) {
+  constructor(socket, { db, table, shard, pubsub, password, open, idleMs = IDLE_MS }) {
     this.socket = socket;
     this.db = db; // { name, created, shards }
     this.table = table;
@@ -303,15 +288,15 @@ export class Router {
 
   #blocked() {
     if (isolateBytes > ISOLATE_HIGH) { waitingRouters.add(this); return true; }
-    if (this.#inflight > HIGH_WATER) return true;
-    for (const up of this.#ups.values()) if (up.inflight > HIGH_WATER) return true;
+    if (this.#inflight > ROUTER_HIGH_WATER) return true;
+    for (const up of this.#ups.values()) if (up.inflight > ROUTER_HIGH_WATER) return true;
     return false;
   }
   wake() {
     if (!this.#waiter) return;
     if (isolateBytes > ISOLATE_HIGH) { waitingRouters.add(this); return; }
-    if (this.#inflight > LOW_WATER) return;
-    for (const up of this.#ups.values()) if (up.inflight > LOW_WATER) return;
+    if (this.#inflight > ROUTER_LOW_WATER) return;
+    for (const up of this.#ups.values()) if (up.inflight > ROUTER_LOW_WATER) return;
     const w = this.#waiter;
     this.#waiter = null;
     w();
@@ -373,7 +358,7 @@ export class Router {
   }
   // Client-bound bytes stay out of the isolate budget: they drain only if that client reads, and a
   // client blocked writing its pipeline doesn't read, so counting them would let one stalled client
-  // pause every router in the isolate. They're bounded per connection by HIGH_WATER instead.
+  // pause every router in the isolate. They're bounded per connection by ROUTER_HIGH_WATER instead.
   #write(b) {
     this.#inflight += b.length;
     this.#writer.write(b).then(() => { this.#inflight -= b.length; this.wake(); }, () => { this.#closed = true; this.#waiter?.(); });

@@ -1,13 +1,13 @@
 // A WASI preview1 filesystem backed by Durable Object SQLite, for Valkey's AOF and RDB files.
-// Every call is synchronous, like the wasm that makes it. Files are rows of at most CHUNK bytes.
+// Every call is synchronous, like the wasm that makes it. Files are rows of at most VFS_CHUNK bytes.
 // Writes to O_APPEND fds (the AOF) are written through at once, so the output gate holds a
 // reply until the AOF bytes behind it are durable. Other files buffer until fsync or close.
 // Rows written are billed, so a small last row grows in place: one row per AOF append, and a
-// rewrite deletes one row per TAIL bytes instead of one per append. File sizes are derived from
+// rewrite deletes one row per VFS_TAIL bytes instead of one per append. File sizes are derived from
 // the chunks, never stored separately.
 
-const CHUNK = 1 << 20; // under the 2 MB SQLite row cap
-const TAIL = 16 << 10; // grow the last row in place while it is under this
+import { VFS_CHUNK, VFS_TAIL } from "./constants.js";
+
 const PREOPEN_FD = 3;
 const PREOPEN_NAME = "/data";
 
@@ -83,10 +83,10 @@ export class Vfs {
     for (const p of n.pending) { all.set(p, o); o += p.length; }
     if (n.tail === undefined) {
       const last = this.#sql.exec(`SELECT seq, data FROM vfs_chunk WHERE path = ? ORDER BY seq DESC LIMIT 1`, n.path).toArray()[0];
-      n.tail = last && last.data.byteLength < TAIL ? { seq: last.seq, data: new Uint8Array(last.data) } : null;
+      n.tail = last && last.data.byteLength < VFS_TAIL ? { seq: last.seq, data: new Uint8Array(last.data) } : null;
     }
     let i = 0;
-    if (n.tail && n.tail.data.length + all.length <= TAIL) {
+    if (n.tail && n.tail.data.length + all.length <= VFS_TAIL) {
       const data = new Uint8Array(n.tail.data.length + all.length);
       data.set(n.tail.data);
       data.set(all, n.tail.data.length);
@@ -94,10 +94,10 @@ export class Vfs {
       n.tail.data = data;
       i = all.length;
     }
-    for (; i < all.length; i += CHUNK) {
-      const part = all.subarray(i, i + CHUNK), seq = n.nextSeq++;
+    for (; i < all.length; i += VFS_CHUNK) {
+      const part = all.subarray(i, i + VFS_CHUNK), seq = n.nextSeq++;
       this.#write(`INSERT INTO vfs_chunk (path, seq, data) VALUES (?, ?, ?)`, n.path, seq, part);
-      n.tail = part.length < TAIL ? { seq, data: part.slice() } : null;
+      n.tail = part.length < VFS_TAIL ? { seq, data: part.slice() } : null;
     }
     this.stats.writes++;
     this.stats.writeBytes += all.length;
@@ -157,7 +157,7 @@ export class Vfs {
     n.pending.push(bytes.slice());
     n.pendingLen += bytes.length;
     n.size += bytes.length;
-    if (writeThrough || n.pendingLen >= CHUNK) this.#flush(n);
+    if (writeThrough || n.pendingLen >= VFS_CHUNK) this.#flush(n);
   }
 
   #filestat(ptr, isDir, size) {

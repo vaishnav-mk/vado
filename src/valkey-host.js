@@ -2,21 +2,14 @@
 // Object: sockets from connect(socket) become Valkey client fds; files live in DO SQLite (Vfs).
 import { Vfs } from "./vfs.js";
 import { frameEnd } from "./resp.js";
+import { CLIENT_HIGH_WATER, CLIENT_LOW_WATER, POOL_MAX, SHARD_HIGH_WATER, SHARD_LOW_WATER } from "./constants.js";
 
 const FD_BASE = 4096; // valkey-wasm sock_shim: fds >= this are host sockets
 const AE_READABLE = 1;
 const AE_WRITABLE = 2;
 const ENOSYS = 52;
-// Backpressure. A client whose replies are unacknowledged past HIGH_WATER stops being read, and
-// so does every client once the whole object holds TOTAL_HIGH of them: with hundreds of busy
-// connections, per-connection limits alone can exceed the 128 MB isolate.
-const HIGH_WATER = 256 << 10;
-const LOW_WATER = 64 << 10;
-const TOTAL_HIGH = 16 << 20;
-const TOTAL_LOW = 8 << 20;
 const QUIT = new TextEncoder().encode("*1\r\n$4\r\nQUIT\r\n");
 const HELLO3 = new TextEncoder().encode("*2\r\n$5\r\nHELLO\r\n$1\r\n3\r\n");
-const POOL_MAX = 64; // idle pooled internal clients kept per protocol
 
 export class ValkeyHost {
   #vk;
@@ -170,8 +163,8 @@ export class ValkeyHost {
   }
 
   #wakeReaders(s) {
-    if (s.wake && s.inflight <= LOW_WATER && this.#total <= TOTAL_HIGH) { const w = s.wake; s.wake = null; w(); }
-    if (this.#total <= TOTAL_LOW && this.#stalled.size) {
+    if (s.wake && s.inflight <= CLIENT_LOW_WATER && this.#total <= SHARD_HIGH_WATER) { const w = s.wake; s.wake = null; w(); }
+    if (this.#total <= SHARD_LOW_WATER && this.#stalled.size) {
       const all = [...this.#stalled];
       this.#stalled.clear();
       for (const w of all) w();
@@ -218,8 +211,8 @@ export class ValkeyHost {
     (async () => {
       for (;;) {
         // Backpressure: a client that isn't reading its replies stops being read.
-        while (!s.eof && (s.inflight > HIGH_WATER || this.#total > TOTAL_HIGH)) {
-          await new Promise((r) => { if (this.#total > TOTAL_HIGH) this.#stalled.add(r); s.wake = r; });
+        while (!s.eof && (s.inflight > CLIENT_HIGH_WATER || this.#total > SHARD_HIGH_WATER)) {
+          await new Promise((r) => { if (this.#total > SHARD_HIGH_WATER) this.#stalled.add(r); s.wake = r; });
         }
         const { value, done } = await reader.read();
         if (done) break;

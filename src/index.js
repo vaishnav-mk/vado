@@ -2,6 +2,7 @@
 import { Router, setSocketBudget } from "./router.js";
 import { commandTable } from "./commands.js";
 import { bench } from "./bench.js";
+import { IDLE_MS, WS_MAX_QUEUED } from "./constants.js";
 
 export { ValkeyShard } from "./shard.js";
 export { Catalog } from "./catalog.js";
@@ -55,18 +56,17 @@ async function serve(socket, env, name) {
     table: t,
     password: env.VALKEY_PASSWORD,
     open: async (n) => handles(env, await database(env, n)),
-    idleMs: Number(env.ROUTER_IDLE_MS || 30000),
+    idleMs: Number(env.ROUTER_IDLE_MS || IDLE_MS),
   });
   await router.run();
 }
 
 // A WebSocket as the { readable, writable } a Router reads and writes. WebSockets can't push back
-// on the sender, so a client that outruns the router by MAX_QUEUED bytes is disconnected.
-const MAX_QUEUED = 16 << 20;
+// on the sender, so a client that outruns the router by WS_MAX_QUEUED bytes is disconnected.
 function wsSocket(ws) {
   ws.binaryType = "arraybuffer"; // newer compat dates default to "blob"
   let ctrl;
-  const readable = new ReadableStream({ start: (c) => { ctrl = c; } }, { highWaterMark: MAX_QUEUED, size: (b) => b.byteLength });
+  const readable = new ReadableStream({ start: (c) => { ctrl = c; } }, { highWaterMark: WS_MAX_QUEUED, size: (b) => b.byteLength });
   const end = () => { try { ctrl.close(); } catch { /* already closed */ } };
   ws.addEventListener("message", (e) => {
     try {
