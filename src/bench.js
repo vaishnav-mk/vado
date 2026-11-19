@@ -1,0 +1,360 @@
+// Tests and limit probes that run inside Cloudflare. Clients speak RESP over TCP sockets:
+//   via=router (default)  service binding connect("<db>:6379") -> TCP Worker -> Router -> shards
+//   via=shard             one shard's DO connect() directly (shard=<i>), no router
+import { database, shardStub } from "./index.js";
+import Redis from "ioredis";
+import { bindingConnector } from "./client.js";
+
+const enc = new TextEncoder();
+const cmd = (...a) => `*${a.length}\r\n` + a.map((x) => ((x = String(x)), `$${enc.encode(x).length}\r\n${x}\r\n`)).join("");
+
+function parse(s, i) {
+  const e = s.indexOf("\r\n", i);
+  if (e < 0) return null;
+  const t = s[i], line = s.slice(i + 1, e);
+  if (t === "+") return [line, e + 2];
+  if (t === "-") return [{ err: line }, e + 2];
+  if (t === ":") return [Number(line), e + 2];
+  if (t === "$" || t === "*") {
+    const n = Number(line);
+    if (n < 0) return [null, e + 2];
+    if (t === "$") return s.length < e + 4 + n ? null : [s.slice(e + 2, e + 2 + n), e + 4 + n];
+    const arr = [];
+    let j = e + 2;
+    for (let k = 0; k < n; k++) { const r = parse(s, j); if (!r) return null; arr.push(r[0]); j = r[1]; }
+    return [arr, j];
+  }
+  throw new Error(`bad RESP type ${JSON.stringify(t)}`);
+}
+
+export class Resp {
+  constructor(socket, stallMs = 30000) {
+    this.w = socket.writable.getWriter();
+    this.r = socket.readable.getReader();
+    this.dec = new TextDecoder();
+    this.buf = "";
+    this.stallMs = stallMs;
+  }
+  async call(...cmds) {
+    await this.w.write(enc.encode(cmds.map((c) => cmd(...c)).join("")));
+    return this.read(cmds.length);
+  }
+  async read(n) {
+    const out = [];
+    let pos = 0;
+    while (out.length < n) {
+      const r = pos < this.buf.length ? parse(this.buf, pos) : null;
+      if (r) { out.push(r[0]); pos = r[1]; continue; }
+      let timer;
+      const stall = new Promise((_, rej) => { timer = setTimeout(() => rej(new Error(`stalled ${this.stallMs / 1000}s waiting for reply ${out.length + 1}/${n}`)), this.stallMs); });
+      const { value, done } = await Promise.race([this.r.read(), stall]).finally(() => clearTimeout(timer));
+      if (done) throw new Error(`connection closed after ${out.length}/${n} replies`);
+      this.buf = this.buf.slice(pos) + this.dec.decode(value, { stream: true });
+      pos = 0;
+    }
+    this.buf = this.buf.slice(pos);
+    return out;
+  }
+  close() { this.w.close().catch(() => {}); }
+}
+
+async function open(env, q, stallMs) {
+  const name = q.get("db");
+  if (q.get("via") === "shard") {
+    const db = await database(env, name);
+    return new Resp(shardStub(env, db, Number(q.get("shard") ?? 0)).connect("valkey:6379"), stallMs);
+  }
+  const c = new Resp(env.SELF.connect(`${name}:6379`), stallMs);
+  if (env.VALKEY_PASSWORD) {
+    const [r] = await c.call(["AUTH", env.VALKEY_PASSWORD]);
+    if (r?.err) throw new Error(`AUTH: ${r.err}`);
+  }
+  return c;
+}
+
+const info = async (c, section) =>
+  Object.fromEntries(String((await c.call(["INFO", section]))[0]).split("\r\n").filter((l) => l.includes(":")).map((l) => l.split(":")));
+const pct = (xs, p) => xs.sort((a, b) => a - b)[Math.min(xs.length - 1, Math.floor(xs.length * p))];
+const allShards = async (env, name, fn) => { const db = await database(env, name); return Promise.all(Array.from({ length: db.shards }, (_, i) => fn(shardStub(env, db, i), i))); };
+
+const tests = {
+  async db(env, q) {
+    return { db: await database(env, q.get("db"), q.get("shards") ? Number(q.get("shards")) : undefined) };
+  },
+
+  // Chaos hook: hard-reset one shard (shard=<i>) or all of them, as a crash or deploy would.
+  async abort(env, q) {
+    const db = await database(env, q.get("db"));
+    const which = q.get("shard") ?? "all";
+    const idx = which === "all" ? Array.from({ length: db.shards }, (_, i) => i) : [Number(which)];
+    await Promise.all(idx.map((i) => shardStub(env, db, i).abort().catch(() => {})));
+    return { aborted: idx };
+  },
+
+  async stats(env, q) {
+    const s = await allShards(env, q.get("db"), (stub) => stub.stats());
+    return { shards: s.map(({ files, ...rest }) => ({ ...rest, files: files.map((f) => `${f.path}:${f.size}/${f.rows}`) })) };
+  },
+
+  async latency(env, q) {
+    const n = Number(q.get("n") ?? 200), c = await open(env, q);
+    const t0 = performance.now();
+    await c.call(["PING"]);
+    const first = performance.now() - t0, xs = [];
+    for (let i = 0; i < n; i++) {
+      const t = performance.now();
+      await c.call(["GET", `lat:${i}`]);
+      xs.push(performance.now() - t);
+    }
+    c.close();
+    return { firstMs: first, n, p50: pct(xs, 0.5), p99: pct(xs, 0.99), max: Math.max(...xs) };
+  },
+
+  // Pipelined SETs across `conns` connections, keys spread over every slot; checks every reply.
+  async throughput(env, q) {
+    const n = Number(q.get("n") ?? 100000), batch = Number(q.get("batch") ?? 1000), conns = Number(q.get("conns") ?? 1);
+    const size = Number(q.get("value") ?? 1), v = "v".repeat(size);
+    const cs = await Promise.all(Array.from({ length: conns }, () => open(env, q)));
+    await Promise.all(cs.map((c) => c.call(["PING"])));
+    let errors = 0, firstError = null;
+    const t0 = performance.now();
+    await Promise.all(cs.map(async (c, ci) => {
+      for (let i = 0; i < n / conns; i += batch) {
+        const rs = await c.call(...Array.from({ length: batch }, (_, k) => ["SET", `${q.get("prefix") ?? "t"}${ci}:${i + k}`, v]));
+        for (const r of rs) if (r !== "OK") { errors++; firstError ??= r; }
+      }
+    }));
+    const ms = performance.now() - t0;
+    cs.forEach((c) => c.close());
+    return { n, batch, conns, valueBytes: size, ms, opsPerSec: Math.round((n / ms) * 1000), errors, firstError };
+  },
+
+  async conns(env, q) {
+    const n = Number(q.get("n") ?? 10), par = Number(q.get("par") ?? 50), cs = [], errors = [];
+    const t0 = Date.now();
+    while (cs.length < n && !errors.length) {
+      const batch = await Promise.allSettled(Array.from({ length: Math.min(par, n - cs.length) }, async () => {
+        const c = await open(env, q);
+        await c.call(["PING"]);
+        return c;
+      }));
+      for (const r of batch) r.status === "fulfilled" ? cs.push(r.value) : errors.push(`at ${cs.length}: ${r.reason?.message}`);
+    }
+    cs.forEach((c) => c.close());
+    return { requested: n, opened: cs.length, ms: Date.now() - t0, errors };
+  },
+
+  // Fill with `value`-byte strings until Valkey refuses (OOM) or a connection dies.
+  async fill(env, q) {
+    const c = await open(env, q), size = Number(q.get("value") ?? 65536), v = "x".repeat(size), limitKeys = Number(q.get("max") ?? 1e9);
+    let keys = 0, stop = null;
+    try {
+      while (keys < limitKeys) {
+        const r = await c.call(...Array.from({ length: 16 }, () => ["SET", `f${keys++}`, v]));
+        const err = r.find((x) => x?.err);
+        if (err) { stop = err.err; break; }
+      }
+    } catch (e) { stop = `connection: ${e.message}`; }
+    c.close();
+    const c2 = await open(env, q);
+    const [dbsize] = await c2.call(["DBSIZE"]);
+    c2.close();
+    return { valueBytes: size, keysAttempted: keys, stoppedBy: stop, dbsize, approxMB: Math.round((dbsize * size) / 1048576) };
+  },
+
+  // Durability: write keys with known values, hard-reset every shard, then read everything back.
+  async durability(env, q) {
+    const n = Number(q.get("n") ?? 20000), batch = Number(q.get("batch") ?? 500), tag = q.get("tag") ?? String(Date.now());
+    const c = await open(env, q);
+    let acked = 0;
+    for (let i = 0; i < n; i += batch) {
+      const rs = await c.call(...Array.from({ length: Math.min(batch, n - i) }, (_, k) => ["SET", `d:${tag}:${i + k}`, `${tag}-${i + k}`]));
+      for (const r of rs) if (r === "OK") acked++;
+    }
+    await c.call(["INCRBY", `d:${tag}:counter`, String(acked)]);
+    c.close();
+    const before = await allShards(env, q.get("db"), (s) => s.stats().then((x) => x.aliveSeconds));
+    await allShards(env, q.get("db"), (s) => s.abort("durability test").catch(() => {}));
+    const after = await allShards(env, q.get("db"), (s) => s.stats().then((x) => x.aliveSeconds));
+    const c2 = await open(env, q);
+    let missing = 0, wrong = 0;
+    for (let i = 0; i < n; i += 1000) {
+      const keys = Array.from({ length: Math.min(1000, n - i) }, (_, k) => `d:${tag}:${i + k}`);
+      const [vals] = await c2.call(["MGET", ...keys]);
+      vals.forEach((v, k) => { if (v === null) missing++; else if (v !== `${tag}-${i + k}`) wrong++; });
+    }
+    const [counter] = await c2.call(["GET", `d:${tag}:counter`]);
+    c2.close();
+    return { n, acked, missing, wrong, counter: Number(counter), restarted: after.every((a, i) => a < before[i]), aliveBefore: before, aliveAfter: after };
+  },
+
+  // write + verify, split so a deploy (or anything else) can happen in between.
+  async write(env, q) {
+    const n = Number(q.get("n") ?? 20000), tag = q.get("tag"), c = await open(env, q);
+    let acked = 0;
+    for (let i = 0; i < n; i += 500) {
+      const rs = await c.call(...Array.from({ length: Math.min(500, n - i) }, (_, k) => ["SET", `w:${tag}:${i + k}`, `${tag}-${i + k}`]));
+      acked += rs.filter((r) => r === "OK").length;
+    }
+    c.close();
+    return { n, acked, alive: await allShards(env, q.get("db"), (s) => s.stats().then((x) => x.aliveSeconds)) };
+  },
+  async verify(env, q) {
+    const n = Number(q.get("n") ?? 20000), tag = q.get("tag"), c = await open(env, q);
+    let missing = 0, wrong = 0;
+    for (let i = 0; i < n; i += 1000) {
+      const [vals] = await c.call(["MGET", ...Array.from({ length: Math.min(1000, n - i) }, (_, k) => `w:${tag}:${i + k}`)]);
+      vals.forEach((v, k) => { if (v === null) missing++; else if (v !== `${tag}-${i + k}`) wrong++; });
+    }
+    c.close();
+    return { n, missing, wrong, alive: await allShards(env, q.get("db"), (s) => s.stats().then((x) => x.aliveSeconds)) };
+  },
+
+  async soak(env, q) {
+    const seconds = Number(q.get("seconds") ?? 60), batch = Number(q.get("batch") ?? 500), c = await open(env, q);
+    const t0 = Date.now();
+    let ops = 0, error = null;
+    try {
+      while (Date.now() - t0 < seconds * 1000) {
+        const rs = await c.call(...Array.from({ length: batch }, (_, k) => ["INCR", `soak{${k % 64}}`]));
+        if (rs.some((r) => r?.err)) throw new Error(JSON.stringify(rs.find((r) => r?.err)));
+        ops += batch;
+      }
+    } catch (e) { error = e.message; }
+    c.close();
+    const secs = (Date.now() - t0) / 1000;
+    return { requestedSeconds: seconds, ranSeconds: secs, ops, opsPerSec: Math.round(ops / secs), error };
+  },
+
+  async cpu(env, q) {
+    const c = await open(env, q, 60000), n = q.get("n") ?? "10000000";
+    const t0 = Date.now();
+    let result, error = null;
+    try { [result] = await c.call(["EVAL", "local x=0 for i=1,tonumber(ARGV[1]) do x=x+i end return tostring(x)", "0", n]); } catch (e) { error = e.message; }
+    c.close();
+    return { iterations: n, ms: Date.now() - t0, result, error };
+  },
+
+  async cpuSoak(env, q) {
+    const c = await open(env, q), n = q.get("n") ?? "3000000", seconds = Number(q.get("seconds") ?? 60);
+    const t0 = Date.now();
+    let calls = 0, error = null;
+    try {
+      while (Date.now() - t0 < seconds * 1000) {
+        await c.call(["EVAL", "local x=0 for i=1,tonumber(ARGV[1]) do x=x+i end return 1", "0", n]);
+        calls++;
+      }
+    } catch (e) { error = e.message; }
+    c.close();
+    return { iterationsPerCall: n, calls, ms: Date.now() - t0, error };
+  },
+
+  // POST { setup: [[...]], cmd: [...], seconds }: run setup once, then `cmd` in a loop on one connection.
+  async repeat(env, q, req) {
+    const { setup = [], cmd, seconds = 30 } = await req.json();
+    const c = await open(env, q);
+    for (let i = 0; i < setup.length; i += 100) await c.call(...setup.slice(i, i + 100));
+    const t0 = Date.now(), retry = q.get("retry") === "1", errors = [];
+    let calls = 0, error = null, last, slowest = 0;
+    try {
+      while (Date.now() - t0 < seconds * 1000) {
+        const t = Date.now();
+        [last] = await c.call(cmd);
+        slowest = Math.max(slowest, Date.now() - t);
+        calls++;
+        if (last?.err) {
+          if (!retry) throw new Error(last.err);
+          errors.push({ atMs: Date.now() - t0, afterMs: Date.now() - t, err: last.err });
+        }
+      }
+    } catch (e) { error = e.message; }
+    c.close();
+    return { calls, ms: Date.now() - t0, msPerCall: Math.round((Date.now() - t0) / Math.max(1, calls)), slowestMs: slowest, error, errors: errors.slice(0, 10), errorCount: errors.length, last: typeof last === "object" ? JSON.stringify(last).slice(0, 80) : last };
+  },
+
+  async idle(env, q) {
+    const c = await open(env, q), seconds = Number(q.get("seconds") ?? 60);
+    await c.call(["SET", "idle", "1"]);
+    await new Promise((r) => setTimeout(r, seconds * 1000));
+    try { const [v] = await c.call(["GET", "idle"]); c.close(); return { idleSeconds: seconds, v }; } catch (e) { return { idleSeconds: seconds, error: e.message }; }
+  },
+
+  // K load generators as separate invocations (service-binding fetches to ourselves), so one
+  // isolate's CPU doesn't cap the measurement. Each runs `test` with the remaining params.
+  async loadgen(env, q, req) {
+    const k = Number(q.get("workers") ?? 4), test = q.get("test") ?? "throughput";
+    const params = new URLSearchParams(q);
+    params.delete("workers");
+    params.delete("test");
+    const t0 = Date.now();
+    const results = await Promise.all(Array.from({ length: k }, async (_, i) => {
+      params.set("prefix", `g${i}`);
+      const res = await env.SELF.fetch(`https://self/${test}?${params}`, { headers: { authorization: req.headers.get("authorization") } });
+      return res.json();
+    }));
+    const ms = Date.now() - t0;
+    const total = results.reduce((n, r) => n + (r.n ?? 0), 0);
+    return {
+      workers: k, wallMs: ms,
+      opsPerSec: Math.round((total / ms) * 1000),
+      sumOfWorkerOpsPerSec: results.reduce((n, r) => n + (r.opsPerSec ?? 0), 0),
+      errors: results.reduce((n, r) => n + (r.errors ?? 0), 0),
+      firstError: results.find((r) => r.firstError || r.error)?.firstError ?? results.find((r) => r.error)?.error ?? null,
+      colos: [...new Set(results.map((r) => r.colo))],
+    };
+  },
+
+  // Stock ioredis inside this Worker through the TCP binding (src/client.js).
+  async ioredis(env, q) {
+    const db = q.get("db"), k = `io:${Date.now()}`;
+    const opts = { Connector: bindingConnector(env.SELF, db), maxRetriesPerRequest: 1, password: env.VALKEY_PASSWORD || undefined };
+    const a = new Redis(opts), b = new Redis(opts), sub = new Redis(opts);
+    const out = {};
+    try {
+      out.ping = await a.ping();
+      out.set = await a.set(`${k}:s`, "v", "PX", 60000);
+      out.get = await b.get(`${k}:s`);
+      out.mget = await a.mget(`${k}:s`, `${k}:missing`, `{${k}}x`);
+      out.multi = await a.multi().incr(`{${k}}n`).incr(`{${k}}n`).exec();
+      out.eval = await a.eval("return redis.call('INCRBY', KEYS[1], ARGV[1])", 1, `{${k}}n`, 40);
+      const popped = b.blpop(`${k}:q`, 5);
+      await a.lpush(`${k}:q`, "job");
+      out.blpop = await popped;
+      const got = new Promise((r) => sub.on("message", (_c, m) => r(m)));
+      await sub.subscribe(`${k}:ch`);
+      await a.publish(`${k}:ch`, "hi");
+      out.pubsub = await got;
+      const p = a.pipeline();
+      for (let i = 0; i < 1000; i++) p.set(`${k}:p${i}`, i);
+      const t0 = Date.now();
+      out.pipeline = (await p.exec()).filter(([e, r]) => !e && r === "OK").length;
+      out.pipelineMs = Date.now() - t0;
+    } catch (e) { out.error = e.message; }
+    a.disconnect(); b.disconnect(); sub.disconnect();
+    return out;
+  },
+
+  async run(env, q, req) {
+    // Run arbitrary commands: POST [["SET","k","v"],["GET","k"]]
+    const c = await open(env, q);
+    const cmds = await req.json();
+    const out = await c.call(...cmds);
+    c.close();
+    return { replies: out };
+  },
+};
+
+export async function bench(req, env) {
+  const url = new URL(req.url);
+  if (req.headers.get("authorization") !== `Bearer ${env.BENCH_TOKEN}`) return new Response("unauthorized", { status: 401 });
+  const name = url.pathname.slice(1);
+  const test = tests[name];
+  if (!test) return new Response(`tests: ${Object.keys(tests).join(", ")}`, { status: 404 });
+  url.searchParams.set("via", url.searchParams.get("via") ?? "router");
+  url.searchParams.set("db", url.searchParams.get("db") ?? "default");
+  try {
+    return Response.json({ test: name, via: url.searchParams.get("via"), db: url.searchParams.get("db"), colo: req.cf?.colo, ...(await test(env, url.searchParams, req)) });
+  } catch (e) {
+    return Response.json({ test: name, error: e.message, stack: e.stack }, { status: 500 });
+  }
+}
