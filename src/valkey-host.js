@@ -1,0 +1,314 @@
+// Runs one Valkey (valkey.wasm, patched: host-supplied argv, fork-free AOF rewrite) in a Durable
+// Object: sockets from connect(socket) become Valkey client fds; files live in DO SQLite (Vfs).
+import { Vfs } from "./vfs.js";
+import { frameEnd } from "./resp.js";
+
+const FD_BASE = 4096; // valkey-wasm sock_shim: fds >= this are host sockets
+const AE_READABLE = 1;
+const AE_WRITABLE = 2;
+const ENOSYS = 52;
+// Backpressure. A client whose replies are unacknowledged past HIGH_WATER stops being read, and
+// so does every client once the whole object holds TOTAL_HIGH of them: with hundreds of busy
+// connections, per-connection limits alone can exceed the 128 MB isolate.
+const HIGH_WATER = 256 << 10;
+const LOW_WATER = 64 << 10;
+const TOTAL_HIGH = 16 << 20;
+const TOTAL_LOW = 8 << 20;
+const QUIT = new TextEncoder().encode("*1\r\n$4\r\nQUIT\r\n");
+const HELLO3 = new TextEncoder().encode("*2\r\n$5\r\nHELLO\r\n$1\r\n3\r\n");
+const POOL_MAX = 64; // idle pooled internal clients kept per protocol
+
+export class ValkeyHost {
+  #vk;
+  #vfs;
+  #nextFd = FD_BASE;
+  #socks = new Map(); // fd -> { chunks, off, eof, writer, done, internal }
+  #pending = [];
+  #listenFd = -1;
+  #queued = false;
+  #timer = null;
+  #hzMs = 100;
+  #log;
+  #total = 0; // unacknowledged reply bytes across all clients
+  #lastTick = 0; // Date.now() of the last step taken by a waiting exec
+  #pool = { 2: [], 3: [] }; // idle internal clients for execBatch, by RESP protocol
+  #stalled = new Set(); // wake functions of readers paused by the total budget
+  bootMs = 0;
+
+  constructor(module, sql, { args = [], log = (l) => console.log("[valkey]", l) } = {}) {
+    this.#log = log;
+    const memory = () => this.#vk.exports.memory;
+    this.#vfs = new Vfs(sql, memory);
+    const t0 = Date.now();
+    this.#vk = new WebAssembly.Instance(module, this.#imports(module, memory));
+    this.#vk.exports._initialize();
+    const enc = new TextEncoder().encode(args.map((a) => a + "\0").join(""));
+    if (enc.length > this.#vk.exports.rk_args_cap()) throw new Error("valkey args too long");
+    new Uint8Array(memory().buffer).set(enc, this.#vk.exports.rk_args_ptr());
+    const rc = this.#vk.exports.rk_boot_args(enc.length); // full init, including loading the AOF
+    if (rc !== 0) throw new Error(`valkey boot failed (${rc})`);
+    this.#hzMs = Math.max(20, this.#vk.exports.rk_next_timeout_ms() || 100);
+    this.bootMs = Date.now() - t0; // only advances across I/O in prod; meaningful locally
+  }
+
+  #imports(module, memory) {
+    const dv = () => new DataView(memory().buffer);
+    const out = { 1: "", 2: "" };
+    const vfs = this.#vfs.imports();
+    const wasi = {
+      ...vfs,
+      environ_sizes_get: (c, s) => (dv().setUint32(c, 0, true), dv().setUint32(s, 0, true), 0),
+      environ_get: () => 0,
+      args_sizes_get: (c, s) => (dv().setUint32(c, 0, true), dv().setUint32(s, 0, true), 0),
+      args_get: () => 0,
+      // Workers clocks advance only across I/O; Valkey re-reads the clock every step.
+      clock_time_get: (_id, _p, ptr) => (dv().setBigUint64(ptr, BigInt(Date.now()) * 1_000_000n, true), 0),
+      clock_res_get: (_id, ptr) => (dv().setBigUint64(ptr, 1_000_000n, true), 0),
+      random_get: (ptr, len) => (crypto.getRandomValues(new Uint8Array(memory().buffer, ptr, len)), 0),
+      poll_oneoff: (_i, _o, _n, nev) => (dv().setUint32(nev, 0, true), 0),
+      sched_yield: () => 0,
+      proc_exit: (code) => { throw new Error(`valkey exited with code ${code}`); },
+      fd_write: (fd, iovs, iovsLen, nwrittenPtr) => {
+        const mem = memory().buffer, view = dv(), chunks = [];
+        let n = 0;
+        for (let i = 0; i < iovsLen; i++) {
+          const p = view.getUint32(iovs + i * 8, true), len = view.getUint32(iovs + i * 8 + 4, true);
+          chunks.push(new Uint8Array(mem, p, len));
+          n += len;
+        }
+        const rc = this.#vfs.write(fd, chunks);
+        if (rc === null) {
+          if (fd !== 1 && fd !== 2) return 8; // EBADF
+          const lines = (out[fd] + chunks.map((c) => new TextDecoder().decode(c)).join("")).split("\n");
+          out[fd] = lines.pop();
+          for (const l of lines) if (l) this.#log(l);
+        } else if (rc !== 0) return rc;
+        dv().setUint32(nwrittenPtr, n, true);
+        return 0;
+      },
+    };
+    // Anything else the module imports from WASI gets ENOSYS rather than failing to link.
+    for (const imp of WebAssembly.Module.imports(module)) {
+      if (imp.module === "wasi_snapshot_preview1" && !(imp.name in wasi && wasi[imp.name])) wasi[imp.name] = () => ENOSYS;
+    }
+    return {
+      wasi_snapshot_preview1: wasi,
+      host: this.#hostImports(memory),
+      env: { __c_longjmp: new WebAssembly.Tag({ parameters: ["i32"] }) },
+    };
+  }
+
+  #hostImports(memory) {
+    const mem = () => new Uint8Array(memory().buffer);
+    const dv = () => new DataView(memory().buffer);
+    return {
+      socket: () => this.#nextFd++,
+      listen: (fd) => ((this.#listenFd = fd), 0),
+      accept: (fd) => (fd === this.#listenFd && this.#pending.length ? this.#pending.shift() : -1),
+      read: (fd, ptr, len) => {
+        const s = this.#socks.get(fd);
+        if (!s) return -1;
+        if (!s.chunks.length) return s.eof ? 0 : -1;
+        const m = mem();
+        let n = 0;
+        while (n < len && s.chunks.length) {
+          const head = s.chunks[0];
+          const take = Math.min(head.length - s.off, len - n);
+          m.set(head.subarray(s.off, s.off + take), ptr + n);
+          n += take;
+          s.off += take;
+          if (s.off === head.length) { s.chunks.shift(); s.off = 0; }
+        }
+        return n;
+      },
+      write: (fd, ptr, len) => {
+        const s = this.#socks.get(fd);
+        if (!s || s.eof) return -1;
+        // Valkey hands us everything; flow control is on the read side (serve() stops reading
+        // while too many reply bytes are unacknowledged), so this stays bounded.
+        s.inflight += len;
+        this.#total += len;
+        s.writer.write(mem().slice(ptr, ptr + len)).then(() => {
+          s.inflight -= len;
+          this.#total -= len;
+          this.#wakeReaders(s);
+        }, () => { s.inflight -= len; this.#total -= len; s.eof = true; this.#wakeReaders(s); this.#schedule(); });
+        return len;
+      },
+      close: (fd) => {
+        const s = this.#socks.get(fd);
+        if (!s) return;
+        this.#socks.delete(fd);
+        s.done();
+        this.#updateTimer();
+      },
+      poll: (interestPtr, count, firedPtr, max) => {
+        const view = dv();
+        let fired = 0;
+        for (let i = 0; i < count && fired < max; i++) {
+          const fd = view.getInt32(interestPtr + i * 8, true);
+          const mask = view.getInt32(interestPtr + i * 8 + 4, true);
+          let ready = 0;
+          if (fd === this.#listenFd) {
+            if (mask & AE_READABLE && this.#pending.length) ready |= AE_READABLE;
+          } else {
+            const s = this.#socks.get(fd);
+            if (s) {
+              if (mask & AE_READABLE && (s.chunks.length || s.eof)) ready |= AE_READABLE;
+              if (mask & AE_WRITABLE) ready |= AE_WRITABLE;
+            }
+          }
+          if (ready) {
+            view.setInt32(firedPtr + fired * 8, fd, true);
+            view.setInt32(firedPtr + fired * 8 + 4, ready, true);
+            fired++;
+          }
+        }
+        return fired;
+      },
+    };
+  }
+
+  #wakeReaders(s) {
+    if (s.wake && s.inflight <= LOW_WATER && this.#total <= TOTAL_HIGH) { const w = s.wake; s.wake = null; w(); }
+    if (this.#total <= TOTAL_LOW && this.#stalled.size) {
+      const all = [...this.#stalled];
+      this.#stalled.clear();
+      for (const w of all) w();
+    }
+  }
+
+  step() {
+    try { this.#vk.exports.rk_step(); } catch (e) { this.#log(`rk_step threw: ${e?.stack ?? e}`); throw e; }
+  }
+
+  #schedule() {
+    if (this.#queued) return;
+    this.#queued = true;
+    // The second step runs beforeSleep, where Valkey writes the AOF and flushes replies.
+    queueMicrotask(() => { this.#queued = false; this.step(); this.step(); });
+  }
+
+  // serverCron runs only while clients are connected, so an idle object can be evicted.
+  // Its data is in SQLite, and Valkey expires stale keys lazily after it reloads.
+  #updateTimer() {
+    const clients = [...this.#socks.values()].some((s) => !s.internal);
+    if (clients && !this.#timer) this.#timer = setInterval(() => this.step(), this.#hzMs);
+    else if (!clients && this.#timer) { clearInterval(this.#timer); this.#timer = null; }
+  }
+
+  #open(writer, internal) {
+    const fd = this.#nextFd++;
+    let done;
+    const closed = new Promise((r) => (done = r));
+    const s = { fd, chunks: [], off: 0, eof: false, writer, done, internal, inflight: 0, wake: null };
+    this.#socks.set(fd, s);
+    this.#pending.push(fd);
+    this.#updateTimer();
+    return { s, closed };
+  }
+
+  // One TCP client = one Valkey client fd. Resolves when Valkey closes the fd.
+  async serve(socket, greeting = null) {
+    const writer = socket.writable.getWriter();
+    if (greeting) writer.write(new TextEncoder().encode(greeting)).catch(() => {});
+    const { s, closed } = this.#open(writer, false);
+    this.#schedule();
+    const reader = socket.readable.getReader();
+    (async () => {
+      for (;;) {
+        // Backpressure: a client that isn't reading its replies stops being read.
+        while (!s.eof && (s.inflight > HIGH_WATER || this.#total > TOTAL_HIGH)) {
+          await new Promise((r) => { if (this.#total > TOTAL_HIGH) this.#stalled.add(r); s.wake = r; });
+        }
+        const { value, done } = await reader.read();
+        if (done) break;
+        s.chunks.push(value);
+        this.#schedule();
+      }
+    })().catch(() => {}).finally(() => { s.eof = true; this.#schedule(); });
+    await closed;
+    await s.writer.close().catch(() => {});
+  }
+
+  // Runs RESP request bytes through a throwaway in-process client and returns the raw reply bytes.
+  // A trailing QUIT makes Valkey flush every reply and then close the fd; its +OK is stripped.
+  async exec(bytes) {
+    const out = [];
+    const writer = { write: async (b) => { out.push(b); }, close: async () => {} };
+    const { s, closed } = this.#open(writer, true);
+    let done = false;
+    closed.then(() => { done = true; });
+    s.chunks.push(bytes, QUIT);
+    // Read + run, write replies (beforeSleep), then free the QUIT client (next beforeSleep).
+    for (let i = 0; i < 6 && this.#socks.has(s.fd); i++) this.step();
+    // Still running (a blocking command, or a backlog): each waiting exec keeps its own timer, so no
+    // exec depends on another request's timer staying alive, but the host steps at most once per
+    // millisecond however many are waiting.
+    while (!done && this.#socks.has(s.fd)) {
+      await new Promise((r) => setTimeout(r, 1));
+      const now = Date.now();
+      if (now !== this.#lastTick) { this.#lastTick = now; this.step(); }
+    }
+    await closed;
+    const all = new Uint8Array(out.reduce((n, b) => n + b.length, 0));
+    let o = 0;
+    for (const b of out) { all.set(b, o); o += b.length; }
+    return all.subarray(0, all.length - 5); // "+OK\r\n" from QUIT
+  }
+
+  // Runs `bytes` (exactly `count` commands) on a pooled internal client and returns their `count`
+  // replies. Reusing clients avoids a connection setup and teardown (accept, create, QUIT, free) per
+  // RPC batch, which saturated shards when hundreds of routers sent batches at once. Commands that
+  // leave connection state behind (WATCH, SUBSCRIBE, CLIENT REPLY) never come through here.
+  async execBatch(bytes, count, proto = 2) {
+    const c = this.#pool[proto].pop() ?? (await this.#pooled(proto));
+    const out = await this.#batch(c, bytes, count);
+    if (c.alive && this.#pool[proto].length < POOL_MAX) this.#pool[proto].push(c);
+    else if (c.alive) { c.alive = false; c.s.chunks.push(QUIT); this.#schedule(); }
+    return out;
+  }
+
+  async #pooled(proto) {
+    const c = { alive: true, acc: new Uint8Array(0), pos: 0, frames: 0, want: 0 };
+    const writer = { write: (b) => { this.#pooledOutput(c, b); return Promise.resolve(); }, close: async () => {} };
+    const { s, closed } = this.#open(writer, true);
+    c.s = s;
+    closed.then(() => { c.alive = false; });
+    if (proto === 3) await this.#batch(c, HELLO3, 1);
+    return c;
+  }
+
+  #pooledOutput(c, b) {
+    if (c.acc.length) { const a = new Uint8Array(c.acc.length + b.length); a.set(c.acc); a.set(b, c.acc.length); c.acc = a; } else c.acc = b;
+    for (let e; c.frames < c.want && (e = frameEnd(c.acc, c.pos, c.acc.length)) >= 0; c.pos = e) {
+      if (c.acc[c.pos] !== 62) c.frames++; // RESP3 pushes aren't replies
+    }
+  }
+
+  async #batch(c, bytes, count) {
+    Object.assign(c, { acc: new Uint8Array(0), pos: 0, frames: 0, want: count });
+    c.s.chunks.push(bytes);
+    const finished = () => c.frames >= c.want || !c.alive;
+    for (let i = 0; i < 6 && !finished(); i++) this.step();
+    while (!finished()) { // a blocking command, or a backlog: same deduped wait as exec()
+      await new Promise((r) => setTimeout(r, 1));
+      const now = Date.now();
+      if (now !== this.#lastTick) { this.#lastTick = now; this.step(); }
+    }
+    c.want = 0;
+    return c.acc.slice(0, c.pos); // replies cut short by a closed client come back incomplete
+  }
+
+  stats() {
+    return {
+      wasmMemoryBytes: this.#vk.exports.memory.buffer.byteLength,
+      sockets: [...this.#socks.values()].filter((x) => !x.internal).length, // client connections (routers, direct)
+      pooled: this.#pool[2].length + this.#pool[3].length, // idle internal clients kept for RPC batches
+      cronRunning: !!this.#timer,
+      vfs: this.#vfs.stats,
+    };
+  }
+
+  files() { return this.#vfs.listing(); }
+}
