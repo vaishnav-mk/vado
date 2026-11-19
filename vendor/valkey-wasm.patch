@@ -1,0 +1,66 @@
+diff --git a/src/src/aof.c b/src/src/aof.c
+index 276dcbe..baed2e4 100644
+--- a/src/src/aof.c
++++ b/src/src/aof.c
+@@ -2623,6 +2623,25 @@ int rewriteAppendOnlyFileBackground(void) {
+ 
+     server.stat_aof_rewrites++;
+ 
++#ifdef VALKEY_WASM
++    /* No fork on wasm: run the child's rewrite inline, then finish the way
++     * checkChildrenDone() would after the child exits. Blocks for the rewrite. */
++    {
++        char tmpfile[256];
++        server.child_pid = getpid();
++        server.child_type = CHILD_TYPE_AOF;
++        server.aof_rewrite_scheduled = 0;
++        server.aof_rewrite_time_start = time(NULL);
++        server.aof_rewrite_use_rdb_preamble = server.aof_use_rdb_preamble;
++        snprintf(tmpfile, 256, "temp-rewriteaof-bg-%d.aof", (int)server.child_pid);
++        int ok = rewriteAppendOnlyFile(tmpfile) == C_OK;
++        backgroundRewriteDoneHandler(ok ? 0 : 1, 0);
++        resetChildState();
++        (void)childpid;
++        return ok ? C_OK : C_ERR;
++    }
++#endif
++
+     if ((childpid = serverFork(CHILD_TYPE_AOF)) == 0) {
+         char tmpfile[256];
+ 
+diff --git a/src/wasi/reactor.c b/src/wasi/reactor.c
+index 1464776..4f64b9b 100644
+--- a/src/wasi/reactor.c
++++ b/src/wasi/reactor.c
+@@ -36,6 +36,31 @@ int rk_boot(int port) {
+     return main(argc, argv);
+ }
+ 
++/* Host-supplied argv: the host writes NUL-separated args (after argv[0]) into
++ * rk_args, then calls rk_boot_args(len). Lets the host turn on AOF, set dir,
++ * maxmemory, etc. without a config file. */
++static char rk_args[8192];
++
++__attribute__((export_name("rk_args_ptr")))
++char *rk_args_ptr(void) { return rk_args; }
++
++__attribute__((export_name("rk_args_cap")))
++int rk_args_cap(void) { return (int)sizeof rk_args; }
++
++__attribute__((export_name("rk_boot_args")))
++int rk_boot_args(int len) {
++    static char *argv[256];
++    int argc = 0;
++    argv[argc++] = "valkey-server";
++    for (int i = 0; i < len && argc < 255; ) {
++        argv[argc++] = &rk_args[i];
++        while (i < len && rk_args[i] != '\0') i++;
++        i++;
++    }
++    argv[argc] = NULL;
++    return main(argc, argv);
++}
++
+ /* One non-blocking pass of the event loop. Returns the number of events
+  * processed (0 means idle). */
+ __attribute__((export_name("rk_step")))
