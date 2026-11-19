@@ -113,6 +113,8 @@ wrangler secret put VALKEY_PASSWORD && wrangler secret put BENCH_TOKEN && wrangl
 
 - `test/ioredis.mjs`: stock ioredis, covering MULTI, Lua, BLPOP, streams, pub/sub, pipelining and expiry.
 - `test/resp3.mjs`: HELLO 3, maps and pushes.
+- `test/chunked.mjs`: requests split into 1-byte to 4 KB writes must reassemble exactly; a 16 MB value must
+  round-trip in linear time.
 - `test/differential.mjs`: the same random command stream against a 1-shard and an N-shard database must give
   identical replies.
 - `test/kill9.mjs`: `kill -9` the runtime mid-write; every acknowledged write must survive.

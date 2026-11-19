@@ -7,6 +7,7 @@ t(){ perl -e "alarm $1; exec @ARGV" "${@:2}"; }
 scripts/local.sh fresh || exit 1
 t 120 node test/ioredis.mjs
 t 60 node test/resp3.mjs
+t 120 node test/chunked.mjs
 t 60 node test/watch-reset.mjs
 t 600 node test/differential.mjs 1 30 16
 t 600 node test/differential.mjs 7 30 5
