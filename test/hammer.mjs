@@ -8,6 +8,7 @@ import Redis from "ioredis";
 import crypto from "node:crypto";
 
 const env = process.env;
+const CHAOS = env.CHAOS === "1"; // CHAOS=1 aborts shards while the checks run
 const PORT = Number(env.PORT ?? 6380), PW = env.PW || undefined, DB = env.DB ?? "hammer";
 const C = Number(env.C ?? 16), SECONDS = Number(env.SECONDS ?? 20);
 const BASE = env.BASE ?? "http://127.0.0.1:8787", TOKEN = env.TOKEN ?? "local";
@@ -26,7 +27,7 @@ const R = (o = {}) => new Redis({
 const api = (path) => fetch(`${BASE}${path}`, { headers: { authorization: `Bearer ${TOKEN}` } }).then((r) => r.json());
 const until = (ms) => { const end = Date.now() + ms; return () => Date.now() < end; };
 // Setup and final reads retry: under chaos a single LOST shouldn't fail a whole check.
-const retry = async (f, n = 8) => { for (let i = 0; ; i++) { try { return await f(); } catch (e) { if (i >= n) throw e; await sleep(250); } } };
+const retry = async (f, n = 40) => { for (let i = 0; ; i++) { try { return await f(); } catch (e) { if (i >= n) throw e; await sleep(250); } } };
 function check(name, ok, detail) {
   results.push({ name, ok, ...detail });
   console.log(`${ok ? "PASS" : "FAIL"} ${name} ${JSON.stringify(detail)}`);
@@ -129,7 +130,7 @@ async function pubsub() {
   const subs = Array.from({ length: S }, () => R());
   const pub = R();
   const seen = subs.map(() => []);
-  await Promise.all(subs.map((s, i) => { s.on("message", (_ch, m) => seen[i].push(Number(m))); return s.subscribe("fan:{p}"); }));
+  await Promise.all(subs.map((s, i) => { s.on("message", (_ch, m) => seen[i].push(Number(m))); return retry(() => s.subscribe("fan:{p}")); }));
   await sleep(300);
   let sent = 0;
   for (let i = 0; i < M; i++) { try { await pub.publish("fan:{p}", String(i)); sent++; } catch (e) { note(e); /* counted below */ } }
@@ -137,7 +138,7 @@ async function pubsub() {
   const complete = seen.filter((xs) => xs.length === M).length;
   const ordered = seen.every((xs) => xs.every((v, k) => k === 0 || v > xs[k - 1]));
   // Under chaos a subscriber whose pub/sub object was reset misses messages (pub/sub is fire-and-forget).
-  check("pub/sub fan-out is complete and ordered", ordered && (env.CHAOS || complete === S), { subscribers: S, sent, complete, ordered });
+  check("pub/sub fan-out is complete and ordered", ordered && (CHAOS || complete === S), { subscribers: S, sent, complete, ordered });
   [...subs, pub].forEach((c) => c.disconnect());
 }
 
@@ -190,13 +191,13 @@ async function bigValues() {
       out[`${mb}MB`] = same ? "ok" : "MISMATCH";
       ok &&= same;
       await c.del(key);
-    } catch (e) { out[`${mb}MB`] = e.message.slice(0, 80); ok &&= !!env.CHAOS; }
+    } catch (e) { out[`${mb}MB`] = e.message.slice(0, 80); ok &&= CHAOS; }
   }
   // Over the request limit: refused up front (this connection only), not a shard reset for everyone.
   const over = R({ maxRetriesPerRequest: 0, retryStrategy: () => null });
   over.on("error", () => {});
   out["16MB"] = await over.set("big:16", crypto.randomBytes(16 << 20)).then(() => "accepted", (e) => e.message.slice(0, 60));
-  ok &&= /invalid bulk length|ECONNRESET|EPIPE|Connection is closed/.test(out["16MB"]) || (!!env.CHAOS && /shard connection lost/.test(out["16MB"]));
+  ok &&= /invalid bulk length|ECONNRESET|EPIPE|Connection is closed/.test(out["16MB"]) || (CHAOS && /shard connection lost/.test(out["16MB"]));
   over.disconnect();
   check("large values round-trip", ok, out);
   c.disconnect();
@@ -228,8 +229,10 @@ async function pipelines() {
   const r = await p.exec();
   const ms = Date.now() - t0;
   const errors = r.filter(([e]) => e).length;
-  const getsOk = r.every(([, v], i) => i % 4 !== 1 || v === String(i - 1));
-  check("20k-command mixed pipeline", errors === 0 && getsOk, { ms, errors, opsPerSec: Math.round(n / ms * 1000) });
+  // Under chaos a command may fail, but only as LOST; a GET that worked after its SET worked must see it.
+  const lostOnly = r.every(([e]) => !e || /shard connection lost|Connection is closed/.test(e.message));
+  const getsOk = r.every(([e, v], i) => i % 4 !== 1 || e || r[i - 1][0] || v === String(i - 1));
+  check("20k-command mixed pipeline", (CHAOS ? lostOnly : errors === 0) && getsOk, { ms, errors, opsPerSec: Math.round(n / ms * 1000) });
   c.disconnect();
 }
 
@@ -242,13 +245,13 @@ async function churn() {
     try { await c.connect(); await c.set(`churn:${i}`, "1"); if ((await c.get(`churn:${i}`)) === "1") ok++; else bad++; } catch (e) { note(e); bad++; }
     c.disconnect();
   }));
-  check("connection churn (connect, AUTH, write, read, close)", bad === 0 || !!env.CHAOS, { connections: n, ok, bad, ms: Date.now() - t0 });
+  check("connection churn (connect, AUTH, write, read, close)", bad === 0 || CHAOS, { connections: n, ok, bad, ms: Date.now() - t0 });
 }
 
 const only = env.ONLY?.split(",");
 const all = { incr, bank, queue, pubsub, lua, zset, bigValues, expiry, pipelines, churn };
 const t0 = Date.now();
-const chaosTask = env.CHAOS ? chaos() : null;
+const chaosTask = CHAOS ? chaos() : null;
 for (const [name, fn] of Object.entries(all)) {
   if (only && !only.includes(name)) continue;
   const limit = (SECONDS * 2 + 180) * 1000;
