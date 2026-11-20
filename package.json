@@ -21,7 +21,8 @@
   "scripts": {
     "dev": "scripts/local.sh",
     "test": "scripts/test-local.sh",
-    "deploy": "wrangler deploy"
+    "deploy": "wrangler deploy",
+    "ui": "node ui/server.mjs"
   },
   "devDependencies": {
     "ioredis": "^5.4.1",
