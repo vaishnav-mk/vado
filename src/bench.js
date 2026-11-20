@@ -92,6 +92,23 @@ const tests = {
     return { aborted: idx };
   },
 
+  // Every shard's stats with Valkey's own INFO counters, for the live view in ui/. A shard that can't
+  // answer right now is { down }, so the others still show.
+  async shards(env, q) {
+    const db = await database(env, q.get("db"));
+    const shards = await Promise.all(Array.from({ length: db.shards }, (_, i) => {
+      const stub = shardStub(env, db, i);
+      return Promise.all([stub.stats(), stub.run([["INFO", "server", "clients", "memory", "persistence", "stats", "keyspace", "commandstats"]])]).then(
+        ([{ files, ...st }, [txt]]) => ({ ...st, info: Object.fromEntries(String(txt).split("\r\n").filter((l) => l.includes(":")).map((l) => [l.slice(0, l.indexOf(":")), l.slice(l.indexOf(":") + 1)])) }),
+        (e) => ({ down: e.message }));
+    }));
+    return { db, shards };
+  },
+
+  async dbs(env) {
+    return { dbs: await env.CATALOG.getByName("catalog").list() };
+  },
+
   async stats(env, q) {
     const s = await allShards(env, q.get("db"), (stub) => stub.stats());
     return { shards: s.map(({ files, ...rest }) => ({ ...rest, files: files.map((f) => `${f.path}:${f.size}/${f.rows}`) })) };
