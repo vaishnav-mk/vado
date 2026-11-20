@@ -1,99 +1,140 @@
-// Live view of one vado database. Polls the bench API for every shard's stats, probes latency over TCP,
-// runs load and crashes shards on request, and streams one snapshot per poll to the page over SSE.
+// Live view of one vado database in production. Polls the Worker's bench API for each shard's
+// numbers and where traffic enters Cloudflare, measures response time from this computer over TCP,
+// runs test traffic and shard restarts on request, and streams one snapshot a second to the page.
 // The bench token and password stay in this process; it listens on 127.0.0.1 only.
 //
-//   node ui/server.mjs                       # local workerd (scripts/local.sh)
-//   VADO_URL=https://<worker>.workers.dev TOKEN=... HOST=<tcp host> PORT=6379 PW=... node ui/server.mjs
+//   VADO_URL=https://<worker>.workers.dev TOKEN=... HOST=<tcp host> PORT=6379 PW=... DB=<name> node ui/server.mjs
 import http from "node:http";
 import { readFile } from "node:fs/promises";
-import { fork } from "node:child_process";
 import Redis from "ioredis";
 import { shardOfSlot, slotOf } from "../src/slots.js";
 
 const env = process.env;
-const BASE = env.VADO_URL ?? "http://127.0.0.1:8787";
-const TOKEN = env.TOKEN ?? "local";
-const HOST = env.HOST ?? "127.0.0.1", PORT = Number(env.PORT ?? 6380), PW = env.PW ?? "any";
-const UI_PORT = Number(env.UI_PORT ?? 4040), POLL_MS = Number(env.POLL_MS ?? 1000);
-const HISTORY = 60; // per-shard ops/s points kept, one per poll
-const PROBE_MS = 250, PROBE_KEEP = 240; // one probe command every 250 ms; the last minute is kept
-const CHAOS_MS = 10_000;
+const BASE = env.VADO_URL, TOKEN = env.TOKEN, HOST = env.HOST, PORT = Number(env.PORT ?? 6379), PW = env.PW;
+if (!BASE || !TOKEN || !HOST || !PW) throw new Error("Set VADO_URL, TOKEN, HOST and PW (see the comment at the top of ui/server.mjs)");
+const UI_PORT = Number(env.UI_PORT ?? 4040);
+const POLL_MS = 1000, HISTORY = 300, PROBE_MS = 300, RESTARTING_MS = 10_000;
+const LEVELS = { light: 1, medium: 3, heavy: 6 }; // test senders running at once, per region
+// Where test traffic can come from (Durable Object location hints), and where shards can be placed.
+const REGIONS = { wnam: "Western North America", enam: "Eastern North America", sam: "South America", weur: "Western Europe", eeur: "Eastern Europe", me: "Middle East", afr: "Africa", apac: "Asia Pacific", oc: "Oceania" };
 const WRITES = new Set(("set setex psetex setnx mset msetnx getset getdel getex append incr incrby incrbyfloat decr decrby del unlink " +
-  "expire pexpire expireat pexpireat persist rename renamenx lpush rpush lpushx rpushx lpop rpop lset lrem ltrim linsert lmove blmove " +
-  "rpoplpush blpop brpop sadd srem spop smove sinterstore sunionstore sdiffstore hset hsetnx hmset hdel hincrby hincrbyfloat zadd " +
-  "zincrby zrem zpopmin zpopmax zremrangebyscore zremrangebyrank zremrangebylex xadd xdel xtrim xack setrange setbit pfadd pfmerge " +
-  "flushall flushdb restore copy eval evalsha fcall").split(" "));
+  "expire pexpire expireat pexpireat persist rename renamenx lpush rpush lpushx rpushx lpop rpop lset lrem ltrim linsert lmove " +
+  "rpoplpush blpop brpop sadd srem spop smove hset hsetnx hmset hdel hincrby hincrbyfloat zadd zincrby zrem zpopmin zpopmax " +
+  "xadd xdel xtrim xack setrange setbit pfadd flushall flushdb restore copy eval evalsha fcall").split(" "));
 
 const api = async (path) => {
   const r = await fetch(`${BASE}/${path}`, { headers: { authorization: `Bearer ${TOKEN}` } });
   const body = await r.json().catch(() => null);
-  if (r.status === 404 && path.startsWith("shards")) throw new Error("This Worker has no live-view endpoints yet. Deploy this branch's src/bench.js with wrangler deploy.");
-  if (r.status === 401) throw new Error("The bench API refused the token. Set TOKEN to the Worker's BENCH_TOKEN.");
-  if (!r.ok || body === null || body.error) throw new Error(body?.error ?? `bench API answered ${r.status}`);
+  if (r.status === 401) throw new Error("The Worker refused the token (TOKEN must match its BENCH_TOKEN)");
+  if (!r.ok || body === null || body.error) throw new Error(body?.error ?? `The Worker answered ${r.status}`);
   return body;
 };
 
-// ---- per-database state ----
+// ---- places: Cloudflare locations (for city names and coordinates) ----
+const SPEED = { headers: { referer: "https://speed.cloudflare.com/", origin: "https://speed.cloudflare.com", "user-agent": "Mozilla/5.0" } };
+const places = {};
+fetch("https://speed.cloudflare.com/locations", SPEED).then((r) => r.json())
+  .then((list) => { for (const c of list) places[c.iata] = { city: c.city, lat: c.lat, lon: c.lon }; }).catch(() => {});
+
+// ---- state ----
 let db = env.DB ?? "default";
 let view = fresh();
-function fresh() { return { meta: null, prev: [], history: [], restartedAt: [], crashAt: new Map(), shards: [], mix: [] }; }
+function fresh() { return { meta: null, shards: [], prev: [], restartedAt: [], askedAt: new Map(), history: [], isoPrev: new Map(), map: null, copyPrev: new Map() }; }
+// Commands a replica runs that aren't reads: the replicated writes, and the stream's own bookkeeping.
+const NOT_READS = new Set(["info", "ping", "client", "select", "multi", "exec", "flushall", "command"]);
+const callsOf = (info) => { const c = {}; for (const [k, v] of Object.entries(info ?? {})) if (k.startsWith("cmdstat_")) c[k.slice(8)] = Number(/calls=(\d+)/.exec(v)?.[1] ?? 0); return c; };
 const events = [];
-const event = (kind, text) => { events.unshift({ t: Date.now(), kind, text }); events.length = Math.min(events.length, 60); };
-const keep = (a, n) => { while (a.length > n) a.shift(); };
-const shardOf = (key) => (view.meta ? shardOfSlot(slotOf(Buffer.from(key)), view.meta.shards) : 0);
+const say = (kind, text) => { events.unshift({ t: Date.now(), kind, text }); events.length = Math.min(events.length, 50); };
+let lastError = null, lastPoll = 0, polling = false;
 
-// ---- polling ----
-let polling = false, lastError = null, lastPoll = 0;
+function traffic(pulse) {
+  // Commands per second entering at each colo, from each isolate's running totals (src/index.js).
+  const byColo = new Map(), seen = new Set();
+  for (const iso of pulse.isolates) {
+    seen.add(iso.isolate);
+    const totals = { ...(iso.done ?? {}) };
+    for (const c of iso.conns) totals[c.db] = (totals[c.db] ?? 0) + c.commands;
+    const prev = view.isoPrev.get(iso.isolate);
+    let ops = 0;
+    if (prev && prev.at === iso.at) ops = prev.ops;
+    else if (prev) ops = Math.max(0, ((totals[db] ?? 0) - (prev.totals[db] ?? 0)) / ((iso.at - prev.at) / 1000));
+    view.isoPrev.set(iso.isolate, { at: iso.at, totals, ops });
+    const conns = iso.conns.filter((c) => c.db === db).length;
+    if (!conns && !ops) continue;
+    const colo = iso.colo ?? "?", e = byColo.get(colo) ?? { colo, ops: 0, conns: 0 };
+    e.ops += ops; e.conns += conns;
+    byColo.set(colo, e);
+  }
+  for (const id of view.isoPrev.keys()) if (!seen.has(id)) view.isoPrev.delete(id);
+  const homes = {};
+  for (const s of view.shards) if (s.colo) homes[s.colo] = (homes[s.colo] ?? 0) + 1;
+  const copies = {};
+  for (const s of view.shards) for (const r of s.replicas ?? []) if (r.colo && r.state === "ready") { const c = (copies[r.colo] ??= { count: 0, reads: 0 }); c.count++; c.reads += r.reads; }
+  const place = (colo) => places[colo] && { ...places[colo], colo };
+  return {
+    entries: [...byColo.values()].map((e) => ({ ...place(e.colo), ops: Math.round(e.ops), conns: e.conns })).filter((e) => e.city),
+    shards: Object.entries(homes).map(([colo, count]) => ({ ...place(colo), count })).filter((h) => h.city),
+    replicas: Object.entries(copies).map(([colo, c]) => ({ ...place(colo), count: c.count, reads: c.reads })).filter((h) => h.city),
+  };
+}
+
 async function poll() {
   if (polling) return;
   polling = true;
   const name = db, v = view;
   try {
-    const { db: meta, shards } = await api(`shards?db=${encodeURIComponent(name)}`);
-    if (name !== db) return; // switched databases mid-poll
-    const at = Date.now(), mix = {};
+    const [{ db: meta, shards }, pulse] = await Promise.all([api(`shards?db=${encodeURIComponent(name)}`), api("pulse")]);
+    if (name !== db) return;
+    const at = Date.now();
+    let reads = 0, writes = 0;
     v.meta = meta;
     v.shards = shards.map((s, i) => {
-      const p = v.prev[i], h = (v.history[i] ??= []);
+      const p = v.prev[i];
       if (s.down) {
-        if (p && !p.down) event("down", `Shard ${i} stopped answering: ${s.down}`);
+        if (p && !p.down) say("warning", `Shard ${i} stopped responding`);
         v.prev[i] = { down: true, instance: p?.instance };
-        h.push(0); keep(h, HISTORY);
-        return { i, down: s.down, history: h };
+        return { i, ok: false };
       }
-      const info = s.info;
-      const stats = {};
-      for (const [k, val] of Object.entries(info)) if (k.startsWith("cmdstat_")) stats[k.slice(8)] = Number(/calls=(\d+)/.exec(val)?.[1] ?? 0);
-      const same = p && !p.down && p.instance === s.instance;
+      const info = s.info, calls = {};
+      for (const [k, val] of Object.entries(info)) if (k.startsWith("cmdstat_")) calls[k.slice(8)] = Number(/calls=(\d+)/.exec(val)?.[1] ?? 0);
       if (p?.instance && p.instance !== s.instance) {
-        const crashed = v.crashAt.get(i);
-        event("restart", `Shard ${i} restarted${crashed ? `, answering again ${((at - crashed) / 1000).toFixed(1)} s after the crash` : ""}`);
-        v.crashAt.delete(i);
+        const asked = v.askedAt.get(i);
+        say("warning", asked ? `Shard ${i} restarted and was back in ${((at - asked) / 1000).toFixed(1)} s` : `Shard ${i} restarted`);
+        v.askedAt.delete(i);
         v.restartedAt[i] = at;
       }
-      // Count per-command deltas, leaving out this poll's own INFO.
-      let writes = 0, total = 0;
-      if (same) for (const [c, n] of Object.entries(stats)) {
-        const d = n - (p.stats[c] ?? 0);
-        if (d <= 0 || c === "info") continue;
-        mix[c] = (mix[c] ?? 0) + d; total += d;
-        if (WRITES.has(c.split("|")[0])) writes += d;
+      let r = 0, w = 0;
+      if (p && !p.down && p.instance === s.instance) {
+        const dt = (at - p.at) / 1000;
+        for (const [c, n] of Object.entries(calls)) {
+          const d = n - (p.calls[c] ?? 0);
+          if (d <= 0 || c === "info") continue; // INFO is this page's own polling
+          if (WRITES.has(c.split("|")[0])) w += d / dt; else r += d / dt;
+        }
       }
-      const ops = same ? total / ((at - p.at) / 1000) : 0;
-      v.prev[i] = { at, instance: s.instance, stats };
-      h.push(ops); keep(h, HISTORY);
-      const ks = /keys=(\d+),expires=(\d+)/.exec(info.db0 ?? "");
-      return {
-        i, ops, writeShare: total ? writes / total : 0, history: h,
-        keys: ks ? Number(ks[1]) : 0, expires: ks ? Number(ks[2]) : 0,
-        mem: Number(info.used_memory), memPeak: Number(info.used_memory_peak), maxmem: Number(info.maxmemory),
-        sockets: s.sockets, pooled: s.pooled, aof: Number(info.aof_current_size), rows: s.vfs.rowsWritten, wasm: s.wasmMemoryBytes,
-        uptime: s.aliveSeconds, instance: s.instance, restartedAt: v.restartedAt[i] ?? 0,
-        hits: Number(info.keyspace_hits), misses: Number(info.keyspace_misses), evicted: Number(info.evicted_keys), expired: Number(info.expired_keys),
-      };
+      v.prev[i] = { at, instance: s.instance, calls };
+      const ks = /keys=(\d+)/.exec(info.db0 ?? "");
+      // Reads each replica served since the last poll (it also runs every write it's sent; those aren't counted).
+      const snaps = new Map((s.replicaSnapshots ?? []).map((x) => [x.region, x]));
+      const replicas = (s.replicas ?? []).map((x) => {
+        const snap = snaps.get(x.region), key = `${i}/${x.region}`, prevCopy = v.copyPrev.get(key);
+        let reads = 0;
+        if (snap && !snap.down) {
+          const c = callsOf(snap.info);
+          if (prevCopy && prevCopy.instance === snap.instance) for (const [cmd, n] of Object.entries(c)) { const base = cmd.split("|")[0]; if (!WRITES.has(base) && !NOT_READS.has(base)) reads += (n - (prevCopy.calls[cmd] ?? 0)) / ((at - prevCopy.at) / 1000); }
+          v.copyPrev.set(key, { at, instance: snap.instance, calls: c });
+        }
+        r += Math.max(0, reads);
+        const colo = x.colo ?? snap?.colo ?? null;
+        return { region: x.region, state: x.state, lagMs: x.lagMs, colo, city: places[colo]?.city ?? null, reads: Math.round(Math.max(0, reads)) };
+      });
+      reads += r; writes += w; // r now includes what this shard's replicas served
+      return { i, ok: true, ops: Math.round(r + w), writeShare: r + w ? w / (r + w) : 0, keys: ks ? Number(ks[1]) : 0, mem: Number(info.used_memory), maxmem: Number(info.maxmemory), uptime: s.aliveSeconds, colo: s.colo, city: places[s.colo]?.city ?? null, restartedAt: v.restartedAt[i] ?? 0, replicas };
     });
-    const total = Object.values(mix).reduce((a, b) => a + b, 0);
-    v.mix = Object.entries(mix).sort((a, b) => b[1] - a[1]).slice(0, 6).map(([c, n]) => ({ cmd: c, share: n / total, write: WRITES.has(c.split("|")[0]) }));
+    const since = at - POLL_MS * 1.5, recent = (cmd) => median(samples.filter((x) => x.t >= since && x.cmd === cmd && !x.err).map((x) => x.ms));
+    v.history.push({ t: at, reads: Math.round(reads), writes: Math.round(writes), readMs: recent("GET"), writeMs: recent("SET") });
+    if (v.history.length > HISTORY) v.history.shift();
+    v.map = traffic(pulse);
     lastError = null; lastPoll = at;
   } catch (e) {
     if (name === db) lastError = e.message;
@@ -102,139 +143,155 @@ async function poll() {
     broadcast();
   }
 }
+const median = (xs) => (xs.length ? xs.sort((a, b) => a - b)[xs.length >> 1] : null);
 setInterval(poll, POLL_MS);
 
-// ---- latency probe: one connection, PING / GET / SET in turn, keys spread over every shard ----
+// ---- response time, measured from this computer: one GET or SET at a time over TCP ----
 let probe = null, probeBusy = false, probeN = 0;
 const samples = [];
 function connectProbe() {
   probe?.disconnect();
-  probe = new Redis({ host: HOST, port: PORT, username: db, password: PW, maxRetriesPerRequest: 0, enableOfflineQueue: false, retryStrategy: () => 500 });
+  probe = new Redis({ host: HOST, port: PORT, username: db, password: PW, maxRetriesPerRequest: 0, enableOfflineQueue: false, retryStrategy: () => 1000 });
   probe.on("error", () => {});
 }
 setInterval(async () => {
-  const c = probe;
-  if (probeBusy || c?.status !== "ready") return;
+  if (probeBusy || probe?.status !== "ready") return;
   probeBusy = true;
-  const n = probeN++, cmd = ["PING", "GET", "SET"][n % 3], key = `probe:${Math.floor(n / 3) % 97}`;
-  const shard = cmd === "PING" ? null : shardOf(key), t0 = performance.now();
-  try {
-    if (cmd === "PING") await c.ping(); else if (cmd === "GET") await c.get(key); else await c.set(key, String(n));
-    samples.push({ t: Date.now(), cmd, ms: performance.now() - t0, shard });
-  } catch (e) {
-    samples.push({ t: Date.now(), cmd, ms: performance.now() - t0, shard, err: e.message.slice(0, 90) });
-    event("lost", `Probe ${cmd}${shard === null ? "" : ` on shard ${shard}`} failed: ${e.message.slice(0, 90)}`);
-  }
-  keep(samples, PROBE_KEEP);
+  const n = probeN++, cmd = n % 2 ? "SET" : "GET", key = `vado-live:${Math.floor(n / 2) % 64}`, t0 = performance.now();
+  try { if (cmd === "GET") await probe.get(key); else await probe.set(key, String(n)); samples.push({ t: Date.now(), cmd, ms: performance.now() - t0 }); }
+  catch (e) { samples.push({ t: Date.now(), cmd, ms: performance.now() - t0, err: true }); }
+  while (samples.length && samples[0].t < Date.now() - 60_000) samples.shift();
   probeBusy = false;
 }, PROBE_MS);
 
-// ---- load, in a child process ----
-let load = null;
-function startLoad(conns, depth, mix) {
-  stopLoad(false);
-  const child = fork(new URL("./load.mjs", import.meta.url), [HOST, PORT, db, PW, conns, depth, mix, 100_000].map(String));
-  const l = { child, conns, depth, mix, ops: 0, errors: 0, lastError: null, since: Date.now() };
-  child.on("message", (m) => Object.assign(l, m));
-  child.on("exit", () => { if (load === l) load = null; });
-  load = l;
-  event("load", `Started load: ${conns} connections, ${depth}-deep pipelines, ${mix}`);
+// ---- test traffic: senders in Cloudflare regions, each writing 20,000 random keys over 4 connections ----
+let test = null;
+function startTest(level, from) {
+  stopTest(false);
+  const run = { level, from, since: Date.now(), stop: false };
+  test = run;
+  say("info", `Test traffic started: ${level}, from ${from === "everywhere" ? "everywhere" : REGIONS[from]}`);
+  const regions = from === "everywhere" ? Object.keys(REGIONS) : [from];
+  for (const region of regions) for (let i = 0; i < LEVELS[level]; i++) (async () => {
+    // Overwrite the same 20,000 keys each round, then read them back three times, like a cache. The
+    // keys stay the same so test traffic never fills the database.
+    const send = (extra = "") => api(`send?db=${encodeURIComponent(db)}&region=${region}&n=20000&batch=500&conns=4&prefix=test-${region}${i}-${extra}`);
+    while (!run.stop) {
+      try { await send(); for (let k = 0; k < 3 && !run.stop; k++) await send("&op=get"); }
+      catch { await new Promise((r) => setTimeout(r, 2000)); }
+    }
+  })();
 }
-function stopLoad(log = true) {
-  if (!load) return;
-  const { child } = load;
-  child.send("stop");
-  setTimeout(() => child.kill(), 3000).unref();
-  load = null;
-  if (log) event("load", "Stopped load");
-}
+function stopTest(log = true) { if (!test) return; test.stop = true; test = null; if (log) say("info", "Test traffic stopped"); }
 
-// ---- crashes ----
-let chaos = null;
-async function crash(i) {
-  view.crashAt.set(i, Date.now());
-  await api(`abort?db=${encodeURIComponent(db)}&shard=${i}`);
-  event("crash", `Crashed shard ${i}`);
-}
-function setChaos(on) {
-  clearInterval(chaos);
-  chaos = on ? setInterval(() => view.meta && crash(Math.floor(Math.random() * view.meta.shards)).catch((e) => event("lost", `Crash failed: ${e.message}`)), CHAOS_MS) : null;
-  event("crash", on ? `Crashing a random shard every ${CHAOS_MS / 1000} s` : "Stopped crashing shards");
-}
-
-// ---- console: one command at a time on its own connection ----
+// ---- commands from the page, on their own connection ----
 let cli = null;
-const NO_CONSOLE = new Set(["subscribe", "psubscribe", "ssubscribe", "monitor", "quit", "reset"]);
-async function runCommand(line) {
+const NOT_HERE = new Set(["subscribe", "psubscribe", "ssubscribe", "monitor", "quit", "reset", "multi", "watch"]);
+async function run(line) {
   const argv = [...line.matchAll(/"([^"]*)"|'([^']*)'|(\S+)/g)].map((m) => m[1] ?? m[2] ?? m[3]);
-  if (!argv.length) throw new Error("Type a command, such as GET mykey");
-  if (NO_CONSOLE.has(argv[0].toLowerCase())) throw new Error(`${argv[0].toUpperCase()} changes the connection's mode; run it from valkey-cli instead`);
+  if (!argv.length) throw new Error("Type a command, for example GET greeting");
+  if (NOT_HERE.has(argv[0].toLowerCase())) throw new Error(`${argv[0].toUpperCase()} needs a client that keeps its connection, such as valkey-cli`);
   if (!cli) { cli = new Redis({ host: HOST, port: PORT, username: db, password: PW, maxRetriesPerRequest: 0 }); cli.on("error", () => {}); }
   return await cli.call(argv[0], ...argv.slice(1));
 }
 
-async function switchDb(name, shards) {
-  await api(`db?db=${encodeURIComponent(name)}${shards ? `&shards=${shards}` : ""}`);
-  stopLoad(false); if (chaos) setChaos(false);
+async function watch(name) {
+  await api(`db?db=${encodeURIComponent(name)}`);
+  stopTest(false);
   db = name; view = fresh(); samples.length = 0;
   cli?.disconnect(); cli = null;
   connectProbe();
-  event("info", `Watching database ${name}`);
   poll();
 }
 
-// ---- snapshots to the page ----
+// ---- snapshots ----
 const clients = new Set();
-const snapshot = () => JSON.stringify({
-  at: lastPoll, now: Date.now(), error: lastError, target: { api: new URL(BASE).host, tcp: `${HOST}:${PORT}` },
-  db: view.meta ?? { name: db }, shards: view.shards, mix: view.mix,
-  probe: { status: probe?.status ?? "off", samples },
-  load: load && { conns: load.conns, depth: load.depth, mix: load.mix, ops: load.ops, errors: load.errors, lastError: load.lastError, since: load.since },
-  chaos: !!chaos, events: events.slice(0, 40),
-});
+function snapshot() {
+  const shards = view.shards, now = Date.now();
+  const ok = shards.filter((s) => s.ok);
+  const restarting = shards.filter((s) => !s.ok || now - (s.restartedAt ?? 0) < RESTARTING_MS).length;
+  const window = (cmd) => median(samples.filter((x) => x.cmd === cmd && !x.err).map((x) => x.ms));
+  return JSON.stringify({
+    at: lastPoll, now, error: lastError,
+    db: { name: db, shards: view.meta?.shards ?? 0 },
+    health: lastError ? "unreachable" : restarting ? "restarting" : shards.length ? "healthy" : "starting", restarting,
+    totals: { ops: ok.reduce((a, s) => a + s.ops, 0), keys: ok.reduce((a, s) => a + s.keys, 0), mem: ok.reduce((a, s) => a + s.mem, 0), maxmem: ok.reduce((a, s) => a + s.maxmem, 0) },
+    response: { read: window("GET"), write: window("SET"), failed: samples.filter((x) => x.err).length },
+    history: view.history, shards: shards.map(({ colo, ...s }) => s), map: view.map,
+    test: test && { level: test.level, from: test.from, since: test.since }, events: events.slice(0, 30),
+  });
+}
 function broadcast() { const msg = `data: ${snapshot()}\n\n`; for (const res of clients) res.write(msg); }
 
 const body = (req) => new Promise((res, rej) => { let s = ""; req.on("data", (d) => { s += d; if (s.length > 1e5) rej(new Error("request too large")); }); req.on("end", () => { try { res(s ? JSON.parse(s) : {}); } catch { rej(new Error("expected JSON")); } }); });
-const int = (v, lo, hi) => { const n = Number(v); if (!Number.isInteger(n) || n < lo || n > hi) throw new Error(`expected an integer from ${lo} to ${hi}`); return n; };
 const json = (res, code, obj) => { res.writeHead(code, { "content-type": "application/json" }); res.end(JSON.stringify(obj)); };
+const TYPES = { ".html": "text/html; charset=utf-8", ".js": "text/javascript", ".css": "text/css", ".svg": "image/svg+xml", ".json": "application/json", ".woff2": "font/woff2" };
 
 const routes = {
-  "GET /": async (req, res) => { res.writeHead(200, { "content-type": "text/html; charset=utf-8" }); res.end(await readFile(new URL("./index.html", import.meta.url))); },
-  "GET /slots.js": async (req, res) => { res.writeHead(200, { "content-type": "text/javascript" }); res.end(await readFile(new URL("../src/slots.js", import.meta.url))); },
   "GET /events": (req, res) => {
     res.writeHead(200, { "content-type": "text/event-stream", "cache-control": "no-cache", connection: "keep-alive" });
     res.write(`data: ${snapshot()}\n\n`);
     clients.add(res);
     req.on("close", () => clients.delete(res));
   },
-  "GET /dbs": async (req, res) => json(res, 200, await api("dbs")),
-  "POST /db": async (req, res) => {
-    const { name, shards } = await body(req);
-    if (typeof name !== "string" || !/^[a-z0-9][a-z0-9_-]{0,62}$/.test(name)) throw new Error("Database names are 1-63 characters of a-z 0-9 _ -, starting with a letter or digit");
-    await switchDb(name, shards ? int(shards, 1, 256) : undefined);
+  "GET /api/databases": async (req, res) => json(res, 200, (await api("dbs")).dbs.filter((d) => !d.name.startsWith("__")).map((d) => ({ name: d.name, shards: d.shards, spread: !!d.regions && d.regions.length > 1, replicated: !!d.replicas }))),
+  "GET /api/regions": (req, res) => json(res, 200, REGIONS),
+  "POST /api/create": async (req, res) => {
+    const { name, shards, place, replicas = false } = await body(req);
+    if (typeof name !== "string" || !/^[a-z0-9][a-z0-9_-]{0,62}$/.test(name)) throw new Error("Use 1-63 lowercase letters, digits, - or _, starting with a letter or digit");
+    if (![1, 4, 16, 64].includes(shards)) throw new Error("shards is 1, 4, 16 or 64");
+    if (place !== "world" && !REGIONS[place]) throw new Error("place is world or a region");
+    const { dbs } = await api("dbs");
+    if (dbs.some((d) => d.name === name)) throw new Error(`${name} already exists; pick it from the list instead`);
+    await api(`db?db=${encodeURIComponent(name)}&shards=${shards}&regions=${place}${replicas ? "&replicas=world" : ""}`);
+    await watch(name);
+    say("info", `Created ${name}: ${shards} shard${shards === 1 ? "" : "s"}, ${place === "world" ? "spread around the world" : `in ${REGIONS[place]}`}${replicas ? ", with read replicas in every region" : ""}`);
     json(res, 200, { ok: true });
   },
-  "POST /load": async (req, res) => {
-    const { conns, depth, mix } = await body(req);
-    if (!["reads", "writes", "both"].includes(mix)) throw new Error("mix is reads, writes or both");
-    startLoad(int(conns, 1, 512), int(depth, 1, 512), mix);
+  "POST /api/watch": async (req, res) => {
+    const { name } = await body(req);
+    if (typeof name !== "string" || !/^[a-z0-9][a-z0-9_-]{0,62}$/.test(name)) throw new Error("Pick a database from the list");
+    await watch(name); json(res, 200, { ok: true });
+  },
+  "POST /api/test": async (req, res) => {
+    const { level, from = "everywhere" } = await body(req);
+    if (level === null) stopTest();
+    else if (LEVELS[level] && (from === "everywhere" || REGIONS[from])) startTest(level, from);
+    else throw new Error("level is light, medium or heavy, and from is everywhere or a region");
     json(res, 200, { ok: true });
   },
-  "POST /stop": async (req, res) => { stopLoad(); json(res, 200, { ok: true }); },
-  "POST /crash": async (req, res) => { const { shard } = await body(req); await crash(int(shard, 0, (view.meta?.shards ?? 1) - 1)); json(res, 200, { ok: true }); },
-  "POST /chaos": async (req, res) => { const { on } = await body(req); setChaos(!!on); json(res, 200, { ok: true }); },
-  "POST /cmd": async (req, res) => {
+  "POST /api/restart": async (req, res) => {
+    const { shard } = await body(req), n = view.meta?.shards ?? 0;
+    if (!Number.isInteger(shard) || shard < 0 || shard >= n) throw new Error(`shard is 0 to ${n - 1}`);
+    view.askedAt.set(shard, Date.now());
+    await api(`abort?db=${encodeURIComponent(db)}&shard=${shard}`);
+    say("info", `Restarting shard ${shard}`);
+    json(res, 200, { ok: true });
+  },
+  "POST /api/run": async (req, res) => {
     const { line } = await body(req);
-    try { json(res, 200, { reply: await runCommand(String(line ?? "")) }); } catch (e) { json(res, 200, { error: e.message }); }
+    const argv = String(line ?? "").trim().split(/\s+/);
+    const shard = argv[1] && view.meta ? shardOfSlot(slotOf(Buffer.from(argv[1])), view.meta.shards) : null;
+    try { json(res, 200, { reply: await run(String(line ?? "")), shard }); } catch (e) { json(res, 200, { error: e.message }); }
   },
 };
 
+async function file(res, path) {
+  const name = path === "/" ? "index.html" : path.slice(1);
+  if (name.includes("..")) return json(res, 404, { error: "not found" });
+  try {
+    const data = await readFile(new URL(`./dist/${name}`, import.meta.url));
+    res.writeHead(200, { "content-type": TYPES[name.slice(name.lastIndexOf("."))] ?? "application/octet-stream" });
+    res.end(data);
+  } catch { json(res, 404, { error: path === "/" ? "Build the page first: npm --prefix ui run build" : "not found" }); }
+}
+
 http.createServer(async (req, res) => {
-  const route = routes[`${req.method} ${new URL(req.url, "http://x").pathname}`];
-  if (!route) return json(res, 404, { error: "not found" });
-  try { await route(req, res); } catch (e) { json(res, 400, { error: e.message }); }
+  const path = new URL(req.url, "http://x").pathname, route = routes[`${req.method} ${path}`];
+  try { if (route) await route(req, res); else if (req.method === "GET") await file(res, path); else json(res, 404, { error: "not found" }); }
+  catch (e) { json(res, 400, { error: e.message }); }
 }).listen(UI_PORT, "127.0.0.1", () => {
-  console.log(`vado live: http://127.0.0.1:${UI_PORT}  (bench API ${BASE}, TCP ${HOST}:${PORT}, database ${db})`);
+  console.log(`vado live: http://127.0.0.1:${UI_PORT}  (database ${db})`);
   connectProbe();
   poll();
 });

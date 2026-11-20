@@ -7,3 +7,5 @@ config.capnp
 .valkey-password
 private/
 results/
+ui/node_modules/
+ui/dist/
