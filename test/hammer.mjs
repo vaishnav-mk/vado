@@ -29,7 +29,7 @@ const until = (ms) => { const end = Date.now() + ms; return () => Date.now() < e
 // Setup and final reads retry: under chaos a single LOST shouldn't fail a whole check.
 const retry = async (f, n = 40) => { for (let i = 0; ; i++) { try { return await f(); } catch (e) { if (i >= n) throw e; await sleep(250); } } };
 function check(name, ok, detail) {
-  results.push({ name, ok, ...detail });
+  results.push({ ...detail, name, passed: ok }); // details may have their own `ok` (a count)
   console.log(`${ok ? "PASS" : "FAIL"} ${name} ${JSON.stringify(detail)}`);
 }
 
@@ -267,6 +267,6 @@ await chaosTask;
 // some other error (such as the runtime's reason for the reset).
 const unexpected = Object.keys(errors).filter((k) => !/shard connection lost|Connection is closed|ECONNRESET|max retries per request/.test(k));
 check("failures are reported as LOST", unexpected.length === 0, { unexpected });
-const failed = results.filter((r) => !r.ok);
+const failed = results.filter((r) => !r.passed);
 console.log(JSON.stringify({ summary: { checks: results.length, failed: failed.length, chaosAborts: chaosRuns, seconds: Math.round((Date.now() - t0) / 1000), errors } }));
 process.exit(failed.length ? 1 : 0);
