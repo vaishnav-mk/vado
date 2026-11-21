@@ -115,12 +115,16 @@ export class ValkeyRewriter extends DurableObject {
       const [reply] = decodeAll(await host.execBatch(command(["BGREWRITEAOF"]), 1));
       if (reply?.err) throw new Error(reply.err);
       const { base } = aofFiles(host), size = host.fileSize(base);
+      // Socket writes wait for this object's storage writes (the files) to be confirmed. Wait here, and
+      // below hold the connection until the shard closes it, so nothing still queued is dropped.
+      await this.ctx.storage.sync();
       streaming = true;
       await writer.write(line({ size }));
       let sum = FNV0;
       for (let pos = 0; pos < size; pos += VFS_CHUNK) { const c = host.readFile(base, pos, VFS_CHUNK); sum = fnv(sum, c); await writer.write(c); }
       await writer.write(line({ sum }));
-      await writer.close();
+      while (!(await reader.read()).done); // the shard closes once it has checked the base
+      await writer.close().catch(() => {});
     } catch (e) {
       if (streaming) await writer.abort(e).catch(() => {});
       else await writer.write(line({ error: [e.message, ...logs.slice(-4)].join(" | ") })).then(() => writer.close()).catch(() => {});
