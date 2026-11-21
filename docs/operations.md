@@ -71,8 +71,8 @@ activity and bench `pulse` returns nothing) and `SENDER` (needed only by bench `
 
 AOF rewrite thresholds (`AOF_REWRITE_MIN`, `AOF_REWRITE_IDLE_MS`, `AOF_REWRITE_CAP`), rewriter timeout and fallback
 (`AOF_HELPER_TIMEOUT_MS`, `AOF_HELPER_RETRY_MS`), group commit (`SHARD_COMMITS`), shard classes (`SHARD_CLASSES`),
-storage (`VFS_CHUNK`, `VFS_TAIL`, `VFS_SWEEP_ROWS`), replication (`REPL_*`, `READ_YOUR_WRITES_MS`) and the other
-tunables are in `src/constants.js`.
+storage (`VFS_CHUNK`, `VFS_TAIL`, `VFS_SWEEP_BYTES`, `VFS_SWEEP_MS`), replication (`REPL_*`, `READ_YOUR_WRITES_MS`)
+and the other tunables are in `src/constants.js`.
 
 ## Create a database with placement and replicas
 

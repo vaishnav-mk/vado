@@ -15,11 +15,12 @@ object's SQLite (`src/vfs.js`):
   row instead of rewriting the file. A rewrite renames its output twice, so before keys every rewrite wrote the base
   three times: an inline rewrite of a 35.6 MB base went from 2.5-3.2 s to 1.4-1.9 s with them. Files from before
   keys have none recorded and use their path.
-- Deleting a file drops its entry and puts its key in `vfs_trash`. The host then deletes the rows behind it 2 per
-  storage commit, in the background (`VFS_SWEEP_ROWS`), and picks up again after a restart. Every reply waits for
-  the commit before it, and freeing a big file in one commit was slow: deleting a 32 MB file from the middle of the
-  database took 455-573 ms, against 5-22 ms from the end, and made the swap at the end of a rewrite take 585-804 ms.
-  With the sweep the swap takes 11-23 ms.
+- Deleting a file drops its entry and puts its key in `vfs_trash`. The rows behind it are deleted in the
+  background: every 50 ms (`VFS_SWEEP_MS`) the host deletes about 2 MB of them (`VFS_SWEEP_BYTES`, at least one
+  row), without a storage sync of its own, so the deletes go out with the shard's own commits. It picks up again
+  after a restart. Every reply waits for the commit before it, and freeing a big file in one commit was slow:
+  deleting a 32 MB file from the middle of the database took 455-573 ms, against 5-22 ms from the end, and made the
+  swap at the end of a rewrite take 585-804 ms. With the deletes moved out of the swap, it took 11-23 ms.
 
 A Durable Object holds every outgoing message until its storage writes are committed. So a reply leaves only after
 the write behind it is durable, and a batch of pipelined writes shares one commit.
