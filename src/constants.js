@@ -60,6 +60,24 @@ export const VFS_CHUNK = 1 << 20;
  */
 export const VFS_TAIL = 16 << 10;
 
+// ---- read replicas (src/replication.js) ----
+
+/** Write bytes a replica may be behind (queued during its copy, or unacknowledged on its socket) before it is dropped and copied again. */
+export const REPL_BACKLOG = 32 << 20;
+/** How often a primary checks its replicas: restarts failed ones, and sends a marker that measures how far behind each one is. */
+export const REPL_TICK_MS = 2_000;
+/** A replica that fails waits this long before it is copied again. */
+export const REPL_RETRY_MS = 5_000;
+/** A marker unanswered this long means the replica is stuck; it is dropped and copied again. */
+export const REPL_STUCK_MS = 60_000;
+/** After a connection writes to a shard, its reads of that shard go to the primary for this long, so it reads its own writes. */
+export const READ_YOUR_WRITES_MS = 2_000;
+
+// ---- live view (src/index.js, src/pulse.js) ----
+
+/** How often each isolate reports its open connections to the Pulse object, when a PULSE binding exists. */
+export const PULSE_MS = 2_000;
+
 // ---- WebSocket ingress (src/index.js) ----
 
 /** WebSockets can't push back on the sender, so a client that outruns its router by this much is disconnected. */

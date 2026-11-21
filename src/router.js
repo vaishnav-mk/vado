@@ -5,7 +5,7 @@ import { arrayOf, bulk, command, concat, decode, elements, error, frameEnd, inte
 import { keyIndexes } from "./commands.js";
 import { shardOfSlot, slotOf } from "./slots.js";
 import { DB_NAME, DB_NAME_RULE } from "./catalog.js";
-import { FAN_OUT, GREETING_MS, IDLE_MS, ISOLATE_HIGH, ISOLATE_LOW, MAX_REQUEST, MAX_UNAUTHED, PROBE_AFTER_MS, ROUTER_HIGH_WATER, ROUTER_LOW_WATER, RPC_BATCH_BYTES, SOCKET_BUDGET } from "./constants.js";
+import { FAN_OUT, GREETING_MS, IDLE_MS, ISOLATE_HIGH, ISOLATE_LOW, MAX_REQUEST, MAX_UNAUTHED, PROBE_AFTER_MS, READ_YOUR_WRITES_MS, REPL_RETRY_MS, ROUTER_HIGH_WATER, ROUTER_LOW_WATER, RPC_BATCH_BYTES, SOCKET_BUDGET } from "./constants.js";
 
 const enc = new TextEncoder();
 const OK = simple("OK");
@@ -20,6 +20,8 @@ const HELLO3 = command(["HELLO", "3"]);
 // Sockets this isolate holds to shards. The runtime drops sockets past a few hundred per isolate,
 // so beyond the budget new upstreams carry stateless batches over RPC instead (RpcUpstream).
 let socketsOpen = 0;
+// A replica that just failed a read (not ready yet, or reset) isn't tried again for a while, isolate-wide.
+const replicaDown = new Map(); // "<db>/<shard>" -> until (ms)
 let socketBudget = SOCKET_BUDGET;
 export const setSocketBudget = (n) => { socketBudget = n; };
 let isolateBytes = 0;
@@ -274,12 +276,20 @@ export class Router {
   #onHead = new Map(); // reply slot -> wake, for RPC-path commands waiting on every earlier reply
   #idleMs;
 
-  constructor(socket, { db, table, shard, pubsub, password, open, idleMs = IDLE_MS }) {
+  // Read-your-writes: while a write to a shard is in flight, and for READ_YOUR_WRITES_MS after its
+  // reply, this connection reads that shard from its primary, not a replica that may not have it yet.
+  #writing = new Map(); // shard -> writes in flight
+  #wrote = new Map(); // shard -> when the last write's reply arrived
+  #writeStart(i) { this.#writing.set(i, (this.#writing.get(i) ?? 0) + 1); }
+  #writeDone(i) { this.#writing.set(i, this.#writing.get(i) - 1); this.#wrote.set(i, Date.now()); }
+
+  constructor(socket, { db, table, shard, pubsub, replica, password, open, idleMs = IDLE_MS }) {
     this.socket = socket;
-    this.db = db; // { name, created, shards }
+    this.db = db; // { name, created, shards, regions, replicas }
     this.table = table;
     this.shardStub = shard; // (i) => stub
     this.pubsubStub = pubsub; // () => stub
+    this.replicaStub = replica; // (i) => stub of a nearby replica of shard i, or null
     this.#password = password || undefined;
     this.#open = open;
     this.#authed = !this.#password;
@@ -376,7 +386,7 @@ export class Router {
   #up(i, needsSocket = false) {
     let up = this.#ups.get(i);
     if (up && !up.dead && (!needsSocket || up instanceof Upstream)) return up;
-    const stub = i === "pubsub" ? this.pubsubStub() : this.shardStub(i);
+    const stub = i === "pubsub" ? this.pubsubStub() : typeof i === "string" ? this.replicaStub(Number(i.slice(1))) : this.shardStub(i);
     const socket = needsSocket || i === "pubsub" || socketsOpen < socketBudget;
     up = socket ? new Upstream(this, i, stub) : new RpcUpstream(this, i, stub);
     this.#ups.set(i, up);
@@ -393,12 +403,26 @@ export class Router {
   #forward(i, raw, retryable = false) {
     const s = this.#slot();
     // Read-only, non-blocking commands are retried once on a fresh upstream if the shard was
-    // reset under them; anything else gets LOST (it may have run).
+    // reset under them; anything else gets LOST (it may have run). Reads may go to a nearby replica,
+    // and are retried on the primary if it fails.
     const copy = retryable ? raw.slice() : null;
-    this.#up(i).send(raw, (f) => {
-      if (f === LOST && copy) return this.#up(i).send(copy, (g) => this.#resolve(s, g));
+    const from = retryable ? this.#readFrom(i) : (this.#writeStart(i), i);
+    this.#up(from).send(raw, (f) => {
+      if (!retryable) this.#writeDone(i);
+      if (f === LOST && copy) {
+        if (from !== i) replicaDown.set(`${this.db.name}/${i}`, Date.now() + REPL_RETRY_MS);
+        return this.#up(i).send(copy, (g) => this.#resolve(s, g));
+      }
       this.#resolve(s, f);
     });
+  }
+  // Where a read of shard i goes: "r<i>" (a nearby replica) or i (the primary).
+  #readFrom(i) {
+    if (!this.db.replicas || this.#multi || this.#watch !== null) return i;
+    const now = Date.now();
+    if (this.#writing.get(i) > 0 || now - (this.#wrote.get(i) ?? -Infinity) < READ_YOUR_WRITES_MS || (replicaDown.get(`${this.db.name}/${i}`) ?? 0) > now) return i;
+    const key = `r${i}`;
+    return this.#ups.has(key) || this.replicaStub(i) ? key : i;
   }
 
   // ---- routing ----
@@ -541,7 +565,9 @@ export class Router {
     const s = this.#slot(), groups = this.#groups(args, 2);
     let left = groups.size, failed = null;
     for (const [g, idx] of groups) {
+      this.#writeStart(g);
       this.#up(g).send(command(["MSET", ...idx.flatMap((i) => [args[i], args[i + 1]])]), (f) => {
+        this.#writeDone(g);
         if (f[0] === 45) failed ??= f;
         if (--left === 0) this.#resolve(s, failed ?? OK);
       });
@@ -552,7 +578,10 @@ export class Router {
     const keys = argv.slice(1), s = this.#slot(), groups = this.#groups(keys);
     let left = groups.size, sum = 0, failed = null;
     for (const [g, idx] of groups) {
+      const writes = name !== "exists";
+      if (writes) this.#writeStart(g);
       this.#up(g).send(command([name.toUpperCase(), ...idx.map((i) => keys[i])]), (f) => {
+        if (writes) this.#writeDone(g);
         if (f[0] === 45) failed ??= f;
         else sum += decode(f)[0];
         if (--left === 0) this.#resolve(s, failed ?? integer(sum));
@@ -592,9 +621,10 @@ export class Router {
     if (m.failed) return this.#reply(error("EXECABORT Transaction discarded because of previous errors."));
     if (broken) return this.#reply(this.proto === 3 ? NULL3 : NULL_ARRAY);
     const s = this.#slot(), up = m.watched ? watchUp : this.#up(m.shard ?? 0);
+    this.#writeStart(up.index);
     up.send(MULTI, noop);
     for (const c of m.cmds) up.send(c, noop);
-    up.send(EXEC, (f) => this.#resolve(s, f));
+    up.send(EXEC, (f) => { this.#writeDone(up.index); this.#resolve(s, f); });
   }
 
   #discard() {
@@ -689,7 +719,7 @@ export class Router {
       this.#ups.clear();
       this.#clearWatch();
       this.endPassthrough(false);
-      Object.assign(this, { db: next.db, shardStub: next.shard, pubsubStub: next.pubsub });
+      Object.assign(this, { db: next.db, shardStub: next.shard, pubsubStub: next.pubsub, replicaStub: next.replica });
       this.#authed = true;
       then();
     }, (e) => this.#reply(error(`ERR ${e.message}`))).finally(() => { this.#pending = null; });

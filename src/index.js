@@ -5,6 +5,8 @@ import { bench } from "./bench.js";
 import { IDLE_MS, PULSE_MS, WS_MAX_QUEUED } from "./constants.js";
 import { coloOf } from "./pulse.js";
 import { HINTS } from "./catalog.js";
+import { REGION_OF } from "./regions.js";
+import { replicaName } from "./replication.js";
 
 export { ValkeyShard } from "./shard.js";
 export { Catalog } from "./catalog.js";
@@ -23,10 +25,26 @@ export const shardName = (db, i) => `${db.name}.${db.created.toString(36)}.${i}`
 export const shardStub = (env, db, i) =>
   env.SHARD.getByName(shardName(db, i), objectOptions(env, typeof i === "number" && db.regions ? db.regions[i % db.regions.length] : env.LOCATION_HINT));
 
-export function database(env, name, shards, regions) {
+// Where shard i's primary lives, and which replica (if any) a router here should read it from: one in
+// this router's region, else a neighbouring one, unless the primary is at least as close.
+export const homeOf = (env, db, i) => (db.regions ? db.regions[i % db.regions.length] : env.LOCATION_HINT);
+const NEAR = { wnam: ["enam"], enam: ["wnam"], sam: ["enam", "wnam"], weur: ["eeur"], eeur: ["weur"], me: ["eeur", "weur"], afr: ["weur", "eeur"], apac: ["oc"], oc: ["apac"] };
+function replicaRegion(env, db, i) {
+  const mine = db.replicas && REGION_OF.get(live.colo);
+  if (!mine) return null;
+  const home = homeOf(env, db, i);
+  for (const r of [mine, ...NEAR[mine]]) { if (r === home) return null; if (db.replicas.includes(r)) return r; }
+  return null;
+}
+export const replicaStub = (env, db, i, region) => env.SHARD.getByName(replicaName(shardName(db, i), region), objectOptions(env, region));
+/** Tell every primary shard of a replicated database where to keep its replicas (idempotent). */
+export const configureReplicas = (env, db) =>
+  Promise.all(Array.from({ length: db.shards }, (_, i) => shardStub(env, db, i).replicate(db.replicas.filter((r) => r !== homeOf(env, db, i)))));
+
+export function database(env, name, shards, regions, replicas) {
   let db = dbs.get(name);
   if (!db) {
-    db = env.CATALOG.getByName("catalog").get(name, shards, regions);
+    db = env.CATALOG.getByName("catalog").get(name, shards, regions, replicas);
     db.catch(() => dbs.delete(name));
     dbs.set(name, db);
   }
@@ -42,7 +60,10 @@ function commands(env) {
   return table;
 }
 
-const handles = (env, db) => ({ db, shard: (i) => shardStub(env, db, i), pubsub: () => shardStub(env, db, "pubsub") });
+const handles = (env, db) => ({
+  db, shard: (i) => shardStub(env, db, i), pubsub: () => shardStub(env, db, "pubsub"),
+  replica: (i) => { const r = replicaRegion(env, db, i); return r && replicaStub(env, db, i, r); },
+});
 
 // ---- live activity for ui/, reported to the Pulse object when a PULSE binding exists ----
 // Isolate-wide, so one report covers every connection here. Each connection flushes from its own

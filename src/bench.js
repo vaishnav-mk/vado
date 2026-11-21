@@ -1,7 +1,7 @@
 // Tests and limit probes that run inside Cloudflare. Clients speak RESP over TCP sockets:
 //   via=router (default)  service binding connect("<db>:6379") -> TCP Worker -> Router -> shards
 //   via=shard             one shard's DO connect() directly (shard=<i>), no router
-import { database, shardStub } from "./index.js";
+import { configureReplicas, database, homeOf, replicaStub, shardStub } from "./index.js";
 import Redis from "ioredis";
 import { bindingConnector } from "./client.js";
 import { sameSecret } from "./router.js";
@@ -81,9 +81,12 @@ const allShards = async (env, name, fn) => { const db = await database(env, name
 
 const tests = {
   // regions=world spreads a new database's shards over WORLD; regions=a,b,c over those hints.
+  // replicas=world (or a,b,c) keeps a read replica of every shard in each of those regions.
   async db(env, q) {
     const list = (v) => (v === "world" ? WORLD : v ? v.split(",") : undefined);
-    return { db: await database(env, q.get("db"), q.get("shards") ? Number(q.get("shards")) : undefined, list(q.get("regions"))) };
+    const db = await database(env, q.get("db"), q.get("shards") ? Number(q.get("shards")) : undefined, list(q.get("regions")), list(q.get("replicas")));
+    if (db.replicas) await configureReplicas(env, db);
+    return { db };
   },
 
   // Run a test (default throughput) from a Sender object in `region`, so its traffic enters Cloudflare there.
@@ -100,8 +103,9 @@ const tests = {
     const db = await database(env, q.get("db"));
     const which = q.get("shard") ?? "all";
     const idx = which === "all" ? Array.from({ length: db.shards }, (_, i) => i) : [Number(which)];
-    await Promise.all(idx.map((i) => shardStub(env, db, i).abort().catch(() => {})));
-    return { aborted: idx };
+    const replica = q.get("replica"); // a region: abort that region's replica of each shard instead
+    await Promise.all(idx.map((i) => (replica ? replicaStub(env, db, i, replica) : shardStub(env, db, i)).abort().catch(() => {})));
+    return { aborted: idx, ...(replica ? { replica } : {}) };
   },
 
   // Every shard's stats with Valkey's own INFO counters, for the live view in ui/. A shard that can't
@@ -109,7 +113,11 @@ const tests = {
   async shards(env, q) {
     const db = await database(env, q.get("db"));
     const one = (stub) => stub.snapshot().catch((e) => ({ down: e.message }));
-    const shards = await Promise.all(Array.from({ length: db.shards }, (_, i) => one(shardStub(env, db, i))));
+    const shards = await Promise.all(Array.from({ length: db.shards }, async (_, i) => {
+      const regions = db.replicas ? db.replicas.filter((r) => r !== homeOf(env, db, i)) : [];
+      const [primary, ...copies] = await Promise.all([one(shardStub(env, db, i)), ...regions.map((r) => one(replicaStub(env, db, i, r)))]);
+      return { ...primary, replicaSnapshots: copies.map((c, k) => ({ region: regions[k], ...c })) };
+    }));
     return { db, shards };
   },
 
@@ -120,6 +128,23 @@ const tests = {
 
   async dbs(env) {
     return { dbs: await env.CATALOG.getByName("catalog").list() };
+  },
+
+  // Read-your-writes on one connection: SET then GET the same key, n times. Every GET must see its SET.
+  async ryw(env, q) {
+    const n = Number(q.get("n") ?? 200), tag = q.get("prefix") ?? "ryw", c = await open(env, q);
+    // A SET that failed (LOST: may or may not have run) owes nothing to the next read, so it's counted apart.
+    let stale = 0, failedWrites = 0;
+    const samples = [];
+    for (let i = 0; i < n; i++) {
+      const k = `${tag}:${i % 20}`, v = `${tag}-${i}`, t0 = Date.now();
+      const [set] = await c.call(["SET", k, v]);
+      const t1 = Date.now(), [got] = await c.call(["GET", k]);
+      if (set !== "OK") failedWrites++;
+      else if (got !== v) { stale++; if (samples.length < 5) samples.push({ i, k, want: v, got, setMs: t1 - t0, getMs: Date.now() - t1 }); }
+    }
+    c.close();
+    return { n, stale, failedWrites, samples };
   },
 
   async stats(env, q) {
@@ -144,20 +169,20 @@ const tests = {
   // Pipelined SETs across `conns` connections, keys spread over every slot; checks every reply.
   async throughput(env, q) {
     const n = Number(q.get("n") ?? 100000), batch = Number(q.get("batch") ?? 1000), conns = Number(q.get("conns") ?? 1);
-    const size = Number(q.get("value") ?? 1), v = "v".repeat(size);
+    const size = Number(q.get("value") ?? 1), v = "v".repeat(size), get = q.get("op") === "get"; // op=get reads the same keys back
     const cs = await Promise.all(Array.from({ length: conns }, () => open(env, q)));
     await Promise.all(cs.map((c) => c.call(["PING"])));
-    let errors = 0, firstError = null;
+    let errors = 0, firstError = null, hits = 0;
     const t0 = performance.now();
     await Promise.all(cs.map(async (c, ci) => {
       for (let i = 0; i < n / conns; i += batch) {
-        const rs = await c.call(...Array.from({ length: batch }, (_, k) => ["SET", `${q.get("prefix") ?? "t"}${ci}:${i + k}`, v]));
-        for (const r of rs) if (r !== "OK") { errors++; firstError ??= r; }
+        const rs = await c.call(...Array.from({ length: batch }, (_, k) => (get ? ["GET", `${q.get("prefix") ?? "t"}${ci}:${i + k}`] : ["SET", `${q.get("prefix") ?? "t"}${ci}:${i + k}`, v])));
+        for (const r of rs) if (get ? r?.err : r !== "OK") { errors++; firstError ??= r; } else if (get && r === v) hits++;
       }
     }));
     const ms = performance.now() - t0;
     cs.forEach((c) => c.close());
-    return { n, batch, conns, valueBytes: size, ms, opsPerSec: Math.round((n / ms) * 1000), errors, firstError };
+    return { n, batch, conns, valueBytes: size, ms, opsPerSec: Math.round((n / ms) * 1000), errors, firstError, ...(get ? { hits } : {}) };
   },
 
   async conns(env, q) {

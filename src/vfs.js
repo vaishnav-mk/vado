@@ -17,6 +17,8 @@ const FT = { CHAR: 2, DIR: 3, FILE: 4 };
 const O = { CREAT: 1, DIRECTORY: 2, EXCL: 4, TRUNC: 8 };
 const FD_APPEND = 1;
 
+const concatBytes = (chunks, total) => { const out = new Uint8Array(total); let o = 0; for (const c of chunks) { out.set(c, o); o += c.length; } return out; };
+
 export class Vfs {
   #sql;
   #mem;
@@ -25,6 +27,7 @@ export class Vfs {
   #nextFd = PREOPEN_FD + 1;
   #dec = new TextDecoder();
   stats = { writes: 0, writeBytes: 0, reads: 0, readBytes: 0, rowsWritten: 0 };
+  onAppend = null; // (bytes) => void, for each append to the AOF's incr file: the replication stream
 
   constructor(sql, memory) {
     this.#sql = sql;
@@ -407,9 +410,24 @@ export class Vfs {
     } else {
       for (const c of chunks) this.#append(n, c, false);
       if (f.append) this.#flush(n); // the AOF: durable before Valkey's reply goes out
+      // The AOF incr file is only ever appended to; Valkey opens it without O_APPEND under WASI.
+      if (this.onAppend && n.path.endsWith(".incr.aof")) this.onAppend(chunks.length === 1 ? chunks[0].slice() : concatBytes(chunks, total));
     }
     f.pos = pos + total;
     return E.OK;
+  }
+
+  /** Bytes [pos, pos + len) of the file at `path` (relative to the root), or null if it doesn't exist. */
+  read(path, pos, len) {
+    const n = this.#node(path);
+    if (!n) return null;
+    const dst = new Uint8Array(Math.max(0, Math.min(len, n.size - pos)));
+    this.#readAt(n, pos, dst);
+    return dst;
+  }
+
+  size(path) {
+    return this.#node(path)?.size ?? null;
   }
 
   listing() {

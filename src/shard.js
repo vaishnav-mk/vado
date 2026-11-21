@@ -4,14 +4,16 @@ import valkeyWasm from "../vendor/valkey.wasm";
 import { ValkeyHost } from "./valkey-host.js";
 import { command, concat, decodeAll } from "./resp.js";
 import { coloOf } from "./pulse.js";
+import { Replicator } from "./replication.js";
 
 // Valkey's own config. appendfsync always + the write-through Vfs: a reply leaves only after the
 // AOF bytes behind it are in SQLite (the output gate holds it until then).
-const valkeyArgs = (env) => [
+const valkeyArgs = (env, replica) => [
   "--port", "6379", "--bind", "127.0.0.1", "--protected-mode", "no", "--daemonize", "no",
   "--io-threads", "1", "--logfile", "", "--loglevel", env.VALKEY_LOGLEVEL || "warning",
   "--dir", "/data", "--save", "",
-  "--appendonly", "yes", "--appendfsync", "always", "--appenddirname", "aof",
+  // A replica keeps its data in memory only: its primary copies it again after a reset.
+  ...(replica ? ["--appendonly", "no"] : ["--appendonly", "yes", "--appendfsync", "always", "--appenddirname", "aof"]),
   "--aof-use-rdb-preamble", "yes", "--aof-timestamp-enabled", "no",
   "--auto-aof-rewrite-percentage", "100", "--auto-aof-rewrite-min-size", env.VALKEY_AOF_REWRITE_MIN || "8mb",
   "--maxmemory", env.VALKEY_MAXMEMORY || "64mb", "--maxmemory-policy", env.VALKEY_MAXMEMORY_POLICY || "noeviction",
@@ -26,15 +28,42 @@ export class ValkeyShard extends DurableObject {
   #instance = crypto.randomUUID();
   #colo; // where this object runs, learned on the first stats() (null until then, or offline)
 
+  #replica; // true for a read replica (named <primary>.r.<region>)
+  #ready = false; // a replica serves reads only once its primary's copy has fully arrived
+  #repl = null; // a primary's Replicator
+
   constructor(ctx, env) {
     super(ctx, env);
-    this.#host = new ValkeyHost(valkeyWasm, ctx.storage.sql, { args: valkeyArgs(env) });
+    this.#replica = /\.r\.[a-z-]+$/.test(ctx.id.name ?? "");
+    this.#host = new ValkeyHost(valkeyWasm, ctx.storage.sql, { args: valkeyArgs(env, this.#replica) });
+    if (!this.#replica) this.#repl = new Replicator(ctx, env, this.#host, ctx.id.name);
+  }
+
+  /** Primary: keep read replicas in these regions (Durable Object location hints). */
+  replicate(regions) {
+    if (this.#replica) throw new Error("a replica can't have replicas");
+    this.#repl.configure(regions);
+  }
+
+  /** Replica: its primary's copy has arrived; serve reads. Returns where this replica runs. */
+  async replicaReady() {
+    this.#ready = true;
+    return await coloOf().catch(() => null);
+  }
+
+  async alarm() {
+    await this.#repl?.tick();
   }
 
   // TCP: one connection = one Valkey client. Routers dial "router:6379" and get this instance's id
   // as the first frame, so they know exactly which instance accepted the socket (see Upstream.check).
   async connect(socket) {
     const { localAddress } = await socket.opened;
+    if (this.#replica) {
+      // The primary's stream starts a fresh copy, so stop serving reads until it has arrived.
+      if (localAddress?.startsWith("repl")) { this.#ready = false; return await this.#host.serve(socket); }
+      if (!this.#ready) return await socket.close(); // the router reads from the primary instead
+    }
     await this.#host.serve(socket, localAddress?.startsWith("router") ? `+${this.#instance}\r\n` : null);
   }
 
@@ -46,6 +75,7 @@ export class ValkeyShard extends DurableObject {
   /** The router's RPC mode: `count` raw RESP requests in, their raw replies out (pooled client).
    *  Without `count` (an older router mid-deploy) it falls back to a throwaway client. */
   async execRaw(bytes, count, proto = 2) {
+    if (this.#replica && !this.#ready) throw new Error("replica not ready");
     return count ? await this.#host.execBatch(bytes, count, proto) : await this.#host.exec(bytes);
   }
 
@@ -76,6 +106,7 @@ export class ValkeyShard extends DurableObject {
     if (this.#colo === undefined) { this.#colo = null; coloOf().then((c) => { this.#colo = c; }, () => {}); }
     return {
       ...this.#host.stats(), instance: this.#instance, colo: this.#colo, aliveSeconds: (Date.now() - this.#bornAt) / 1000, files: this.#host.files(),
+      role: this.#replica ? "replica" : "primary", ...(this.#replica ? { ready: this.#ready } : { replicas: this.#repl.status() }),
     };
   }
 }

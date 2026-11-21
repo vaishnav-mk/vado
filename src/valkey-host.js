@@ -304,4 +304,7 @@ export class ValkeyHost {
   }
 
   files() { return this.#vfs.listing(); }
+  readFile(path, pos, len) { return this.#vfs.read(path, pos, len); }
+  fileSize(path) { return this.#vfs.size(path); }
+  set onAppend(f) { this.#vfs.onAppend = f; }
 }
