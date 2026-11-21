@@ -22,7 +22,9 @@
  * wasi-libc's missing fork. */
 #define fork() (-1)
 #define wait3(a, b, c) (-1)
-#define waitpid(a, b, c) (-1)
+/* A rewrite the host runs (patches/0004) shows as an AOF child that never exits by
+ * itself: waitpid() reports no exited child, and only rk_rewrite_done() ends it. */
+#define waitpid(a, b, c) (0)
 
 /* Background I/O threads and io-threads are compiled out; bio jobs run inline
  * (see stubs.c bioInit override guard). io_threads_num defaults to 1. */
@@ -62,6 +64,7 @@ int getrlimit(int resource, struct rlimit *rlim);
 #define __NEED_uid_t
 #include <bits/alltypes.h>
 #include <signal.h>   /* SIG* constants, signal(), raise(), SIG_BLOCK */
+#include <errno.h>
 
 #ifndef SA_SIGINFO
 typedef struct {
@@ -97,7 +100,8 @@ static inline int pthread_sigmask(int how, const sigset_t *s, sigset_t *o) { (vo
 static inline int sigaction(int signum, const struct sigaction *act, struct sigaction *old) {
     (void)signum; (void)act; (void)old; return 0;
 }
-static inline int kill(pid_t pid, int sig) { (void)pid; (void)sig; return 0; }
+/* No other process exists, so killAppendOnlyChild() doesn't wait for one to exit. */
+static inline int kill(pid_t pid, int sig) { (void)pid; (void)sig; errno = ESRCH; return -1; }
 #endif /* SA_SIGINFO */
 
 /* interval timers: the watchdog (debug.c) and the Lua time-limit (eval.c) arm

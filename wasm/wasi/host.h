@@ -46,4 +46,11 @@ HOST_IMPORT("close")   void  host_close(int fd);
 HOST_IMPORT("poll")    int   host_poll(const int32_t *interest, int count,
                                        int32_t *fired, int max, int timeout_ms);
 
+/* ---- AOF rewrite (patches/0004-host-aof-rewrite.patch) ----
+ * Valkey has just opened a new incr file. The rewrite writes, to tmpfile, a base
+ * equal to the files before it (the manifest's base and older incr files): RDB if
+ * rdb, else commands. Returns 1 if the host does that (it then calls the export
+ * rk_rewrite_done(ok)), or 0 for Valkey to rewrite inline, blocking, as before. */
+HOST_IMPORT("aof_rewrite") int host_aof_rewrite(const char *tmpfile, int len, int rdb);
+
 #endif

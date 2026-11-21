@@ -27,6 +27,11 @@ compiles Valkey with the shims in `wasi/`, links, and runs `wasm-opt`. Every run
     through the exports in `wasi/reactor.c`.
   - `0003-inline-aof-rewrite.patch`: there is no `fork()`, so an AOF rewrite runs inline and then finishes the way
     the parent does after the child exits.
+  - `0004-host-aof-rewrite.patch`: before rewriting inline, Valkey offers the rewrite to the host (the `aof_rewrite`
+    import in `wasi/host.h`). If the host takes it, Valkey keeps serving with an AOF child marked as running; the
+    host writes the new base to the temp file and calls the `rk_rewrite_done` export, which finishes the rewrite
+    the way the parent does when a child exits. `wasi/wasm_compat.h` makes `waitpid()` report no exited child and
+    `kill()` find no process, so nothing else ends or waits on that child.
 - `patches/mimalloc/` is applied only with `ALLOCATOR=mimalloc`:
   - `0001-zmalloc-mimalloc.patch`: a `USE_MIMALLOC` branch in zmalloc. It calls `mi_malloc`, `mi_calloc`,
     `mi_realloc` and `mi_free`, sizes blocks with `mi_usable_size`, and INFO shows `mem_allocator:mimalloc-3.7.0`.

@@ -1,0 +1,44 @@
+diff --git a/src/aof.c b/src/aof.c
+--- a/src/aof.c
++++ b/src/aof.c
+@@ -28,6 +28,9 @@
+  */
+ 
+ #include "server.h"
++#ifdef VALKEY_WASM
++#include "host.h"
++#endif
+ #include "bio.h"
+ #include "rio.h"
+ #include "functions.h"
+@@ -2634,6 +2637,13 @@
+         server.aof_rewrite_time_start = time(NULL);
+         server.aof_rewrite_use_rdb_preamble = server.aof_use_rdb_preamble;
+         snprintf(tmpfile, 256, "temp-rewriteaof-bg-%d.aof", (int)server.child_pid);
++        /* The host may write the base itself, from a copy of the files before the new
++         * incr file (wasi/host.h). Valkey keeps serving; rk_rewrite_done() finishes. */
++        if (host_aof_rewrite(tmpfile, (int)strlen(tmpfile), server.aof_rewrite_use_rdb_preamble)) {
++            serverLog(LL_NOTICE, "Background append only file rewriting started by the host");
++            (void)childpid;
++            return C_OK;
++        }
+         int ok = rewriteAppendOnlyFile(tmpfile) == C_OK;
+         backgroundRewriteDoneHandler(ok ? 0 : 1, 0);
+         resetChildState();
+@@ -2936,4 +2946,16 @@
+     server.aof_rewrite_time_start = -1;
+     /* Schedule a new rewrite if we are waiting for it to switch the AOF ON. */
+     if (server.aof_state == AOF_WAIT_REWRITE) server.aof_rewrite_scheduled = 1;
++}
++
++#ifdef VALKEY_WASM
++/* The host finished (ok) or gave up on the rewrite it took in
++ * rewriteAppendOnlyFileBackground(). Returns 0 if that rewrite isn't running any
++ * more (it was killed), so the host removes the file it was writing itself. */
++__attribute__((export_name("rk_rewrite_done"))) int rk_rewrite_done(int ok) {
++    if (server.child_type != CHILD_TYPE_AOF) return 0;
++    backgroundRewriteDoneHandler(ok ? 0 : 1, 0);
++    resetChildState();
++    return 1;
+ }
++#endif
