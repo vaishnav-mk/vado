@@ -107,11 +107,12 @@ const tests = {
   // the command answered; totalMs is when no rewrite is in progress any more.
   async rewrite(env, q) {
     const db = await database(env, q.get("db")), stub = shardStub(env, db, 0), c = await open(env, q);
-    const lat = [];
-    let stop = false;
-    const pinger = (async () => { while (!stop) { const t = Date.now(); await c.call(["PING"]); lat.push(Date.now() - t); } })();
+    const lat = [], slow = []; // slow: [ms after BGREWRITEAOF was sent, ping ms] for pings over 150 ms
+    let stop = false, t0 = 0;
+    const pinger = (async () => { while (!stop) { const t = Date.now(); await c.call(["PING"]); const ms = Date.now() - t; lat.push(ms); if (ms > 150) slow.push([t - t0, ms]); } })();
     await new Promise((r) => setTimeout(r, 500));
-    const t0 = Date.now(), [reply] = await stub.run([["BGREWRITEAOF"]]), replyMs = Date.now() - t0;
+    t0 = Date.now();
+    const [reply] = await stub.run([["BGREWRITEAOF"]]), replyMs = Date.now() - t0;
     while ((await stub.run([["INFO", "persistence"]]))[0].includes("aof_rewrite_in_progress:1")) await new Promise((r) => setTimeout(r, 50));
     const totalMs = Date.now() - t0;
     await new Promise((r) => setTimeout(r, 500));
@@ -120,7 +121,7 @@ const tests = {
     c.close();
     lat.sort((a, b) => a - b);
     const st = await stub.stats(), base = st.files.find((f) => /\.base\./.test(f.path));
-    return { reply, replyMs, totalMs, pings: lat.length, p50: lat[lat.length >> 1], p99: lat[Math.floor(lat.length * 0.99)], max: lat.at(-1), base: base && { path: base.path, MB: +(base.size / 2 ** 20).toFixed(1) }, helper: st.lastRewrite };
+    return { reply, replyMs, totalMs, pings: lat.length, p50: lat[lat.length >> 1], p99: lat[Math.floor(lat.length * 0.99)], max: lat.at(-1), slow, base: base && { path: base.path, MB: +(base.size / 2 ** 20).toFixed(1) }, helper: st.lastRewrite && { ...st.lastRewrite, at: st.lastRewrite.at - t0 } };
   },
 
   async frag(env, q) {
