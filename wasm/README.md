@@ -28,10 +28,13 @@ compiles Valkey with the shims in `wasi/`, links, and runs `wasm-opt`. Every run
   - `0003-inline-aof-rewrite.patch`: there is no `fork()`, so an AOF rewrite runs inline and then finishes the way
     the parent does after the child exits.
   - `0004-host-aof-rewrite.patch`: before rewriting inline, Valkey offers the rewrite to the host (the `aof_rewrite`
-    import in `wasi/host.h`). If the host takes it, Valkey keeps serving with an AOF child marked as running; the
-    host writes the new base to the temp file and calls the `rk_rewrite_done` export, which finishes the rewrite
-    the way the parent does when a child exits. `wasi/wasm_compat.h` makes `waitpid()` report no exited child and
-    `kill()` find no process, so nothing else ends or waits on that child.
+    import in `wasi/host.h`), with the temp file's name and a generation (`stat_aof_rewrites`). It offers it only
+    while the AOF is on: turning the AOF on opens a temp incr file that isn't in the manifest. If the host takes
+    it, Valkey keeps serving with an AOF child marked as running; the host writes the new base to the temp file and
+    calls the `rk_rewrite_done(ok, gen)` export, which finishes the rewrite the way the parent does when a child
+    exits. If that rewrite isn't running any more (it was killed, and maybe another started), the export returns 0
+    and the host removes the file itself. `wasi/wasm_compat.h` makes `waitpid()` return 0, so the child never
+    appears to exit by itself, and `kill()` fail with `ESRCH`, so killing the rewrite doesn't wait for a process.
 - `patches/mimalloc/` is applied only with `ALLOCATOR=mimalloc`:
   - `0001-zmalloc-mimalloc.patch`: a `USE_MIMALLOC` branch in zmalloc. It calls `mi_malloc`, `mi_calloc`,
     `mi_realloc` and `mi_free`, sizes blocks with `mi_usable_size`, and INFO shows `mem_allocator:mimalloc-3.7.0`.
@@ -72,9 +75,8 @@ What to watch when trying it:
 ## Reproducibility
 
 The downloads are pinned by sha256, the link order uses the C collation, and assertion file names (`__FILE__`) are
-relative to the Valkey tree, so the same wasi-sdk and binaryen give the same bytes on any machine. `ALLOCATOR=libc`
-gives the same imports and exports as `vendor/valkey.wasm`, and the same bytes when built with that file's absolute
-source path and its macOS link order.
+relative to the Valkey tree, so the same wasi-sdk and binaryen give the same bytes on any machine.
+`vendor/valkey.wasm` is this script's `ALLOCATOR=libc` output, and a fresh build reproduces it byte for byte.
 
 ## License
 
