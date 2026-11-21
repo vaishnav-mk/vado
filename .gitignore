@@ -9,3 +9,5 @@ private/
 results/
 ui/node_modules/
 ui/dist/
+wasm/.cache/
+wasm/build/
