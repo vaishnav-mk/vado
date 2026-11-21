@@ -207,10 +207,11 @@ async function expiry() {
   const c = R();
   const n = 200;
   const p = c.pipeline();
-  for (let i = 0; i < n; i++) p.set(`exp:${i}`, "x", "PX", 300);
+  // 2 s: long enough for the first MGET's retries under chaos (a shard reset between the SETs and the MGET)
+  for (let i = 0; i < n; i++) p.set(`exp:${i}`, "x", "PX", 2000);
   await p.exec();
   const live = (await retry(() => c.mget(...Array.from({ length: n }, (_, i) => `exp:${i}`)))).filter(Boolean).length;
-  await sleep(1200);
+  await sleep(3000);
   const left = (await retry(() => c.mget(...Array.from({ length: n }, (_, i) => `exp:${i}`)))).filter(Boolean).length;
   check("PX expiry", left === 0 && live > 0, { setThenLive: live, afterExpiry: left });
   c.disconnect();
