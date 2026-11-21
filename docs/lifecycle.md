@@ -55,6 +55,7 @@ that gets `LOST` from a replica goes again to the primary, so the client sees ne
 | A read-only command succeeds after a reset | The router retried it once on a fresh connection (or on the primary, if it went to a replica). Writes are never retried |
 | `EXEC` returns a null reply | A WATCHed key's shard reset, so the transaction didn't run (the same reply as a broken WATCH in Valkey) |
 | A read misses a write another connection just had acknowledged | The read went to a replica that hadn't run the write yet. It will within the replication lag |
-| Every command to one shard pauses for about a second | The shard is rewriting its AOF, which blocks it ([AOF rewrites](durability.md#aof-rewrites)) |
+| Some replies from one shard take up to about 150 ms longer, for a few seconds | A rewriter is compacting the shard's AOF, while the shard sends it files and writes the new base ([AOF rewrites](durability.md#aof-rewrites)) |
+| Every command to one shard pauses for a second or two | The shard is rewriting its AOF inline, which blocks it. It does that for 10 minutes after a rewriter fails, or when its class has no rewriter binding ([AOF rewrites](durability.md#aof-rewrites)) |
 | `CROSSSLOT` | The command needs its keys in one slot. Use a `{hashtag}` |
 | The server closes the connection | A protocol error or size limit (an error reply comes first), a WebSocket client that sent too fast, or the Worker restarting |

@@ -25,16 +25,50 @@ about 0.26 to 0.008 ([measurements](measurements.md)).
 
 ## AOF rewrites
 
-Valkey's own rewrite trigger is off (`auto-aof-rewrite-percentage 0`). wasm has no `fork()`, so the patched build
-rewrites inline, and the shard serves nothing while it runs: about 1 s per 10 MB of RDB base. So the shard picks
-the moment (`src/shard.js`):
+Valkey's own rewrite trigger is off (`auto-aof-rewrite-percentage 0`), and the shard picks the moment
+(`src/shard.js`):
 
 - A rewrite is due once the incr file is at least 8 MB (`AOF_REWRITE_MIN`) and at least as big as the base, as
   Valkey's default rule.
-- A due rewrite waits until the shard has had no input for 1 s (`AOF_REWRITE_IDLE_MS`).
+- With a rewriter available, a due rewrite starts at the next check. Without one it would run inline and block
+  the shard, so it waits until the shard has had no input for 1 s (`AOF_REWRITE_IDLE_MS`).
 - It runs anyway once the incr file reaches 64 MB (`AOF_REWRITE_CAP`) and twice the base, since a restart replays
   the whole incr file (about 1 s per 64 MB).
-- A shard that is appending checks its AOF every 2 s (`AOF_CHECK_MS`). No rewrite runs while a replica copy does.
+- A shard that is appending checks its AOF every 2 s (`AOF_CHECK_MS`). No rewrite starts while a replica copy or
+  another rewrite runs.
+
+wasm has no `fork()`, so the rewrite runs in a rewriter object instead of a child process (`src/rewriter.js`,
+`wasm/patches/0004-host-aof-rewrite.patch`):
+
+1. Valkey opens a new incr file, as it does before forking, and offers the rewrite to the host. It offers it only
+   while the AOF is on.
+2. The shard sends its rewriter (`ValkeyRewriter`, in the class matching the shard's) the manifest and the base
+   and incr files from before the new incr file. It reads them 1 MB at a time and lets requests run in between.
+3. The rewriter boots its own Valkey on that copy with `import-mode` on, so nothing expires or is evicted, and the
+   new base is exactly the data as of when the new incr file opened. It rewrites inline, blocking only itself, and
+   sends back the base followed by an FNV-1a checksum of it.
+4. The shard writes the base to Valkey's temp file one 1 MB storage commit at a time, so a reply waits for at most
+   one chunk of it, and checks the length and the checksum.
+5. The shard calls `rk_rewrite_done`, and Valkey finishes as if a forked child had exited: the temp file becomes the
+   base, a new manifest lists it and the new incr file, and the old files are deleted.
+
+Each rewrite carries a generation, Valkey's count of rewrites. If that rewrite was killed meanwhile, Valkey ignores
+the finish and the shard deletes the file it wrote. A helper rewrite fails after 120 s (`AOF_HELPER_TIMEOUT_MS`),
+or on any error, and Valkey treats it as a failed child. The shard then rewrites inline for 10 minutes
+(`AOF_HELPER_RETRY_MS`): blocking, and at quiet moments unless forced. Shard stats report the last helper rewrite as
+`lastRewrite`: phase times, bytes sent and received, any error, and `doneMs`, the swap including its commit.
+
+For a 35.6 MB RDB base, a helper rewrite took 5.2-5.9 s end to end while PINGs to the shard stayed at p99
+128-175 ms. Inline, the same base blocks the shard for 1.4-1.9 s ([measurements](measurements.md)).
+
+### A reset during a rewrite
+
+- **Before `rk_rewrite_done`,** the manifest in storage is the old one plus the new incr file. The old base and incr
+  files hold every write before the new incr file opened, and the new incr file every write since, so a restarted
+  shard loads them and never reads the half-written temp file.
+- **The swap** (the rename, the new manifest, deleting the old files) is one storage commit, so a restart sees
+  either the old manifest and its files or the new ones.
+- **A leftover temp file** from a rewrite cut short is removed by the next helper rewrite before it writes.
 
 ## When a shard resets
 
@@ -63,11 +97,12 @@ have (`src/replication.js`).
 - **What a replica receives.** Every append to the primary's AOF incr file, in order (`Vfs.onAppend`). The stream
   leaves through the primary's output gate like its replies, so a replica only receives committed writes.
   Appends that arrive while a write to a replica is in flight go out together in the next one.
-- **The starting copy.** The primary turns the RDB preamble off and, if its base file is RDB, rewrites it as
-  commands, since a replica runs the files as commands. It then dials the replica (`connect("repl:6379")`), sends
+- **The starting copy.** The primary turns the RDB preamble off, waits for a rewrite in progress to finish (it would
+  replace the files mid-copy) and, if its base file is RDB, rewrites it as commands, since a replica runs the files
+  as commands. If the base is still RDB because that rewrite failed, it drops the copy and tries again later. It then dials the replica (`connect("repl:6379")`), sends
   `CLIENT REPLY OFF` and `FLUSHALL`, the base and incr files in 1 MB chunks, then the appends that arrived during
-  the copy. Once no copy is running, the base goes back to RDB at the next quiet moment: RDB is about 6x smaller,
-  so each later rewrite blocks the shard about 6x less.
+  the copy. Once no copy is running, the base goes back to RDB at the next rewrite check (the next quiet moment, if
+  rewriting inline): RDB is about 6x smaller, so each later rewrite has about 6x less to write.
 - **Ready to serve.** After the copy the primary sends a marker (`CLIENT REPLY ON`, `PING`, `CLIENT REPLY OFF`).
   Its `+PONG` means the replica has run everything before it, and only then does the replica serve reads. A marker
   every 2 s (`REPL_TICK_MS`) measures each replica's lag. A replica that receives a new copy stops serving reads

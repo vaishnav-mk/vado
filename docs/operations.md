@@ -12,7 +12,8 @@ scripts/test-local.sh       # the whole local suite
 
 `scripts/local.sh` takes `VALKEY_PASSWORD`, `ROUTER_SOCKET_BUDGET`, `ROUTER_IDLE_MS` and `BENCH_TOKEN` (default
 `local`) from the environment, and keeps storage in `.local-do` unless you pass `fresh`. The local config
-(`config.capnp.in`) has the `SHARD` to `SHARD7`, `CATALOG` and `PULSE` bindings but no `SENDER`, so bench `send` works only in
+(`config.capnp.in`) has the `SHARD` to `SHARD7`, `REWRITER` to `REWRITER7`, `CATALOG` and `PULSE` bindings but no
+`SENDER`, so bench `send` works only in
 a deployment.
 
 ## Tests
@@ -64,11 +65,13 @@ over minutes. Wait at least 5 minutes after a deploy before you measure anything
 | `ROUTER_SOCKET_BUDGET` | `128` | Shard and replica sockets per isolate before the router uses RPC batches |
 
 Durable Object bindings, in `wrangler.jsonc`: `SHARD` to `SHARD7` (the eight shard classes: shards and their
-replicas by class, with pub/sub and `__meta` in `SHARD`), `CATALOG`, `PULSE`
+replicas by class, with pub/sub and `__meta` in `SHARD`), `REWRITER` to `REWRITER7` (a shard class without its
+rewriter binding rewrites its AOF inline, blocking), `CATALOG`, `PULSE`
 (optional: without it, routers don't report activity and bench `pulse` returns nothing) and `SENDER` (needed only
 by bench `send`).
 
-AOF rewrite thresholds (`AOF_REWRITE_MIN`, `AOF_REWRITE_IDLE_MS`, `AOF_REWRITE_CAP`), group commit
+AOF rewrite thresholds (`AOF_REWRITE_MIN`, `AOF_REWRITE_IDLE_MS`, `AOF_REWRITE_CAP`), rewriter timeout and fallback
+(`AOF_HELPER_TIMEOUT_MS`, `AOF_HELPER_RETRY_MS`), group commit
 (`SHARD_COMMITS`), shard classes (`SHARD_CLASSES`), replication (`REPL_*`, `READ_YOUR_WRITES_MS`) and the other tunables are in `src/constants.js`.
 
 ## Create a database with placement and replicas
@@ -87,7 +90,8 @@ curl -H "authorization: Bearer $TOKEN" \
 database; for an existing one, `/db` returns its record unchanged. `/db` on a database with replicas also
 (re)starts them on every primary, which is safe to repeat. Replica state and lag are in `/stats` (`replicas` on
 each shard: `ready`, `catching up`, `copying` or `idle`, with `lagMs` and `behindBytes`). Each shard's `isolate`
-is an id per isolate, so shards that share one show the same id.
+is an id per isolate, so shards that share one show the same id, and `lastRewrite` is its last helper rewrite: phase
+times, bytes, any error and `doneMs`.
 
 ## Watch it live
 
@@ -157,8 +161,9 @@ HOST=<your-host> PORT=6379 PW=... DB=check node test/ioredis.mjs
 
 ## Upgrade safely
 
-- Keep Durable Object RPC methods (`ValkeyShard`, `Catalog`, `Pulse`, `Sender`) stable. During a deploy, old routers
-  call new objects, and old primaries stream to new replicas.
+- Keep Durable Object RPC methods (`ValkeyShard`, `Catalog`, `Pulse`, `Sender`) and the rewriter's socket protocol
+  stable. During a deploy, old routers call new objects, old primaries stream to new replicas, and old shards send
+  rewrites to new rewriters.
 - Change capacity by appending an epoch to `SHARD_EPOCHS`. Existing databases keep their shard count.
 - The catalog adds its `regions` and `replicas` columns on startup when they are missing. Add later columns the same
   way, never by rewriting the table.
@@ -166,5 +171,7 @@ HOST=<your-host> PORT=6379 PW=... DB=check node test/ioredis.mjs
 - Never remove a shard class. A database keeps shard `i` in class `i % classes` for life, and a build from before
   shard classes (df14748) sends every shard to `ValkeyShard`, where shards of newer databases outside class 0
   would be new, empty objects. Don't roll back past that change.
+- Keep the rewriter classes in step with the shard classes: shard class `k` finds its rewriter by binding name
+  (`SHARD<k>` uses `REWRITER<k>`).
 - Changes to Valkey go in `wasm/patches/` or `wasm/wasi/`. Rebuild `vendor/valkey.wasm` with `wasm/build.sh` and
   wasi-sdk (`wasm/README.md`).

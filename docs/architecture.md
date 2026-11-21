@@ -11,6 +11,7 @@ flowchart LR
   app["Your Worker"] -- "service binding connect()" --> router
   router["Router<br/>one per connection"] -- "a socket per shard,<br/>or RPC batches" --> shards["ValkeyShard objects<br/>valkey.wasm + AOF in SQLite"]
   shards -- "AOF appends" --> replicas["Read replicas (optional)<br/>valkey.wasm, memory only"]
+  shards -- "AOF files for a rewrite,<br/>the new base back" --> rewriters["Rewriters<br/>valkey.wasm, one per shard"]
   router -- "reads, near the client" --> replicas
   router -- "name → shard count,<br/>regions, replicas" --> catalog["Catalog"]
   router -- "SUBSCRIBE, PUBLISH" --> pubsub["Pub/sub shard"]
@@ -20,7 +21,8 @@ flowchart LR
 
 A box is a responsibility. The shard, replica, pub/sub and `__meta` boxes run the same Durable Object code under
 different object names. It is exported as eight classes, `ValkeyShard` and `ValkeyShard1` to `ValkeyShard7`, so a
-database's shards can be spread over them. An arrow is a call path, not a statement about which machine or data center runs it.
+database's shards can be spread over them. The rewriters are a class of their own, exported the same way. An arrow
+is a call path, not a statement about which machine or data center runs it.
 
 ## Where everything lives
 
@@ -30,6 +32,7 @@ database's shards can be spread over them. An arrow is a call path, not a statem
 | Router (`src/router.js`) | In the Worker, one per client connection | Per-connection state: the database, AUTH, MULTI/WATCH, recent writes per shard, its upstreams |
 | Shards (`ValkeyShard` to `ValkeyShard7`, bindings `SHARD` to `SHARD7`) | Durable Objects named `<db>.<created>.<i>`, in class `i % 8`, placed by the database's `regions` or `LOCATION_HINT` | One Valkey process each, owning a contiguous range of the 16,384 slots. Its AOF lives in the object's SQLite |
 | Read replicas (`src/replication.js`) | Their primary's class, named `<db>.<created>.<i>.r.<region>`, one per shard per replica region | A copy of one shard's data, in memory only, kept current from the shard's AOF |
+| Rewriters (`src/rewriter.js`, `ValkeyRewriter` to `ValkeyRewriter7`, bindings `REWRITER` to `REWRITER7`) | Durable Objects named like their shard, in the rewriter class with the shard's class number | During a rewrite, a copy of the shard's AOF files and the new base. Nothing after it |
 | Pub/sub shard | `ValkeyShard` named `<db>.<created>.pubsub` | Every channel of one database |
 | `__meta` shard | `ValkeyShard` named `__meta` | Nothing. It answers `COMMAND`, which gives the router every command's key positions |
 | Catalog (`Catalog`, `CATALOG` binding) | One Durable Object named `catalog` | Each database's name, creation time, shard count, its `regions` and `replicas` lists, and how many shard classes its shards rotate over |
@@ -67,8 +70,8 @@ placement, the password, and what happens to clients when a shard resets.
 - **Trade-off:** data lives in Valkey's memory, so a shard holds at most 64 MB inside the 128 MB isolate. wasm memory
   never shrinks. Objects of one class on one machine can share an isolate, and with it the isolate's memory limit and
   thread, so shard `i` of a database uses class `i % 8` ([shard classes](scaling.md#shard-classes-and-isolates)).
-  With no `fork()` in wasm, an AOF rewrite blocks the shard while it runs, so the shard schedules
-  rewrites for quiet moments. The wasm build carries a few small patches (`wasm/patches/`).
+  With no `fork()` in wasm, a rewriter compacts the AOF in place of a forked child; without one, a rewrite runs
+  inline and blocks the shard. The wasm build carries a few small patches (`wasm/patches/`).
 
 ### Read replicas
 
@@ -83,6 +86,20 @@ placement, the password, and what happens to clients when a shard resets.
   the primary's input: one shard with 9 replicas took 49-61k SET/s, against about 130k with none. A primary with
   replicas wakes every 2 s to measure them, so it doesn't go idle. Details in
   [durability and failures](durability.md#read-replicas).
+
+### Rewriters
+
+- **Owns:** one AOF rewrite at a time for one shard, in a Valkey of its own.
+- **Why needed:** Valkey compacts its AOF by forking a child that writes a new base while the parent keeps serving.
+  wasm has no `fork()`, so a rewrite inside the shard blocks it: 1.4-1.9 s for a 35.6 MB RDB base.
+- **How it helps:** Valkey offers each rewrite to the host (`wasm/patches/0004-host-aof-rewrite.patch`). The shard
+  sends its rewriter the AOF files from before the incr file Valkey just opened. The rewriter loads them, rewrites
+  inline, blocking only itself, and sends back the new base. The shard writes it to Valkey's temp file while it
+  keeps serving, and Valkey swaps it in as if a forked child had finished. Shard class `k` uses rewriter class `k`,
+  so a database's shards rewriting at once don't share a rewriter isolate.
+- **Trade-off:** a rewrite takes longer end to end (5.2-5.9 s for that base) and moves the files to another object
+  and the base back. After a rewriter fails, the shard rewrites inline for 10 minutes. Details in
+  [durability and failures](durability.md#aof-rewrites).
 
 ### Catalog
 
@@ -130,7 +147,7 @@ placement, the password, and what happens to clients when a shard resets.
 | Real Valkey in wasm | Valkey's own behavior for every command it runs | 64 MB per shard, memory that never shrinks, a patch to maintain |
 | AOF in SQLite, `appendfsync always` | Acknowledged writes survive resets and deploys | Each write waits for a storage commit. Rows written are billed: one per unpipelined write, far fewer under load |
 | Group commit, two commits in flight | Under load one commit carries many writes, so more writes per second and fewer rows | Input that arrives during two commits waits for one of them |
-| Rewrites scheduled by the shard | Rewrites run when the shard has been quiet for a second | A rewrite still blocks the shard, about 1 s per 10 MB of base, and a forced one can't wait |
+| AOF rewrites in a rewriter object | The shard keeps serving during a rewrite: PING p99 128-175 ms, against 1.4-1.9 s blocked inline for a 35.6 MB base | Each rewrite copies the files to another object and the base back. After a rewriter fails, rewrites run inline, blocking, for 10 minutes |
 | Read replicas fed by the AOF | Reads near the client that don't wait for commits | Reads across connections can be stale; fewer writes per shard; primaries that don't go idle |
 | A router per connection | Stock clients, no cluster support needed | An extra hop; cross-slot limits |
 | Shards spread over eight classes | A database's first eight shards never share an isolate's memory or thread | Eight bindings and migrations to keep; shards `i` and `i + 8`, or of different databases, can still share |

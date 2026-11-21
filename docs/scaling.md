@@ -115,9 +115,13 @@ the primary's writes down; one stuck replica is dropped before it can stall them
   about 30 s of CPU.
 - **Writes per shard:** measured at 114-130k SET/s with deep pipelines straight to one shard. Each replica's stream
   costs the primary: with 9 replicas, one shard took 49-61k SET/s.
-- **AOF rewrites:** a rewrite blocks its shard, about 1 s per 10 MB of RDB base. The shard runs them after 1 s
-  without input when it can, and forces one when the incr file reaches 64 MB and twice the base
-  ([durability](durability.md#aof-rewrites)).
+- **AOF rewrites:** a rewriter object compacts the AOF while the shard keeps serving. For a 35.6 MB RDB base that
+  took 5.2-5.9 s, with PINGs to the shard at p99 128-175 ms meanwhile. Each rewrite sends the base and incr files to
+  the rewriter and the new base back, and the rewriter stores its copy in its own SQLite until it is done. After a
+  rewriter fails, the shard rewrites inline for 10 minutes, which blocks it (1.4-1.9 s for that base), after 1 s
+  without input when it can. A rewrite is forced when the incr file reaches 64 MB and twice the base
+  ([durability](durability.md#aof-rewrites)). 16 shards of one database rewriting at once, under write load, all
+  finished in rewriters, the slowest in 1.42 s.
 - **Replica reads:** a read on another connection can be up to one replication lag stale.
 - **Cold start:** a shard that was evicted while idle reloads its AOF on the next command ([measurements](measurements.md)).
   A replica that resets starts empty and is copied again by its primary.
