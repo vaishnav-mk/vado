@@ -60,9 +60,10 @@ export class ValkeyShard extends DurableObject {
     const [txt] = decodeAll(await this.#host.execBatch(command(["INFO", "persistence"]), 1));
     const num = (k) => Number(new RegExp(`${k}:(\\d+)`).exec(txt)?.[1] ?? 0);
     const base = num("aof_base_size"), incr = num("aof_current_size") - base;
-    const due = incr >= Math.max(AOF_REWRITE_MIN, base);
+    const due = incr >= Math.max(AOF_REWRITE_MIN, base) || this.#repl.rdbDue;
     if (incr >= Math.max(AOF_REWRITE_CAP, 2 * base) || (due && Date.now() - this.#host.lastActive >= AOF_REWRITE_IDLE_MS)) {
       await this.#host.execBatch(command(["BGREWRITEAOF"]), 1);
+      this.#repl.rdbDue = false;
       return false;
     }
     return due;

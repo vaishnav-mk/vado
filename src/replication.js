@@ -28,6 +28,7 @@ export class Replicator {
 
   get configured() { return this.#targets.size > 0; }
   get copying() { return this.#copying > 0; }
+  rdbDue = false; // copies are done: the next quiet moment should rewrite the base back to RDB
 
   /** Sets the regions this shard keeps replicas in, remembered across restarts. */
   configure(regions) {
@@ -126,7 +127,10 @@ export class Replicator {
     } catch (e) {
       this.#drop(t, e.message);
     } finally {
-      if (--this.#copying === 0) await this.#host.execBatch(command(["CONFIG", "SET", "aof-use-rdb-preamble", "yes"]), 1).catch(() => {});
+      if (--this.#copying === 0) {
+        await this.#host.execBatch(command(["CONFIG", "SET", "aof-use-rdb-preamble", "yes"]), 1).catch(() => {});
+        this.rdbDue = this.#files().base?.endsWith(".aof") ?? false;
+      }
     }
   }
 
