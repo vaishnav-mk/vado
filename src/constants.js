@@ -53,6 +53,9 @@ export const SHARD_LOW_WATER = 8 << 20;
  * 2 measured best: 1 serializes commits, 4 batches less.
  */
 export const SHARD_COMMITS = 2;
+// Shard classes: objects of one class on one machine can share an isolate (one memory limit, one thread);
+// objects of different classes never do. Shard i of a new database uses class i % SHARD_CLASSES.
+export const SHARD_CLASSES = 8;
 
 /** Idle internal Valkey clients kept per RESP protocol for RPC batches. */
 export const POOL_MAX = 64;

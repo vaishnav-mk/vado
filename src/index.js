@@ -8,7 +8,7 @@ import { HINTS } from "./catalog.js";
 import { REGION_OF } from "./regions.js";
 import { replicaName } from "./replication.js";
 
-export { ValkeyShard } from "./shard.js";
+export { ValkeyShard, ValkeyShard1, ValkeyShard2, ValkeyShard3, ValkeyShard4, ValkeyShard5, ValkeyShard6, ValkeyShard7 } from "./shard.js";
 export { Catalog } from "./catalog.js";
 export { Pulse } from "./pulse.js";
 export { Sender } from "./sender.js";
@@ -21,9 +21,12 @@ let table = null; // Promise<command table>
 
 export const objectOptions = (env, hint = env.LOCATION_HINT) => (HINTS.has(hint) ? { locationHint: hint } : {});
 export const shardName = (db, i) => `${db.name}.${db.created.toString(36)}.${i}`;
+// Shard i (and its replicas) uses class i % db.classes, so a database's shards never share an isolate.
+// Databases from before classes have none: all their shards are ValkeyShard. Pub/sub stays there too.
+const shardNs = (env, db, i) => (typeof i === "number" && db.classes > 1 && i % db.classes ? env[`SHARD${i % db.classes}`] : env.SHARD);
 // A spread database places data shard i in regions[i % n]; its pub/sub shard stays at LOCATION_HINT.
 export const shardStub = (env, db, i) =>
-  env.SHARD.getByName(shardName(db, i), objectOptions(env, typeof i === "number" && db.regions ? db.regions[i % db.regions.length] : env.LOCATION_HINT));
+  shardNs(env, db, i).getByName(shardName(db, i), objectOptions(env, typeof i === "number" && db.regions ? db.regions[i % db.regions.length] : env.LOCATION_HINT));
 
 // Where shard i's primary lives, and which replica (if any) a router here should read it from: one in
 // this router's region, else a neighbouring one, unless the primary is at least as close.
@@ -35,15 +38,15 @@ function replicaRegion(env, db, i) {
   for (const r of [mine, ...NEAR[mine]]) if (db.replicas.includes(r)) return r;
   return null;
 }
-export const replicaStub = (env, db, i, region) => env.SHARD.getByName(replicaName(shardName(db, i), region), objectOptions(env, region));
+export const replicaStub = (env, db, i, region) => shardNs(env, db, i).getByName(replicaName(shardName(db, i), region), objectOptions(env, region));
 /** Tell every primary shard of a replicated database where to keep its replicas (idempotent). */
 export const configureReplicas = (env, db) =>
   Promise.all(Array.from({ length: db.shards }, (_, i) => shardStub(env, db, i).replicate(db.replicas)));
 
-export function database(env, name, shards, regions, replicas) {
+export function database(env, name, shards, regions, replicas, classes) {
   let db = dbs.get(name);
   if (!db) {
-    db = env.CATALOG.getByName("catalog").get(name, shards, regions, replicas);
+    db = env.CATALOG.getByName("catalog").get(name, shards, regions, replicas, classes);
     db.catch(() => dbs.delete(name));
     dbs.set(name, db);
   }

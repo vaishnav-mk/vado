@@ -84,7 +84,7 @@ const tests = {
   // replicas=world (or a,b,c) keeps a read replica of every shard in each of those regions.
   async db(env, q) {
     const list = (v) => (v === "world" ? WORLD : v ? v.split(",") : undefined);
-    const db = await database(env, q.get("db"), q.get("shards") ? Number(q.get("shards")) : undefined, list(q.get("regions")), list(q.get("replicas")));
+    const db = await database(env, q.get("db"), q.get("shards") ? Number(q.get("shards")) : undefined, list(q.get("regions")), list(q.get("replicas")), q.get("classes") ? Number(q.get("classes")) : undefined);
     if (db.replicas) await configureReplicas(env, db);
     return { db };
   },

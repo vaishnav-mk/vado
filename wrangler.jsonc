@@ -6,6 +6,13 @@
   "durable_objects": {
     "bindings": [
       { "name": "SHARD", "class_name": "ValkeyShard" },
+      { "name": "SHARD1", "class_name": "ValkeyShard1" },
+      { "name": "SHARD2", "class_name": "ValkeyShard2" },
+      { "name": "SHARD3", "class_name": "ValkeyShard3" },
+      { "name": "SHARD4", "class_name": "ValkeyShard4" },
+      { "name": "SHARD5", "class_name": "ValkeyShard5" },
+      { "name": "SHARD6", "class_name": "ValkeyShard6" },
+      { "name": "SHARD7", "class_name": "ValkeyShard7" },
       { "name": "CATALOG", "class_name": "Catalog" },
       { "name": "PULSE", "class_name": "Pulse" },
       { "name": "SENDER", "class_name": "Sender" }
@@ -15,7 +22,8 @@
     { "tag": "v1", "new_sqlite_classes": ["Valkey"] },
     { "tag": "v2", "new_sqlite_classes": ["ValkeyShard", "Catalog"], "deleted_classes": ["Valkey"] },
     { "tag": "v3", "new_sqlite_classes": ["Pulse"] },
-    { "tag": "v4", "new_sqlite_classes": ["Sender"] }
+    { "tag": "v4", "new_sqlite_classes": ["Sender"] },
+    { "tag": "v5", "new_sqlite_classes": ["ValkeyShard1", "ValkeyShard2", "ValkeyShard3", "ValkeyShard4", "ValkeyShard5", "ValkeyShard6", "ValkeyShard7"] }
   ],
   // Self-binding: bench requests reach the TCP connect() handler the way a client Worker would.
   "services": [{ "binding": "SELF", "service": "valkey-do" }],

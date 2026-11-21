@@ -3,6 +3,7 @@
 // sizes new databases and never moves an existing one).
 import { DurableObject } from "cloudflare:workers";
 import { epochAt, parseEpochs } from "./slots.js";
+import { SHARD_CLASSES } from "./constants.js";
 
 /** Durable Object location hints. A database may spread its shards over several (`regions`). */
 export const HINTS = new Set(["wnam", "enam", "sam", "weur", "eeur", "apac", "apac-ne", "apac-se", "oc", "afr", "me"]);
@@ -29,23 +30,26 @@ export class Catalog extends DurableObject {
     if (!cols.includes("regions")) this.#sql.exec(`ALTER TABLE dbs ADD COLUMN regions TEXT`);
     // Added later: regions that keep a read replica of every shard (JSON list of hints); NULL = none.
     if (!cols.includes("replicas")) this.#sql.exec(`ALTER TABLE dbs ADD COLUMN replicas TEXT`);
+    // Added later: how many shard classes the shards rotate over; NULL = 1 (every shard in ValkeyShard).
+    if (!cols.includes("classes")) this.#sql.exec(`ALTER TABLE dbs ADD COLUMN classes INTEGER`);
   }
 
   /** The database's record, created on first use. `shards`, `regions` and `replicas` apply only to a new database. */
-  get(name, shards, regions, replicas) {
+  get(name, shards, regions, replicas, classes = SHARD_CLASSES) {
     if (!DB_NAME.test(name)) throw new Error(DB_NAME_RULE);
-    const row = this.#sql.exec(`SELECT name, created, shards, regions, replicas FROM dbs WHERE name = ?`, name).toArray()[0];
+    const row = this.#sql.exec(`SELECT name, created, shards, regions, replicas, classes FROM dbs WHERE name = ?`, name).toArray()[0];
     if (row) return record(row);
     const created = Date.now();
     const count = shards ?? epochAt(this.#epochs, created).shards;
     if (!Number.isSafeInteger(count) || count < 1 || count > 16384) throw new Error("shards must be 1..16384");
     for (const list of [regions, replicas]) if (list !== undefined && (!Array.isArray(list) || !list.length || !list.every((r) => HINTS.has(r)))) throw new Error(`regions and replicas must be lists of ${[...HINTS].join(", ")}`);
-    const r = { name, created, shards: count, regions: regions ? JSON.stringify(regions) : null, replicas: replicas ? JSON.stringify(replicas) : null };
-    this.#sql.exec(`INSERT INTO dbs (name, created, shards, regions, replicas) VALUES (?, ?, ?, ?, ?)`, r.name, r.created, r.shards, r.regions, r.replicas);
+    if (!Number.isSafeInteger(classes) || classes < 1 || classes > SHARD_CLASSES) throw new Error(`classes must be 1..${SHARD_CLASSES}`);
+    const r = { name, created, shards: count, regions: regions ? JSON.stringify(regions) : null, replicas: replicas ? JSON.stringify(replicas) : null, classes };
+    this.#sql.exec(`INSERT INTO dbs (name, created, shards, regions, replicas, classes) VALUES (?, ?, ?, ?, ?, ?)`, r.name, r.created, r.shards, r.regions, r.replicas, r.classes);
     return record(r);
   }
 
   list() {
-    return this.#sql.exec(`SELECT name, created, shards, regions, replicas FROM dbs ORDER BY name`).toArray().map(record);
+    return this.#sql.exec(`SELECT name, created, shards, regions, replicas, classes FROM dbs ORDER BY name`).toArray().map(record);
   }
 }

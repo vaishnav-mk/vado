@@ -15,12 +15,12 @@ const COPY_CHUNK = 1 << 20;
 export const replicaName = (primary, region) => `${primary}.r.${region}`;
 
 export class Replicator {
-  #ctx; #env; #host; #name;
+  #ctx; #env; #host; #name; #ns;
   #targets = new Map(); // region -> state
   #copying = 0;
 
-  constructor(ctx, env, host, name) {
-    this.#ctx = ctx; this.#env = env; this.#host = host; this.#name = name;
+  constructor(ctx, env, host, name, ns) {
+    this.#ctx = ctx; this.#env = env; this.#host = host; this.#name = name; this.#ns = ns; // ns: this primary's own class
     ctx.storage.sql.exec(`CREATE TABLE IF NOT EXISTS repl_targets (region TEXT PRIMARY KEY)`);
     for (const { region } of ctx.storage.sql.exec(`SELECT region FROM repl_targets`).toArray()) this.#targets.set(region, idle(region));
     if (this.#targets.size) ctx.storage.setAlarm(Date.now() + 100);
@@ -113,7 +113,7 @@ export class Replicator {
       const { base, incrs } = this.#files();
       const parts = [base, ...incrs].filter(Boolean).map((p) => [p, this.#host.fileSize(p) ?? 0]);
       this.#host.release(t.queued); t.queue = []; t.queued = 0;
-      const stub = this.#env.SHARD.getByName(replicaName(this.#name, t.region), { locationHint: t.region });
+      const stub = this.#ns.getByName(replicaName(this.#name, t.region), { locationHint: t.region });
       t.stub = stub;
       t.socket = stub.connect("repl:6379");
       t.writer = t.socket.writable.getWriter();

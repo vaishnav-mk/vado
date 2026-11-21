@@ -30,6 +30,7 @@ const valkeyArgs = (env, replica) => [
 let isolateId = null;
 
 export class ValkeyShard extends DurableObject {
+  static binding = "SHARD";
   #host;
   #bornAt = Date.now();
   #instance = crypto.randomUUID();
@@ -45,7 +46,7 @@ export class ValkeyShard extends DurableObject {
     this.#replica = /\.r\.[a-z-]+$/.test(ctx.id.name ?? "");
     this.#host = new ValkeyHost(valkeyWasm, ctx.storage.sql, { args: valkeyArgs(env, this.#replica), sync: () => ctx.storage.sync() });
     if (!this.#replica) {
-      this.#repl = new Replicator(ctx, env, this.#host, ctx.id.name);
+      this.#repl = new Replicator(ctx, env, this.#host, ctx.id.name, env[this.constructor.binding]);
       this.#host.onAppend = (bytes) => { this.#repl.append(bytes); if (!this.#checkArmed) this.#armCheck(); };
     }
   }
@@ -159,3 +160,12 @@ export class ValkeyShard extends DurableObject {
     };
   }
 }
+
+// The same object under other class names (SHARD_CLASSES in constants.js): see shardNs in index.js.
+export class ValkeyShard1 extends ValkeyShard { static binding = "SHARD1"; }
+export class ValkeyShard2 extends ValkeyShard { static binding = "SHARD2"; }
+export class ValkeyShard3 extends ValkeyShard { static binding = "SHARD3"; }
+export class ValkeyShard4 extends ValkeyShard { static binding = "SHARD4"; }
+export class ValkeyShard5 extends ValkeyShard { static binding = "SHARD5"; }
+export class ValkeyShard6 extends ValkeyShard { static binding = "SHARD6"; }
+export class ValkeyShard7 extends ValkeyShard { static binding = "SHARD7"; }
