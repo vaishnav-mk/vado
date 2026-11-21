@@ -182,16 +182,18 @@ export class ValkeyHost {
     }
   }
 
+  // rk_tick (newer builds) runs beforeSleep after the pass, so one call reads, runs, writes the AOF and
+  // flushes replies. rk_step runs it before the pass, so a wake needs two.
   step() {
-    try { this.#vk.exports.rk_step(); } catch (e) { this.#log(`rk_step threw: ${e?.stack ?? e}`); throw e; }
+    const vk = this.#vk.exports;
+    try { vk.rk_tick ? vk.rk_tick() : vk.rk_step(); } catch (e) { this.#log(`rk_step threw: ${e?.stack ?? e}`); throw e; }
   }
 
   #schedule() {
     this.lastActive = Date.now();
     if (this.#queued) return;
     this.#queued = true;
-    // The second step runs beforeSleep, where Valkey writes the AOF and flushes replies.
-    queueMicrotask(() => { this.#queued = false; this.step(); this.step(); });
+    queueMicrotask(() => { this.#queued = false; this.step(); if (!this.#vk.exports.rk_tick) this.step(); });
   }
 
   // serverCron runs only while clients are connected, so an idle object can be evicted.
