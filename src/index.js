@@ -4,26 +4,28 @@ import { commandTable } from "./commands.js";
 import { bench } from "./bench.js";
 import { IDLE_MS, PULSE_MS, WS_MAX_QUEUED } from "./constants.js";
 import { coloOf } from "./pulse.js";
+import { HINTS } from "./catalog.js";
 
 export { ValkeyShard } from "./shard.js";
 export { Catalog } from "./catalog.js";
 export { Pulse } from "./pulse.js";
 
-const HINTS = new Set(["wnam", "enam", "sam", "weur", "eeur", "apac", "apac-ne", "apac-se", "oc", "afr", "me"]);
 // Per isolate, cache the promise, not the result: hundreds of connections landing on a cold isolate
 // would otherwise all fetch the COMMAND table at once (796 RPCs in a minute, and the isolate hit its
 // 128 MB limit). A failed lookup is dropped so the next connection retries.
 const dbs = new Map(); // name -> Promise<db>; a database's record never changes once created
 let table = null; // Promise<command table>
 
-export const objectOptions = (env) => (HINTS.has(env.LOCATION_HINT) ? { locationHint: env.LOCATION_HINT } : {});
+export const objectOptions = (env, hint = env.LOCATION_HINT) => (HINTS.has(hint) ? { locationHint: hint } : {});
 export const shardName = (db, i) => `${db.name}.${db.created.toString(36)}.${i}`;
-export const shardStub = (env, db, i) => env.SHARD.getByName(shardName(db, i), objectOptions(env));
+// A spread database places data shard i in regions[i % n]; its pub/sub shard stays at LOCATION_HINT.
+export const shardStub = (env, db, i) =>
+  env.SHARD.getByName(shardName(db, i), objectOptions(env, typeof i === "number" && db.regions ? db.regions[i % db.regions.length] : env.LOCATION_HINT));
 
-export function database(env, name, shards) {
+export function database(env, name, shards, regions) {
   let db = dbs.get(name);
   if (!db) {
-    db = env.CATALOG.getByName("catalog").get(name, shards);
+    db = env.CATALOG.getByName("catalog").get(name, shards, regions);
     db.catch(() => dbs.delete(name));
     dbs.set(name, db);
   }

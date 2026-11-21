@@ -5,6 +5,7 @@ import { database, shardStub } from "./index.js";
 import Redis from "ioredis";
 import { bindingConnector } from "./client.js";
 import { sameSecret } from "./router.js";
+import { WORLD } from "./catalog.js";
 
 const enc = new TextEncoder();
 const cmd = (...a) => `*${a.length}\r\n` + a.map((x) => ((x = String(x)), `$${enc.encode(x).length}\r\n${x}\r\n`)).join("");
@@ -79,8 +80,10 @@ const pct = (xs, p) => xs.sort((a, b) => a - b)[Math.min(xs.length - 1, Math.flo
 const allShards = async (env, name, fn) => { const db = await database(env, name); return Promise.all(Array.from({ length: db.shards }, (_, i) => fn(shardStub(env, db, i), i))); };
 
 const tests = {
+  // regions=world spreads a new database's shards over WORLD; regions=a,b,c over those hints.
   async db(env, q) {
-    return { db: await database(env, q.get("db"), q.get("shards") ? Number(q.get("shards")) : undefined) };
+    const list = (v) => (v === "world" ? WORLD : v ? v.split(",") : undefined);
+    return { db: await database(env, q.get("db"), q.get("shards") ? Number(q.get("shards")) : undefined, list(q.get("regions"))) };
   },
 
   // Chaos hook: hard-reset one shard (shard=<i>) or all of them, as a crash or deploy would.
