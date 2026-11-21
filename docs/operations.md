@@ -159,5 +159,5 @@ HOST=<your-host> PORT=6379 PW=... DB=check node test/ioredis.mjs
 - The catalog adds its `regions` and `replicas` columns on startup when they are missing. Add later columns the same
   way, never by rewriting the table.
 - New Durable Object classes need a new migration tag in `wrangler.jsonc`.
-- Changes to Valkey go in `vendor/valkey-wasm.patch`. Rebuild `vendor/valkey.wasm` from valkey-wasm with the patch
-  and wasi-sdk (`vendor/README.md`).
+- Changes to Valkey go in `wasm/patches/` or `wasm/wasi/`. Rebuild `vendor/valkey.wasm` with `wasm/build.sh` and
+  wasi-sdk (`wasm/README.md`).

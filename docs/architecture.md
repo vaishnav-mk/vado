@@ -65,7 +65,7 @@ placement, the password, and what happens to clients when a shard resets.
   commit), so a busy shard writes far fewer rows. A reset object reloads its AOF and carries on.
 - **Trade-off:** data lives in Valkey's memory, so a shard holds at most 64 MB inside the 128 MB isolate. wasm memory
   never shrinks. With no `fork()` in wasm, an AOF rewrite blocks the shard while it runs, so the shard schedules
-  rewrites for quiet moments. The wasm build carries a small patch (`vendor/valkey-wasm.patch`).
+  rewrites for quiet moments. The wasm build carries a few small patches (`wasm/patches/`).
 
 ### Read replicas
 

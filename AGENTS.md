@@ -70,8 +70,7 @@ Rules for anyone, human or agent, changing this repo.
   missing, as `regions` and `replicas` are.
 - New Durable Object classes need a migration tag in `wrangler.jsonc`, and a namespace in `config.capnp.in` if local
   runs need them.
-- Changes to Valkey itself go in `vendor/valkey-wasm.patch`, with `vendor/valkey.wasm` rebuilt from it
-  (`vendor/README.md`).
+- Changes to Valkey itself go in `wasm/patches/` or `wasm/wasi/`, with `vendor/valkey.wasm` rebuilt by `wasm/build.sh`.
 - Comment the why the code can't show, not the what.
 
 ## Bench endpoints
