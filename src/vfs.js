@@ -37,8 +37,9 @@ export class Vfs {
   }
 
   // ---- helpers ----
-  #u8() { return new Uint8Array(this.#mem().buffer); }
-  #dv() { return new DataView(this.#mem().buffer); }
+  #u8v = null; #dvv = null; // rebuilt only when wasm memory grows
+  #u8() { const b = this.#mem().buffer; return this.#u8v?.buffer === b ? this.#u8v : (this.#u8v = new Uint8Array(b)); }
+  #dv() { const b = this.#mem().buffer; return this.#dvv?.buffer === b ? this.#dvv : (this.#dvv = new DataView(b)); }
   #str(ptr, len) { return this.#dec.decode(this.#u8().subarray(ptr, ptr + len)); }
 
   // Resolve `path` relative to directory fd `dirfd` into a key under the preopen root ("" is the root).

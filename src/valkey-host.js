@@ -9,6 +9,8 @@ const AE_READABLE = 1;
 const AE_WRITABLE = 2;
 const ENOSYS = 52;
 const QUIT = new TextEncoder().encode("*1\r\n$4\r\nQUIT\r\n");
+// A view of wasm memory, rebuilt only when the memory grows (which replaces its buffer).
+const viewOf = (memory, View) => { let v = null; return () => (v?.buffer === memory().buffer ? v : (v = new View(memory().buffer))); };
 const HELLO3 = new TextEncoder().encode("*2\r\n$5\r\nHELLO\r\n$1\r\n3\r\n");
 
 export class ValkeyHost {
@@ -45,7 +47,8 @@ export class ValkeyHost {
   }
 
   #imports(module, memory) {
-    const dv = () => new DataView(memory().buffer);
+    const dv = viewOf(memory, DataView);
+    let clockMs = -1, clockNs = 0n; // Valkey reads the clock ~10 times a step; it only moves across I/O
     const out = { 1: "", 2: "" };
     const vfs = this.#vfs.imports();
     const wasi = {
@@ -55,7 +58,12 @@ export class ValkeyHost {
       args_sizes_get: (c, s) => (dv().setUint32(c, 0, true), dv().setUint32(s, 0, true), 0),
       args_get: () => 0,
       // Workers clocks advance only across I/O; Valkey re-reads the clock every step.
-      clock_time_get: (_id, _p, ptr) => (dv().setBigUint64(ptr, BigInt(Date.now()) * 1_000_000n, true), 0),
+      clock_time_get: (_id, _p, ptr) => {
+        const ms = Date.now();
+        if (ms !== clockMs) { clockMs = ms; clockNs = BigInt(ms) * 1_000_000n; }
+        dv().setBigUint64(ptr, clockNs, true);
+        return 0;
+      },
       clock_res_get: (_id, ptr) => (dv().setBigUint64(ptr, 1_000_000n, true), 0),
       random_get: (ptr, len) => (crypto.getRandomValues(new Uint8Array(memory().buffer, ptr, len)), 0),
       poll_oneoff: (_i, _o, _n, nev) => (dv().setUint32(nev, 0, true), 0),
