@@ -66,13 +66,13 @@ over minutes. Wait at least 5 minutes after a deploy before you measure anything
 
 Durable Object bindings, in `wrangler.jsonc`: `SHARD` to `SHARD7` (the eight shard classes: shards and their
 replicas by class, with pub/sub and `__meta` in `SHARD`), `REWRITER` to `REWRITER7` (a shard class without its
-rewriter binding rewrites its AOF inline, blocking), `CATALOG`, `PULSE`
-(optional: without it, routers don't report activity and bench `pulse` returns nothing) and `SENDER` (needed only
-by bench `send`).
+rewriter binding rewrites its AOF inline, blocking), `CATALOG`, `PULSE` (optional: without it, routers don't report
+activity and bench `pulse` returns nothing) and `SENDER` (needed only by bench `send`).
 
 AOF rewrite thresholds (`AOF_REWRITE_MIN`, `AOF_REWRITE_IDLE_MS`, `AOF_REWRITE_CAP`), rewriter timeout and fallback
-(`AOF_HELPER_TIMEOUT_MS`, `AOF_HELPER_RETRY_MS`), group commit
-(`SHARD_COMMITS`), shard classes (`SHARD_CLASSES`), replication (`REPL_*`, `READ_YOUR_WRITES_MS`) and the other tunables are in `src/constants.js`.
+(`AOF_HELPER_TIMEOUT_MS`, `AOF_HELPER_RETRY_MS`), group commit (`SHARD_COMMITS`), shard classes (`SHARD_CLASSES`),
+storage (`VFS_CHUNK`, `VFS_TAIL`, `VFS_SWEEP_ROWS`), replication (`REPL_*`, `READ_YOUR_WRITES_MS`) and the other
+tunables are in `src/constants.js`.
 
 ## Create a database with placement and replicas
 
@@ -171,6 +171,9 @@ HOST=<your-host> PORT=6379 PW=... DB=check node test/ioredis.mjs
 - Never remove a shard class. A database keeps shard `i` in class `i % classes` for life, and a build from before
   shard classes (df14748) sends every shard to `ValkeyShard`, where shards of newer databases outside class 0
   would be new, empty objects. Don't roll back past that change.
+- Storing file rows under chunk keys (47d4c36) is a one-way change. Code from before it reads a file's rows by
+  path, so it can't read any file created or renamed since, such as every AOF base and incr file written after the
+  upgrade. Don't roll back past that change.
 - Keep the rewriter classes in step with the shard classes: shard class `k` finds its rewriter by binding name
   (`SHARD<k>` uses `REWRITER<k>`).
 - Changes to Valkey go in `wasm/patches/` or `wasm/wasi/`. Rebuild `vendor/valkey.wasm` with `wasm/build.sh` and

@@ -11,6 +11,15 @@ object's SQLite (`src/vfs.js`):
 - The last row of a file grows in place while it is under 16 KB (`VFS_TAIL`). Rows written are billed, so an
   unpipelined write costs one row.
 - File sizes are derived from the rows, never stored separately, so they can't disagree.
+- A file's rows are stored under a key of its own (`vfs_node.chunks`), not under its path, so a rename updates one
+  row instead of rewriting the file. A rewrite renames its output twice, so before keys every rewrite wrote the base
+  three times: an inline rewrite of a 35.6 MB base went from 2.5-3.2 s to 1.4-1.9 s with them. Files from before
+  keys have none recorded and use their path.
+- Deleting a file drops its entry and puts its key in `vfs_trash`. The host then deletes the rows behind it 2 per
+  storage commit, in the background (`VFS_SWEEP_ROWS`), and picks up again after a restart. Every reply waits for
+  the commit before it, and freeing a big file in one commit was slow: deleting a 32 MB file from the middle of the
+  database took 455-573 ms, against 5-22 ms from the end, and made the swap at the end of a rewrite take 585-804 ms.
+  With the sweep the swap takes 11-23 ms.
 
 A Durable Object holds every outgoing message until its storage writes are committed. So a reply leaves only after
 the write behind it is durable, and a batch of pipelined writes shares one commit.
