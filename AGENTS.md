@@ -27,6 +27,14 @@ Rules for anyone, human or agent, changing this repo.
   files from before keys), and every new file gets a fresh key, so a rename moves one row. The chunk rows of a
   deleted file stay in `vfs_chunk`, with the key in `vfs_trash`, until the host's sweep removes them. Chunk keys are
   a one-way change: code from before them can't read files written since.
+- **A dropped database stays dropped.** Its catalog row keeps `dropped`, so the name and its shards' names are never
+  reused, and each of its shards keeps a `dropped` table and never boots Valkey. Keep that check first in the
+  `ValkeyShard` constructor, and make every new entry point refuse a dropped shard (`#live()`).
+- **Idle replication sleeps.** A primary retires its replicas after `REPL_IDLE_MS` with no client activity, so every
+  new client entry point on `ValkeyShard` must count as activity (`#active()`), or the database can sleep under
+  traffic that only reaches the new path. Retired replicas never serve reads.
+- **Replicas never share a class with a primary.** Shard class `k` keeps its replicas in `SHARD{8 + k}`
+  (`replicaBinding`); routers and primaries both use it.
 - **Every buffer is bounded.** Each queue has a high and low mark in `src/constants.js`, and stops reading its source
   at the high mark. Client input is bounded by `MAX_REQUEST`, or `MAX_UNAUTHED` before AUTH. Replication bytes go
   through `hold`/`release` on the host, so they count toward `SHARD_HIGH_WATER`, and a replica past `REPL_BACKLOG`
@@ -43,7 +51,8 @@ Rules for anyone, human or agent, changing this repo.
   RPC entry. They can't contain dots, which keeps them from forming a replica name (`<shard>.r.<region>`). Region
   lists are checked against `HINTS` by the catalog. Environment config is parsed and validated where it is read
   (`parseEpochs`), and a bad value throws instead of falling back.
-- **Compare secrets in constant time** (`sameSecret`).
+- **Compare secrets in constant time** (`sameSecret`). A database's own password is stored only as a salted hash
+  (`hashSecret`), and AUTH checks the shared password before it looks up or creates a database.
 - **Clients don't change the service's settings.** `CONFIG SET` takes only the settings in `CONFIG_SET`
   (`src/router.js`), which change how data behaves. Never add one for durability, memory, networking or auth.
   SAVE, BGREWRITEAOF and ACL stay unsupported.
