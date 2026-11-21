@@ -419,6 +419,7 @@ const tests = {
     let missing = 0, wrong = 0;
     for (let i = 0; i < n; i += 1000) {
       const [vals] = await c.call(["MGET", ...Array.from({ length: Math.min(1000, n - i) }, (_, k) => `w:${tag}:${i + k}`)]);
+      if (!Array.isArray(vals)) throw new Error(vals?.err ?? "MGET didn't return an array");
       vals.forEach((v, k) => { if (v === null) missing++; else if (v !== `${tag}-${i + k}`) wrong++; });
     }
     c.close();
