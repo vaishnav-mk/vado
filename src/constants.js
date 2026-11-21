@@ -79,11 +79,12 @@ export const VFS_SWEEP_MS = 50;
 
 /** A rewrite is due once the incr file is this big and at least as big as the base, as Valkey's default rule. */
 export const AOF_REWRITE_MIN = 8 << 20;
-/** A due rewrite waits for the shard to be quiet this long, since it blocks every client while it runs. */
+/** With no rewriter helper (src/rewriter.js), a due rewrite runs inline and blocks every client, so it waits
+ *  for the shard to be quiet this long. A helper rewrite doesn't block the shard and doesn't wait. */
 export const AOF_REWRITE_IDLE_MS = 1_000;
 /**
- * Rewrite anyway once the incr file reaches this (and twice the base), quiet or not. A restart replays the incr
- * file (~1 s per 64 MB), and each forced rewrite blocks the shard for ~1 s per 10 MB of RDB base.
+ * Rewrite anyway once the incr file reaches this (and twice the base), quiet or not: a restart replays the incr
+ * file (~1 s per 64 MB). Only an inline rewrite blocks the shard while it runs.
  */
 export const AOF_REWRITE_CAP = 64 << 20;
 /** How often a shard that is appending looks at its AOF size. */
