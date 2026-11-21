@@ -14,7 +14,9 @@ Experimental. Independent project, not an official Cloudflare or Valkey product.
 - A database's shards rotate over eight Durable Object classes, so its first eight shards never share an isolate's
   memory or thread.
 - A database's shards can be spread over regions, and each shard can keep read replicas in other regions. Routers
-  read from a replica in or next to their region, and a connection still reads its own writes.
+  read from a replica in or next to their region, a connection still reads its own writes, and `WAIT` reports how
+  many replicas have them. An idle replicated database stops its replicas and sleeps until it is used again.
+- A database can have its own password, and can be dropped for good.
 - A local live view (`ui/`) shows each shard and replica, where traffic enters, and response times.
 
 ## How it works
