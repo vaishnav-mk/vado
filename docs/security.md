@@ -2,8 +2,17 @@
 
 ## Authentication
 
-- **One password for every database.** `VALKEY_PASSWORD` makes AUTH mandatory. The AUTH username names the database;
-  there are no per-database users or ACLs. Anyone with the password can use, and FLUSHALL, any database.
+- **A shared password, and optional per-database ones.** `VALKEY_PASSWORD` makes AUTH mandatory. The AUTH username
+  names the database; there are no users or ACLs within a database.
+  - A database created with its own password (bench `/db?password=new`, which returns it once) takes only that
+    password over TCP or WebSocket. The catalog keeps a salted SHA-256 of it, never the password; it is 24 random
+    bytes, so a fast hash is enough and AUTH stays cheap for clients that connect often.
+  - Any other database takes `VALKEY_PASSWORD`, so anyone with that password can use, and FLUSHALL, every database
+    without its own.
+  - Through a service binding (your own Workers), `VALKEY_PASSWORD` opens every database, including those with their
+    own password.
+  - AUTH checks the shared password before it looks up or creates a database, so a wrong password creates nothing.
+    A database's own password can't be set after it is created, or changed.
 - **Without a password, anything that reaches `connect()` is in.** That is fine behind a service binding, which only
   your own Workers can call. Set the password before you put a TCP Worker in front. `/ws` refuses to serve without one.
 - **Passwords are compared in constant time.**

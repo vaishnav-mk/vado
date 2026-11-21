@@ -121,7 +121,7 @@ Test traffic needs the `SENDER` binding.
 
 | Test | What it does |
 | --- | --- |
-| `db` | Create a database, or return its record: `shards`, `regions`, `replicas`, `classes` |
+| `db` | Create a database, or return its record: `shards`, `regions`, `replicas`, `classes`, and `password=new` to give a new database its own password (returned once, in `password`) |
 | `dbs` | Every database's record |
 | `stats`, `shards` | Each shard's host stats, files and replica states; `shards` adds Valkey's INFO for every shard and replica (the live view) |
 | `pulse` | Each isolate's open connections, as last reported to the Pulse object |
