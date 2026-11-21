@@ -11,13 +11,17 @@ diff --git a/src/aof.c b/src/aof.c
  #include "bio.h"
  #include "rio.h"
  #include "functions.h"
-@@ -2634,6 +2637,13 @@
+@@ -2634,6 +2637,17 @@
          server.aof_rewrite_time_start = time(NULL);
          server.aof_rewrite_use_rdb_preamble = server.aof_use_rdb_preamble;
          snprintf(tmpfile, 256, "temp-rewriteaof-bg-%d.aof", (int)server.child_pid);
 +        /* The host may write the base itself, from a copy of the files before the new
-+         * incr file (wasi/host.h). Valkey keeps serving; rk_rewrite_done() finishes. */
-+        if (host_aof_rewrite(tmpfile, (int)strlen(tmpfile), server.aof_rewrite_use_rdb_preamble)) {
++         * incr file (wasi/host.h). Valkey keeps serving; rk_rewrite_done() finishes.
++         * Only with AOF on: turning it on (AOF_WAIT_REWRITE) opens a temp incr file
++         * that isn't in the manifest, so the files before it aren't the whole data. */
++        if (server.aof_state == AOF_ON &&
++            host_aof_rewrite(tmpfile, (int)strlen(tmpfile), server.aof_rewrite_use_rdb_preamble,
++                             (int)server.stat_aof_rewrites)) {
 +            serverLog(LL_NOTICE, "Background append only file rewriting started by the host");
 +            (void)childpid;
 +            return C_OK;
@@ -25,20 +29,20 @@ diff --git a/src/aof.c b/src/aof.c
          int ok = rewriteAppendOnlyFile(tmpfile) == C_OK;
          backgroundRewriteDoneHandler(ok ? 0 : 1, 0);
          resetChildState();
-@@ -2936,4 +2946,16 @@
-     server.aof_rewrite_time_start = -1;
+@@ -2937,3 +2951,16 @@
      /* Schedule a new rewrite if we are waiting for it to switch the AOF ON. */
      if (server.aof_state == AOF_WAIT_REWRITE) server.aof_rewrite_scheduled = 1;
-+}
+ }
 +
 +#ifdef VALKEY_WASM
 +/* The host finished (ok) or gave up on the rewrite it took in
-+ * rewriteAppendOnlyFileBackground(). Returns 0 if that rewrite isn't running any
-+ * more (it was killed), so the host removes the file it was writing itself. */
-+__attribute__((export_name("rk_rewrite_done"))) int rk_rewrite_done(int ok) {
-+    if (server.child_type != CHILD_TYPE_AOF) return 0;
++ * rewriteAppendOnlyFileBackground(); gen is the stat_aof_rewrites it was given.
++ * Returns 0 if that rewrite isn't running any more (it was killed, and maybe
++ * another started), so the host removes the file it was writing itself. */
++__attribute__((export_name("rk_rewrite_done"))) int rk_rewrite_done(int ok, int gen) {
++    if (server.child_type != CHILD_TYPE_AOF || gen != (int)server.stat_aof_rewrites) return 0;
 +    backgroundRewriteDoneHandler(ok ? 0 : 1, 0);
 +    resetChildState();
 +    return 1;
- }
++}
 +#endif
