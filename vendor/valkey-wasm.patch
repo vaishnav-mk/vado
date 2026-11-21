@@ -1,3 +1,31 @@
+diff --git a/scripts/build.sh b/scripts/build.sh
+index 682fd78..048c9ce 100755
+--- a/scripts/build.sh
++++ b/scripts/build.sh
+@@ -20,10 +20,13 @@ TARGET=wasm32-wasip1
+ # Reactor (stays resident, exported entry points; no _start main loop).
+ CFLAGS=(
+   --target=$TARGET --sysroot="$SYSROOT"
+-  -O2 -fno-strict-aliasing -Wno-implicit-function-declaration
++  -O3 -fno-strict-aliasing -Wno-implicit-function-declaration
+   -Wno-int-conversion -Wno-macro-redefined -Wno-unused
+   -D_WASI_EMULATED_SIGNAL -D_WASI_EMULATED_PROCESS_CLOCKS -D_WASI_EMULATED_MMAN -D_WASI_EMULATED_GETPID
+   -DVALKEY_WASM=1 -DHAVE_WASI_AE=1
++  # wasi-libc's dlmalloc has malloc_usable_size: zmalloc drops its 8-byte size
++  # prefix per allocation and asks the allocator instead.
++  -DUSE_MALLOC_USABLE_SIZE
+   # 9.x builds Lua as a static module (the default: BUILD_LUA unset -> STATIC_LUA=1).
+   # server.c only registers the "lua" scripting engine when these are set; without
+   # them EVAL fails with "Could not find scripting engine 'lua'".
+@@ -152,4 +155,8 @@ echo "[link]"
+ # an import here on purpose — that's why --allow-undefined is set.
+ "$CC" "${LDFLAGS[@]}" "$OUT"/obj/*.o -o "$OUT/valkey.wasm" 2>>"$OUT/link.err" \
+   && echo "LINK OK -> $OUT/valkey.wasm" || { echo "LINK FAILED (see build/link.err)"; tail -30 "$OUT/link.err"; exit 1; }
++# binaryen pass on top of LLVM's (brew install binaryen). Features (incl. legacy
++# EH for Lua SjLj) come from the module's target_features section. -g keeps the
++# name section; DWARF is stripped first so -O3 needn't carry it.
++wasm-opt -g --strip-dwarf -O3 "$OUT/valkey.wasm" -o "$OUT/valkey.wasm"
+ ls -la "$OUT/valkey.wasm"
 diff --git a/src/src/aof.c b/src/src/aof.c
 index 276dcbe..baed2e4 100644
 --- a/src/src/aof.c
@@ -28,11 +56,143 @@ index 276dcbe..baed2e4 100644
      if ((childpid = serverFork(CHILD_TYPE_AOF)) == 0) {
          char tmpfile[256];
  
+diff --git a/src/wasi/ae_wasi.c b/src/wasi/ae_wasi.c
+index d1513de..52a25dc 100644
+--- a/src/wasi/ae_wasi.c
++++ b/src/wasi/ae_wasi.c
+@@ -10,10 +10,12 @@
+ #include "host.h"
+ 
+ typedef struct aeApiState {
+-    /* interest mask per fd slot, indexed by (fd - HOST_FD_BASE) is impractical
+-     * (fds are large); instead we rebuild the interest list each poll from the
+-     * event loop's own events[] table, which already holds every fd's mask. */
+-    int dummy;
++    /* fds whose events[] mask is nonzero, unordered, so a poll walks only the
++     * live fds instead of 0..maxfd (host fds start at HOST_FD_BASE). */
++    int *fds;
++    int *pos;   /* pos[fd] = index of fd in fds[], or -1 */
++    int count;
++    int cap;    /* allocated length of fds[] and pos[] */
+ } aeApiState;
+ 
+ /* scratch buffers for the host_poll hand-off, sized to the loop's setsize */
+@@ -21,49 +23,84 @@ static int32_t *ae_interest = 0;  /* (fd,mask) pairs */
+ static int32_t *ae_fired = 0;     /* (fd,mask) pairs */
+ static int ae_cap = 0;
+ 
+-static int aeApiCreate(aeEventLoop *eventLoop) {
+-    aeApiState *state = zmalloc(sizeof(aeApiState));
+-    if (!state) return -1;
+-    eventLoop->apidata = state;
+-    if (eventLoop->setsize > ae_cap) {
+-        ae_cap = eventLoop->setsize;
++static void aeApiGrow(aeApiState *state, int setsize) {
++    if (setsize > state->cap) {
++        state->fds = zrealloc(state->fds, sizeof(int) * setsize);
++        state->pos = zrealloc(state->pos, sizeof(int) * setsize);
++        for (int i = state->cap; i < setsize; i++) state->pos[i] = -1;
++        state->cap = setsize;
++    }
++    if (setsize > ae_cap) {
++        ae_cap = setsize;
+         ae_interest = zrealloc(ae_interest, sizeof(int32_t) * 2 * ae_cap);
+         ae_fired = zrealloc(ae_fired, sizeof(int32_t) * 2 * ae_cap);
+     }
++}
++
++static void aeApiUntrack(aeApiState *state, int fd) {
++    int i = state->pos[fd];
++    int last = state->fds[--state->count];
++    state->fds[i] = last;
++    state->pos[last] = i;
++    state->pos[fd] = -1;
++}
++
++static int aeApiCreate(aeEventLoop *eventLoop) {
++    aeApiState *state = zcalloc(sizeof(aeApiState));
++    if (!state) return -1;
++    eventLoop->apidata = state;
++    aeApiGrow(state, eventLoop->setsize);
+     return 0;
+ }
+ 
+ static int aeApiResize(aeEventLoop *eventLoop, int setsize) {
+-    if (setsize > ae_cap) {
+-        ae_cap = setsize;
+-        ae_interest = zrealloc(ae_interest, sizeof(int32_t) * 2 * ae_cap);
+-        ae_fired = zrealloc(ae_fired, sizeof(int32_t) * 2 * ae_cap);
+-    }
++    aeApiGrow(eventLoop->apidata, setsize);
+     return 0;
+ }
+ 
+ static void aeApiFree(aeEventLoop *eventLoop) {
+-    zfree(eventLoop->apidata);
++    aeApiState *state = eventLoop->apidata;
++    zfree(state->fds);
++    zfree(state->pos);
++    zfree(state);
+ }
+ 
+-/* Interest is tracked in eventLoop->events[] by ae.c itself; Add/Del are no-ops
+- * here beyond what the core already records. We read events[] at poll time. */
++/* ae.c calls this before OR-ing mask into events[fd].mask. */
+ static int aeApiAddEvent(aeEventLoop *eventLoop, int fd, int mask) {
+-    (void)eventLoop; (void)fd; (void)mask; return 0;
++    aeApiState *state = eventLoop->apidata;
++    (void)mask;
++    if (state->pos[fd] == -1) {
++        state->pos[fd] = state->count;
++        state->fds[state->count++] = fd;
++    }
++    return 0;
+ }
++
++/* ae.c calls this after clearing mask from events[fd].mask; `& ~mask` keeps
++ * the result right whichever order the core uses. */
+ static void aeApiDelEvent(aeEventLoop *eventLoop, int fd, int mask) {
+-    (void)eventLoop; (void)fd; (void)mask;
++    aeApiState *state = eventLoop->apidata;
++    int remaining = eventLoop->events[fd].mask & ~mask;
++    if (remaining == AE_NONE && state->pos[fd] != -1) aeApiUntrack(state, fd);
+ }
+ 
+ static int aeApiPoll(aeEventLoop *eventLoop, struct timeval *tvp) {
+     (void)tvp; /* never block */
++    aeApiState *state = eventLoop->apidata;
+     int n = 0;
+-    for (int fd = 0; fd <= eventLoop->maxfd; fd++) {
++    for (int i = 0; i < state->count;) {
++        int fd = state->fds[i];
+         int mask = eventLoop->events[fd].mask;
+-        if (mask == AE_NONE) continue;
++        /* Mask can drop to NONE without a DelEvent (e.g. only AE_BARRIER was
++         * removed); prune it here. fds[i] then holds an unvisited fd. */
++        if (mask == AE_NONE) {
++            aeApiUntrack(state, fd);
++            continue;
++        }
+         ae_interest[n * 2] = fd;
+         ae_interest[n * 2 + 1] = mask;
+         n++;
++        i++;
+     }
+     if (n == 0) return 0;
+     int fired = host_poll(ae_interest, n, ae_fired, ae_cap, 0);
 diff --git a/src/wasi/reactor.c b/src/wasi/reactor.c
-index 1464776..4f64b9b 100644
+index 1464776..8567169 100644
 --- a/src/wasi/reactor.c
 +++ b/src/wasi/reactor.c
-@@ -36,6 +36,31 @@ int rk_boot(int port) {
+@@ -9,6 +9,7 @@
+  * directly through the exported `memory`, so no copy entry points are needed. */
+ #include "server.h"
+ #include "ae.h"
++#include "module.h"
+ #include <stdio.h>
+ #include <string.h>
+ 
+@@ -36,6 +37,31 @@ int rk_boot(int port) {
      return main(argc, argv);
  }
  
@@ -64,3 +224,30 @@ index 1464776..4f64b9b 100644
  /* One non-blocking pass of the event loop. Returns the number of events
   * processed (0 means idle). */
  __attribute__((export_name("rk_step")))
+@@ -44,6 +70,26 @@ int rk_step(void) {
+         AE_ALL_EVENTS | AE_DONT_WAIT | AE_CALL_BEFORE_SLEEP | AE_CALL_AFTER_SLEEP);
+ }
+ 
++/* One pass with the same callback order as aeMain (afterSleep, events,
++ * timers, beforeSleep), so the AOF write and reply flush for this pass happen
++ * in this call instead of the next one. Returns the number of events processed.
++ *
++ * beforeSleep drops the module GIL and afterSleep re-takes it. Boot and rk_step
++ * leave it held, and re-locking a held mutex hits the single-threaded futex
++ * wait, which traps. Normalize to released first (trylock+unlock frees it
++ * whether or not it was held). */
++__attribute__((export_name("rk_tick")))
++int rk_tick(void) {
++    aeEventLoop *el = server.el;
++    if (moduleCount()) {
++        moduleTryAcquireGIL();
++        moduleReleaseGIL();
++    }
++    int processed = aeProcessEvents(el, AE_ALL_EVENTS | AE_DONT_WAIT | AE_CALL_AFTER_SLEEP);
++    if (el->beforesleep) el->beforesleep(el);
++    return processed;
++}
++
+ /* Milliseconds until the next timer event is due, so the host can size its next
+  * timer instead of busy-polling. Returns -1 when only serverCron is pending. */
+ __attribute__((export_name("rk_next_timeout_ms")))
