@@ -146,6 +146,7 @@ export class Vfs {
   }
 
   #truncate(n, size) {
+    if (n.path.startsWith("\0deleted:")) return; // an unlinked-but-open file: its rows are gone
     this.#flush(n);
     if (size >= n.size) {
       if (size > n.size) this.#append(n, new Uint8Array(size - n.size), true);
@@ -364,6 +365,7 @@ export class Vfs {
         const from = this.#resolve(oldDir, oldPtr, oldLen), to = this.#resolve(newDir, newPtr, newLen);
         if (from === null || to === null) return E.BADF;
         const row = this.#row(from);
+        if (row && from === to) return E.OK;
         if (!row) return E.NOENT;
         const n = this.#nodes.get(from);
         if (n) this.#flush(n);
