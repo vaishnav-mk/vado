@@ -175,7 +175,7 @@ function startTest(level, from) {
   for (const region of regions) for (let i = 0; i < LEVELS[level]; i++) (async () => {
     // Overwrite the same 20,000 keys each round, then read them back three times, like a cache. The
     // keys stay the same so test traffic never fills the database.
-    const send = (extra = "") => api(`send?db=${encodeURIComponent(db)}&region=${region}&n=20000&batch=500&conns=4&prefix=test-${region}${i}-${extra}`);
+    const send = (extra = "") => api(`send?db=${encodeURIComponent(db)}&region=${region}&sender=${i}&n=20000&batch=500&conns=4&prefix=test-${region}${i}-${extra}`);
     while (!run.stop) {
       try { await send(); for (let k = 0; k < 3 && !run.stop; k++) await send("&op=get"); }
       catch { await new Promise((r) => setTimeout(r, 2000)); }

@@ -111,8 +111,10 @@ const tests = {
     const region = q.get("region");
     if (!HINTS.has(region)) throw new Error(`region must be one of ${[...HINTS].join(", ")}`);
     const params = Object.fromEntries(q);
-    delete params.region;
-    return { region, ...(await env.SENDER.getByName(region, { locationHint: region }).run(params)) };
+    delete params.region; delete params.sender;
+    // sender=<k> picks one of several Sender objects in the region, so load can come from many isolates.
+    const name = q.get("sender") ? `${region}/${q.get("sender")}` : region;
+    return { region, ...(await env.SENDER.getByName(name, { locationHint: region }).run(params)) };
   },
 
   // Chaos hook: hard-reset one shard (shard=<i>) or all of them, as a crash or deploy would.
