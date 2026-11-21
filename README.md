@@ -58,7 +58,9 @@ From another Worker, use a service binding and `env.VALKEY.connect("mydb:6379")`
 
 ## Caveats
 
-- One password for every database, and no ACLs. Set `VALKEY_PASSWORD` before exposing a TCP Worker, and turn on TLS.
+- One shared password (`VALKEY_PASSWORD`), plus an optional password of its own for a database created with one, and
+  no ACLs ([security](docs/security.md#authentication)). Set `VALKEY_PASSWORD` before exposing a TCP Worker, and turn
+  on TLS.
   [Security](docs/security.md).
 - 64 MB of data per shard, about 8 MB per request, and a database's shard count, regions and replicas are fixed
   when it is created. A shard's wasm memory never shrinks after deletes.
