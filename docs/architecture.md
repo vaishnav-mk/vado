@@ -18,8 +18,9 @@ flowchart LR
   router -.->|"open connections, every 2 s"| pulse["Pulse"]
 ```
 
-A box is a responsibility. The shard, replica, pub/sub and `__meta` boxes are the same `ValkeyShard` class under
-different names. An arrow is a call path, not a statement about which machine or data center runs it.
+A box is a responsibility. The shard, replica, pub/sub and `__meta` boxes run the same Durable Object code under
+different object names. It is exported as eight classes, `ValkeyShard` and `ValkeyShard1` to `ValkeyShard7`, so a
+database's shards can be spread over them. An arrow is a call path, not a statement about which machine or data center runs it.
 
 ## Where everything lives
 
@@ -27,11 +28,11 @@ different names. An arrow is a call path, not a statement about which machine or
 | --- | --- | --- |
 | Worker (`src/index.js`) | Wherever the client's connection lands | Nothing durable. A `connect()` handler, `/ws`, and a token-protected bench API |
 | Router (`src/router.js`) | In the Worker, one per client connection | Per-connection state: the database, AUTH, MULTI/WATCH, recent writes per shard, its upstreams |
-| Shards (`ValkeyShard`, `SHARD` binding) | Durable Objects named `<db>.<created>.<i>`, placed by the database's `regions` or `LOCATION_HINT` | One Valkey process each, owning a contiguous range of the 16,384 slots. Its AOF lives in the object's SQLite |
-| Read replicas (`src/replication.js`) | `ValkeyShard` named `<db>.<created>.<i>.r.<region>`, one per shard per replica region | A copy of one shard's data, in memory only, kept current from the shard's AOF |
+| Shards (`ValkeyShard` to `ValkeyShard7`, bindings `SHARD` to `SHARD7`) | Durable Objects named `<db>.<created>.<i>`, in class `i % 8`, placed by the database's `regions` or `LOCATION_HINT` | One Valkey process each, owning a contiguous range of the 16,384 slots. Its AOF lives in the object's SQLite |
+| Read replicas (`src/replication.js`) | Their primary's class, named `<db>.<created>.<i>.r.<region>`, one per shard per replica region | A copy of one shard's data, in memory only, kept current from the shard's AOF |
 | Pub/sub shard | `ValkeyShard` named `<db>.<created>.pubsub` | Every channel of one database |
 | `__meta` shard | `ValkeyShard` named `__meta` | Nothing. It answers `COMMAND`, which gives the router every command's key positions |
-| Catalog (`Catalog`, `CATALOG` binding) | One Durable Object named `catalog` | Each database's name, creation time, shard count, and its `regions` and `replicas` lists |
+| Catalog (`Catalog`, `CATALOG` binding) | One Durable Object named `catalog` | Each database's name, creation time, shard count, its `regions` and `replicas` lists, and how many shard classes its shards rotate over |
 | Pulse (`src/pulse.js`, `PULSE` binding) | One Durable Object named `pulse` | In memory only: each isolate's latest report of its open connections |
 | Senders (`src/sender.js`, `SENDER` binding) | Durable Objects named `<region>` or `<region>/<k>`, placed in that region | Nothing. They run bench tests, so test traffic starts in a chosen region |
 
@@ -64,7 +65,9 @@ placement, the password, and what happens to clients when a shard resets.
   stored. Input that arrives while a commit is in flight runs in the next pass and shares the next commit (group
   commit), so a busy shard writes far fewer rows. A reset object reloads its AOF and carries on.
 - **Trade-off:** data lives in Valkey's memory, so a shard holds at most 64 MB inside the 128 MB isolate. wasm memory
-  never shrinks. With no `fork()` in wasm, an AOF rewrite blocks the shard while it runs, so the shard schedules
+  never shrinks. Objects of one class on one machine can share an isolate, and with it the isolate's memory limit and
+  thread, so shard `i` of a database uses class `i % 8` ([shard classes](scaling.md#shard-classes-and-isolates)).
+  With no `fork()` in wasm, an AOF rewrite blocks the shard while it runs, so the shard schedules
   rewrites for quiet moments. The wasm build carries a few small patches (`wasm/patches/`).
 
 ### Read replicas
@@ -130,6 +133,7 @@ placement, the password, and what happens to clients when a shard resets.
 | Rewrites scheduled by the shard | Rewrites run when the shard has been quiet for a second | A rewrite still blocks the shard, about 1 s per 10 MB of base, and a forced one can't wait |
 | Read replicas fed by the AOF | Reads near the client that don't wait for commits | Reads across connections can be stale; fewer writes per shard; primaries that don't go idle |
 | A router per connection | Stock clients, no cluster support needed | An extra hop; cross-slot limits |
+| Shards spread over eight classes | A database's first eight shards never share an isolate's memory or thread | Eight bindings and migrations to keep; shards `i` and `i + 8`, or of different databases, can still share |
 | Shard count and placement fixed at creation | Routing is computed, with no directory to keep consistent | No online resharding or moving |
 | Sockets, with RPC batches past a budget | Sockets keep per-shard order for free | The RPC path needs explicit ordering and costs more CPU per batch |
 | Backpressure on every hop | Memory stays bounded under any load | Overload slows clients down instead of failing them fast |

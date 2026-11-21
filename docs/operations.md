@@ -12,7 +12,7 @@ scripts/test-local.sh       # the whole local suite
 
 `scripts/local.sh` takes `VALKEY_PASSWORD`, `ROUTER_SOCKET_BUDGET`, `ROUTER_IDLE_MS` and `BENCH_TOKEN` (default
 `local`) from the environment, and keeps storage in `.local-do` unless you pass `fresh`. The local config
-(`config.capnp.in`) has the `SHARD`, `CATALOG` and `PULSE` bindings but no `SENDER`, so bench `send` works only in
+(`config.capnp.in`) has the `SHARD` to `SHARD7`, `CATALOG` and `PULSE` bindings but no `SENDER`, so bench `send` works only in
 a deployment.
 
 ## Tests
@@ -63,12 +63,13 @@ over minutes. Wait at least 5 minutes after a deploy before you measure anything
 | `ROUTER_IDLE_MS` | `30000` | Idle shard sockets close after this |
 | `ROUTER_SOCKET_BUDGET` | `128` | Shard and replica sockets per isolate before the router uses RPC batches |
 
-Durable Object bindings, in `wrangler.jsonc`: `SHARD` (shards, replicas, pub/sub and `__meta`), `CATALOG`, `PULSE`
+Durable Object bindings, in `wrangler.jsonc`: `SHARD` to `SHARD7` (the eight shard classes: shards and their
+replicas by class, with pub/sub and `__meta` in `SHARD`), `CATALOG`, `PULSE`
 (optional: without it, routers don't report activity and bench `pulse` returns nothing) and `SENDER` (needed only
 by bench `send`).
 
 AOF rewrite thresholds (`AOF_REWRITE_MIN`, `AOF_REWRITE_IDLE_MS`, `AOF_REWRITE_CAP`), group commit
-(`SHARD_COMMITS`), replication (`REPL_*`, `READ_YOUR_WRITES_MS`) and the other tunables are in `src/constants.js`.
+(`SHARD_COMMITS`), shard classes (`SHARD_CLASSES`), replication (`REPL_*`, `READ_YOUR_WRITES_MS`) and the other tunables are in `src/constants.js`.
 
 ## Create a database with placement and replicas
 
@@ -81,9 +82,12 @@ curl -H "authorization: Bearer $TOKEN" \
 ```
 
 `regions` and `replicas` take `world` or a comma-separated list of location hints ([placement](scaling.md#placement)).
-These apply only to a new database; for an existing one, `/db` returns its record unchanged. `/db` on a database
-with replicas also (re)starts them on every primary, which is safe to repeat. Replica state and lag are in
-`/stats` (`replicas` on each shard: `ready`, `catching up`, `copying` or `idle`, with `lagMs` and `behindBytes`).
+`classes=<1..8>` (default 8) sets how many shard classes the shards rotate over
+([shard classes](scaling.md#shard-classes-and-isolates)); it is there for experiments. These apply only to a new
+database; for an existing one, `/db` returns its record unchanged. `/db` on a database with replicas also
+(re)starts them on every primary, which is safe to repeat. Replica state and lag are in `/stats` (`replicas` on
+each shard: `ready`, `catching up`, `copying` or `idle`, with `lagMs` and `behindBytes`). Each shard's `isolate`
+is an id per isolate, so shards that share one show the same id.
 
 ## Watch it live
 
@@ -113,7 +117,7 @@ Test traffic needs the `SENDER` binding.
 
 | Test | What it does |
 | --- | --- |
-| `db` | Create a database, or return its record: `shards`, `regions`, `replicas` |
+| `db` | Create a database, or return its record: `shards`, `regions`, `replicas`, `classes` |
 | `dbs` | Every database's record |
 | `stats`, `shards` | Each shard's host stats, files and replica states; `shards` adds Valkey's INFO for every shard and replica (the live view) |
 | `pulse` | Each isolate's open connections, as last reported to the Pulse object |
@@ -159,5 +163,8 @@ HOST=<your-host> PORT=6379 PW=... DB=check node test/ioredis.mjs
 - The catalog adds its `regions` and `replicas` columns on startup when they are missing. Add later columns the same
   way, never by rewriting the table.
 - New Durable Object classes need a new migration tag in `wrangler.jsonc`.
+- Never remove a shard class. A database keeps shard `i` in class `i % classes` for life, and a build from before
+  shard classes (df14748) sends every shard to `ValkeyShard`, where shards of newer databases outside class 0
+  would be new, empty objects. Don't roll back past that change.
 - Changes to Valkey go in `wasm/patches/` or `wasm/wasi/`. Rebuild `vendor/valkey.wasm` with `wasm/build.sh` and
   wasi-sdk (`wasm/README.md`).

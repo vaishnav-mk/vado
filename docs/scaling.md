@@ -57,6 +57,24 @@ With no match, or before the router knows its location, reads go to the primary.
 [life of a command](lifecycle.md#reads-on-a-database-with-replicas) and
 [durability](durability.md#what-a-read-from-a-replica-can-see).
 
+## Shard classes and isolates
+
+Objects of one Durable Object class on one machine can share an isolate, and with it the isolate's memory limit
+and its one thread. Objects of different classes never do. So the shard object is exported as eight classes,
+`ValkeyShard` and `ValkeyShard1` to `ValkeyShard7` (`SHARD_CLASSES`, bindings `SHARD` to `SHARD7`), and shard `i` of
+a database uses class `i % 8`:
+
+- A database's shards 0 to 7 never share an isolate with each other. Shards `i` and `i + 8` can, and so can shards
+  of different databases in the same class.
+- A replica uses its primary's class. The pub/sub and `__meta` shards stay in `ValkeyShard`.
+- The class count is fixed when a database is created, in the catalog's `classes` column. Databases created before
+  classes existed have none recorded, and keep every shard in `ValkeyShard`. The bench API's `/db` takes
+  `classes=<1..8>` for experiments.
+
+A 16-shard database in one region and one class ran in 14 isolates, one of them holding 3 shards. With 8 classes,
+16 shards in one region ran in 16 isolates, and a 4-shard database with 36 replicas ran its 40 objects in 40
+isolates. Each shard's stats report `isolate`, an id per isolate, so bench `stats` shows which shards share one.
+
 ## Connections
 
 Each client connection gets its own router, and each router opens a socket to every shard it uses, and to every
@@ -92,8 +110,9 @@ the primary's writes down; one stuck replica is dropped before it can stall them
   error; with `allkeys-lru` it evicts like a cache. A replica holds the same data in its own 64 MB.
 - **Request size:** about 8 MB per request, all arguments together, and 64 KB before AUTH. A shard needs room for the
   query buffer, the value and its AOF entry at once.
-- **CPU:** a shard is one thread. The runtime resets an object kept near 100% CPU, so a single hot key has a ceiling
-  that more shards don't raise. One command can use about 30 s of CPU.
+- **CPU:** a shard is one thread, shared with any object of its class in the same isolate. The runtime resets an
+  object kept near 100% CPU, so a single hot key has a ceiling that more shards don't raise. One command can use
+  about 30 s of CPU.
 - **Writes per shard:** measured at 114-130k SET/s with deep pipelines straight to one shard. Each replica's stream
   costs the primary: with 9 replicas, one shard took 49-61k SET/s.
 - **AOF rewrites:** a rewrite blocks its shard, about 1 s per 10 MB of RDB base. The shard runs them after 1 s
