@@ -192,7 +192,7 @@ export class ValkeyShard extends DurableObject {
     if (this.#colo === undefined) { this.#colo = null; coloOf().then((c) => { this.#colo = c; }, () => {}); }
     return {
       ...this.#host.stats(), instance: this.#instance, isolate: (isolateId ??= crypto.randomUUID()), colo: this.#colo, aliveSeconds: (Date.now() - this.#bornAt) / 1000, files: this.#host.files(),
-      role: this.#replica ? "replica" : "primary", ...(this.#replica ? { ready: this.#ready } : { replicas: this.#repl.status(), lastRewrite: this.#lastRewrite }),
+      role: this.#replica ? "replica" : "primary", ...(this.#replica ? { ready: this.#ready } : { replicas: this.#repl.status(), lastRewrite: this.#lastRewrite && { ...this.#lastRewrite, doneMs: this.#host.rewriteDoneMs } }),
     };
   }
 }

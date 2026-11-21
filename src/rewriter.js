@@ -74,6 +74,7 @@ export async function rewriteByHelper(host, stub, tmp, rdb, sync, log = {}) {
     if (got !== head.size) throw new Error(`base cut short: ${got} of ${head.size} bytes`);
     at("receivedMs");
     const [tail] = await readLine(reader, b);
+    at("tailMs");
     if (tail.sum !== sum) throw new Error("base checksum mismatch");
     return true;
   } finally {

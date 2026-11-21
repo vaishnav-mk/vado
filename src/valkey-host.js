@@ -34,6 +34,7 @@ export class ValkeyHost {
   // to `tmp` (patches/0004). null: Valkey rewrites inline, blocking, as before.
   onRewrite = null;
   rewriting = null; // a Promise while a rewrite taken by onRewrite runs
+  rewriteDoneMs = null; // the last one's finish: Valkey's swap plus its storage commit
   lastActive = 0; // Date.now() of the last client input (the shard rewrites its AOF when quiet)
 
   #sync; // () => Promise: resolves when every storage write so far is confirmed (group commit), or null
@@ -165,7 +166,10 @@ export class ValkeyHost {
           try {
             // Valkey renames tmp into place and swaps the manifest, as when a forked child exits. 0: that
             // rewrite was killed meanwhile (and maybe another started), so tmp is a leftover.
+            const t = Date.now(); // the clock moves only across I/O: the sync below makes this include the swap
             if (!this.#vk.exports.rk_rewrite_done(ok ? 1 : 0, gen)) this.#vfs.remove(tmp);
+            await this.#sync?.();
+            this.rewriteDoneMs = Date.now() - t;
           } finally {
             this.rewriting = null;
             this.#schedule();
