@@ -160,18 +160,17 @@ export class ValkeyShard extends DurableObject {
     return { colo: this.#colo, ms: xs.sort((a, b) => a - b) };
   }
 
-  /** Test hook: how long writing, then deleting, an `mb` MB file takes, each with its storage commit. */
+  /** Test hook: storage commit times for writing two `mb` MB files, then deleting the first (now in the
+   *  middle of the database) and the second (at its end). */
   async vfsProbe(mb = 32) {
     const chunk = crypto.getRandomValues(new Uint8Array(1 << 16)), out = {};
-    let t = Date.now();
-    for (let i = 0; i < mb * 16; i++) this.#host.appendFile("probe.bin", chunk);
-    this.#host.flushFiles();
-    await this.ctx.storage.sync();
-    out.writeMs = Date.now() - t;
-    t = Date.now();
-    this.#host.removeFile("probe.bin");
-    await this.ctx.storage.sync();
-    out.deleteMs = Date.now() - t;
+    try { out.autoVacuum = this.ctx.storage.sql.exec("PRAGMA auto_vacuum").toArray(); } catch (e) { out.autoVacuum = e.message; }
+    const timed = async (k, f) => { const t = Date.now(); f(); await this.ctx.storage.sync(); out[k] = Date.now() - t; };
+    const write = (path) => { for (let i = 0; i < mb * 16; i++) this.#host.appendFile(path, chunk); this.#host.flushFiles(); };
+    await timed("writeAMs", () => write("probe-a.bin"));
+    await timed("writeBMs", () => write("probe-b.bin"));
+    await timed("deleteMiddleMs", () => this.#host.removeFile("probe-a.bin"));
+    await timed("deleteEndMs", () => this.#host.removeFile("probe-b.bin"));
     return out;
   }
 
