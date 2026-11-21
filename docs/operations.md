@@ -12,7 +12,7 @@ scripts/test-local.sh       # the whole local suite
 
 `scripts/local.sh` takes `VALKEY_PASSWORD`, `ROUTER_SOCKET_BUDGET`, `ROUTER_IDLE_MS` and `BENCH_TOKEN` (default
 `local`) from the environment, and keeps storage in `.local-do` unless you pass `fresh`. The local config
-(`config.capnp.in`) has the `SHARD` to `SHARD7`, `REWRITER` to `REWRITER7`, `CATALOG` and `PULSE` bindings but no
+(`config.capnp.in`) has the `SHARD` to `SHARD15`, `REWRITER` to `REWRITER7`, `CATALOG` and `PULSE` bindings but no
 `SENDER`, so bench `send` works only in
 a deployment.
 
@@ -64,8 +64,8 @@ over minutes. Wait at least 5 minutes after a deploy before you measure anything
 | `ROUTER_IDLE_MS` | `30000` | Idle shard sockets close after this |
 | `ROUTER_SOCKET_BUDGET` | `128` | Shard and replica sockets per isolate before the router uses RPC batches |
 
-Durable Object bindings, in `wrangler.jsonc`: `SHARD` to `SHARD7` (the eight shard classes: shards and their
-replicas by class, with pub/sub and `__meta` in `SHARD`), `REWRITER` to `REWRITER7` (a shard class without its
+Durable Object bindings, in `wrangler.jsonc`: `SHARD` to `SHARD7` (the eight shard classes, with pub/sub and
+`__meta` in `SHARD`), `SHARD8` to `SHARD15` (read replicas: `SHARD{8 + k}` holds the replicas of class `k`), `REWRITER` to `REWRITER7` (a shard class without its
 rewriter binding rewrites its AOF inline, blocking), `CATALOG`, `PULSE` (optional: without it, routers don't report
 activity and bench `pulse` returns nothing) and `SENDER` (needed only by bench `send`).
 

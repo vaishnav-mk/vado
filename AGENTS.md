@@ -54,7 +54,7 @@ Rules for anyone, human or agent, changing this repo.
 | --- | --- |
 | `src/index.js` | Worker entry: `connect()`, `/ws`, shard and replica stubs, shard classes (`shardNs`: class `i % classes`), placement (`regions[i % n]`), which replica a router reads (`NEAR`), Pulse reports |
 | `src/router.js` | One per connection: parsing, routing, MULTI/WATCH, read-your-writes, replica fallback |
-| `src/shard.js` | `ValkeyShard` to `ValkeyShard7`: boots Valkey (primary or replica, from its name), schedules AOF rewrites and hands them to its rewriter |
+| `src/shard.js` | `ValkeyShard` to `ValkeyShard15` (0-7 primaries, 8-15 read replicas): boots Valkey (primary or replica, from its name), schedules AOF rewrites and hands them to its rewriter |
 | `src/rewriter.js` | `ValkeyRewriter` to `ValkeyRewriter7`: rewrites a shard's AOF in a Valkey of its own; `rewriteByHelper` is the shard's side |
 | `src/valkey-host.js` | Runs valkey.wasm: sockets as fds (reused once closed), group commit, `rk_tick`, the `aof_rewrite` import, the delete sweep |
 | `src/vfs.js` | WASI filesystem on SQLite: chunk keys, `vfs_trash`; `onAppend` feeds replication |

@@ -66,7 +66,10 @@ a database uses class `i % 8`:
 
 - A database's shards 0 to 7 never share an isolate with each other. Shards `i` and `i + 8` can, and so can shards
   of different databases in the same class.
-- A replica uses its primary's class. The pub/sub and `__meta` shards stay in `ValkeyShard`.
+- Read replicas have classes of their own: a replica of a class `k` shard is in `ValkeyShard{8 + k}` (bindings
+  `SHARD8` to `SHARD15`, `replicaBinding` in `src/replication.js`). So a replica never shares an isolate with a
+  primary, including its own primary's home-region copy, which has the same location hint. The pub/sub and `__meta`
+  shards stay in `ValkeyShard`.
 - The class count is fixed when a database is created, in the catalog's `classes` column. Databases created before
   classes existed have none recorded, and keep every shard in `ValkeyShard`. The bench API's `/db` takes
   `classes=<1..8>` for experiments.

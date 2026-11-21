@@ -31,7 +31,7 @@ is a call path, not a statement about which machine or data center runs it.
 | Worker (`src/index.js`) | Wherever the client's connection lands | Nothing durable. A `connect()` handler, `/ws`, and a token-protected bench API |
 | Router (`src/router.js`) | In the Worker, one per client connection | Per-connection state: the database, AUTH, MULTI/WATCH, recent writes per shard, its upstreams |
 | Shards (`ValkeyShard` to `ValkeyShard7`, bindings `SHARD` to `SHARD7`) | Durable Objects named `<db>.<created>.<i>`, in class `i % 8`, placed by the database's `regions` or `LOCATION_HINT` | One Valkey process each, owning a contiguous range of the 16,384 slots. Its AOF lives in the object's SQLite |
-| Read replicas (`src/replication.js`) | Their primary's class, named `<db>.<created>.<i>.r.<region>`, one per shard per replica region | A copy of one shard's data, in memory only, kept current from the shard's AOF |
+| Read replicas (`src/replication.js`) | Class `8 + k` for a primary of class `k` (`ValkeyShard8` to `ValkeyShard15`), named `<db>.<created>.<i>.r.<region>`, one per shard per replica region | A copy of one shard's data, in memory only, kept current from the shard's AOF |
 | Rewriters (`src/rewriter.js`, `ValkeyRewriter` to `ValkeyRewriter7`, bindings `REWRITER` to `REWRITER7`) | Durable Objects named like their shard, in the rewriter class with the shard's class number | During a rewrite, a copy of the shard's AOF files and the new base. Nothing after it |
 | Pub/sub shard | `ValkeyShard` named `<db>.<created>.pubsub` | Every channel of one database |
 | `__meta` shard | `ValkeyShard` named `__meta` | Nothing. It answers `COMMAND`, which gives the router every command's key positions |
