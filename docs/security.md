@@ -62,7 +62,8 @@ The Worker's HTTP API (`src/bench.js`) needs `Authorization: Bearer <BENCH_TOKEN
 - list every database (`dbs`), create databases, and choose their placement and replica regions (`db`);
 - read every shard's and replica's stats and Valkey INFO (`stats`, `shards`), and run any command (`run`), straight
   to a shard with `via=shard`, past the router's checks above;
-- fill shards, abort shards or replicas (`fill`, `abort`, `durability`), and repoint replication (`replicate`);
+- fill or flush shards (`fill`, `frag`), abort shards or replicas (`abort`, `durability`), and repoint replication
+  (`replicate`);
 - run load from many invocations and from Sender objects in any region (`loadgen`, `send`), which you pay for;
 - read what each isolate reported to the Pulse object (`pulse`): every open connection's database and command
   count, plus the client's remote address when the socket reports one, and for WebSocket clients the approximate
