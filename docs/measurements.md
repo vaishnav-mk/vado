@@ -2,6 +2,79 @@
 
 Newest first. Each section keeps its numbers as measured; later changes don't rewrite them.
 
+## 2026-11-21: shard classes, allocators and rewriters
+
+Production, one account, on builds up to a56cc53, through the bench API unless noted.
+
+### Isolates
+
+Each shard's stats report an id per isolate (`isolate`).
+
+| Database | Isolates |
+| --- | --- |
+| 16 shards in one region, every shard in one class | 14, one of them holding 3 shards |
+| 16 shards in one region, 8 classes | 16 |
+| 4 shards with 36 replicas (`replicas=world`), 8 classes | 40 for the 40 objects |
+
+### Allocators
+
+Bench `frag` with `via=shard` on a 1-shard database: the wasm linear memory, which is what counts against the
+isolate's memory, against Valkey's `used_memory`.
+
+| Allocator | Data | Linear memory / `used_memory` |
+| --- | --- | --- |
+| wasi-libc dlmalloc (the vendored build) | 120k keys of 16-512 B | 1.08x |
+| wasi-libc dlmalloc | 400k keys of 8-64 B | 1.20x |
+| wasi-libc dlmalloc | Small hashes | 1.09-1.29x |
+| mimalloc 3.7.0 (`ALLOCATOR=mimalloc`) | | 1.6-4.3x |
+
+With dlmalloc the ratio stayed flat across 6 rounds of deleting and rewriting half the keys. mimalloc started at
+34 MB of linear memory, against 2.6 MB with dlmalloc, and grows in 16 MiB arenas, which is where its higher ratios
+come from. Linear memory never shrinks: after
+deleting data from 39 MB to 9 MB, it stayed at 44 MB. The vendored build stays on dlmalloc.
+
+### AOF rewrites
+
+Bench `rewrite` with `via=shard`, on a shard with a 35.6 MB RDB base, PINGing the shard during the rewrite. PING
+p50 was 42 ms, the client's round trip.
+
+| Rewrite | Time | PINGs during it |
+| --- | --- | --- |
+| Inline, files stored under their path | 2.5-3.2 s, the shard blocked | max equal to the rewrite |
+| Inline, files stored under chunk keys | 1.4-1.9 s, the shard blocked | |
+| In a rewriter | 5.2-5.9 s end to end | p99 128-175 ms, max 160-193 ms |
+
+The swap at the end of a rewrite deletes the old base. Bench `vfs` with 32 MB files: deleting a file from the middle
+of the database took 455-573 ms in one commit, against 5-22 ms from the end, and the swap took 585-804 ms. With the
+deletes moved to a background sweep (2 rows per commit on that build), the swap took 11-23 ms.
+
+16 shards of one database rewriting at once, under write load: all 16 rewrites ran in rewriters and finished, the
+slowest in 1.42 s.
+
+| Check, with rewriters | Result |
+| --- | --- |
+| 50,000 writes made during two rewrites, then a shard restart | 0 missing |
+| 300,000 writes, during which the shard started its own rewrite, then a restart | 0 missing |
+| The same with replicas in 2 regions, and one replica reset mid-write | Both regions and the restarted primary read back 300,000, 0 missing |
+
+### Checks on this build
+
+Client tests ran from outside Cloudflare over TCP.
+
+| Check | Result |
+| --- | --- |
+| `test/ioredis.mjs`, `test/resp3.mjs` | Passed |
+| `test/hammer.mjs` | 11 of 11 checks held; with `CHAOS=1`, 11 of 11 through 35 shard aborts |
+| Bench `durability`: 50,000 acknowledged writes, then every shard aborted | 0 missing |
+| Connection churn (connect, AUTH, write, read, close) | 6,995 of 7,000 connections |
+| `test/differential.mjs` | Passed |
+| 36 replicas (4 shards, 9 regions) | All ready; 20,000 of 20,000 keys read back in each of the 9 regions |
+
+### What these don't show
+
+One account and runs of minutes, test traffic only. The allocator runs used one shard and synthetic data. The
+rewrite times are for one base size.
+
 ## 2026-11-20 and 21: group commit, rewrite scheduling and read replicas
 
 Production, one account, on builds up to fb43f17. Most numbers come from the bench API, which runs its clients
