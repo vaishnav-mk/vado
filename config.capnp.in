@@ -23,11 +23,13 @@ const worker :Workerd.Worker = (
   durableObjectNamespaces = [
     (className = "ValkeyShard", uniqueKey = "valkey-shard", enableSql = true),
     (className = "Catalog", uniqueKey = "catalog", enableSql = true),
+    (className = "Pulse", uniqueKey = "pulse", enableSql = true),
   ],
   durableObjectStorage = (localDisk = "disk"),
   bindings = [
     (name = "SHARD", durableObjectNamespace = "ValkeyShard"),
     (name = "CATALOG", durableObjectNamespace = "Catalog"),
+    (name = "PULSE", durableObjectNamespace = "Pulse"),
     (name = "SELF", service = "main"),
     (name = "BENCH_TOKEN", text = "@BENCH_TOKEN@"),
     (name = "SHARD_EPOCHS", text = "[{\"from\":0,\"shards\":4}]"),

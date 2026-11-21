@@ -3,6 +3,7 @@ import { DurableObject } from "cloudflare:workers";
 import valkeyWasm from "../vendor/valkey.wasm";
 import { ValkeyHost } from "./valkey-host.js";
 import { command, concat, decodeAll } from "./resp.js";
+import { coloOf } from "./pulse.js";
 
 // Valkey's own config. appendfsync always + the write-through Vfs: a reply leaves only after the
 // AOF bytes behind it are in SQLite (the output gate holds it until then).
@@ -23,6 +24,7 @@ export class ValkeyShard extends DurableObject {
   #host;
   #bornAt = Date.now();
   #instance = crypto.randomUUID();
+  #colo; // where this object runs, learned on the first stats() (null until then, or offline)
 
   constructor(ctx, env) {
     super(ctx, env);
@@ -62,7 +64,18 @@ export class ValkeyShard extends DurableObject {
     this.ctx.abort(new Error(reason));
   }
 
+  /** stats() plus Valkey's own INFO counters, in one call (the live view polls every shard and replica). */
+  async snapshot() {
+    const [txt] = await this.run([["INFO", "server", "clients", "memory", "persistence", "stats", "keyspace", "commandstats"]]);
+    const info = Object.fromEntries(String(txt).split("\r\n").filter((l) => l.includes(":")).map((l) => [l.slice(0, l.indexOf(":")), l.slice(l.indexOf(":") + 1)]));
+    const { files, ...stats } = this.stats();
+    return { ...stats, info };
+  }
+
   stats() {
-    return { ...this.#host.stats(), instance: this.#instance, aliveSeconds: (Date.now() - this.#bornAt) / 1000, files: this.#host.files() };
+    if (this.#colo === undefined) { this.#colo = null; coloOf().then((c) => { this.#colo = c; }, () => {}); }
+    return {
+      ...this.#host.stats(), instance: this.#instance, colo: this.#colo, aliveSeconds: (Date.now() - this.#bornAt) / 1000, files: this.#host.files(),
+    };
   }
 }

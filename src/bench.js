@@ -96,13 +96,14 @@ const tests = {
   // answer right now is { down }, so the others still show.
   async shards(env, q) {
     const db = await database(env, q.get("db"));
-    const shards = await Promise.all(Array.from({ length: db.shards }, (_, i) => {
-      const stub = shardStub(env, db, i);
-      return Promise.all([stub.stats(), stub.run([["INFO", "server", "clients", "memory", "persistence", "stats", "keyspace", "commandstats"]])]).then(
-        ([{ files, ...st }, [txt]]) => ({ ...st, info: Object.fromEntries(String(txt).split("\r\n").filter((l) => l.includes(":")).map((l) => [l.slice(0, l.indexOf(":")), l.slice(l.indexOf(":") + 1)])) }),
-        (e) => ({ down: e.message }));
-    }));
+    const one = (stub) => stub.snapshot().catch((e) => ({ down: e.message }));
+    const shards = await Promise.all(Array.from({ length: db.shards }, (_, i) => one(shardStub(env, db, i))));
     return { db, shards };
+  },
+
+  // What every isolate running routers last reported (src/pulse.js), for ui/.
+  async pulse(env) {
+    return env.PULSE ? await env.PULSE.getByName("pulse").snapshot() : { isolates: [], disabled: "no PULSE binding" };
   },
 
   async dbs(env) {

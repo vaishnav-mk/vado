@@ -247,6 +247,7 @@ class RpcUpstream {
 }
 
 export class Router {
+  commands = 0;
   #ups = new Map(); // shard index (or "pubsub") -> Upstream
   #queue = []; // reply slots in request order: { b: Uint8Array | null }
   #pushes = []; // passthrough frames waiting for the queue to drain
@@ -423,6 +424,7 @@ export class Router {
   }
 
   #handle(argv, raw) {
+    this.commands++; // read by the live view (src/index.js)
     if (this.#pass) return this.#passRequest(argv, raw);
     const name = lower(argv[0]);
     if (!this.#authed && name !== "auth" && name !== "hello" && name !== "quit") return this.#reply(NOAUTH);
