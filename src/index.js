@@ -57,6 +57,9 @@ export function database(env, name, shards, regions, replicas, classes, secret) 
   return db;
 }
 
+/** Forgets this isolate's copy of a database's record (it was dropped). */
+export const forget = (name) => dbs.delete(name);
+
 /** The database's record if it exists (null if not): unlike database(), never creates one. */
 export async function lookup(env, name) {
   const cached = dbs.get(name);

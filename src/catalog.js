@@ -34,12 +34,15 @@ export class Catalog extends DurableObject {
     if (!cols.includes("classes")) this.#sql.exec(`ALTER TABLE dbs ADD COLUMN classes INTEGER`);
     // Added later: the database's own password, as "salt:sha256(salt + password)" in hex; NULL = VALKEY_PASSWORD.
     if (!cols.includes("secret")) this.#sql.exec(`ALTER TABLE dbs ADD COLUMN secret TEXT`);
+    // Added later: when the database was dropped (its name is never reused); NULL = it wasn't.
+    if (!cols.includes("dropped")) this.#sql.exec(`ALTER TABLE dbs ADD COLUMN dropped INTEGER`);
   }
 
   /** The database's record, created on first use. `shards`, `regions` and `replicas` apply only to a new database. */
   get(name, shards, regions, replicas, classes = SHARD_CLASSES, secret = null) {
     if (!DB_NAME.test(name)) throw new Error(DB_NAME_RULE);
     const row = this.find(name);
+    if (row?.dropped) throw new Error(`database ${name} was dropped`);
     if (row) return row;
     const created = Date.now();
     const count = shards ?? epochAt(this.#epochs, created).shards;
@@ -53,12 +56,17 @@ export class Catalog extends DurableObject {
 
   /** The database's record, or null: never creates one. */
   find(name) {
-    const row = this.#sql.exec(`SELECT name, created, shards, regions, replicas, classes, secret FROM dbs WHERE name = ?`, name).toArray()[0];
+    const row = this.#sql.exec(`SELECT name, created, shards, regions, replicas, classes, secret, dropped FROM dbs WHERE name = ?`, name).toArray()[0];
     return row ? record(row) : null;
   }
 
-  /** Every database, without password hashes. */
+  /** Every database not dropped, without password hashes. */
   list() {
-    return this.#sql.exec(`SELECT name, created, shards, regions, replicas, classes, secret IS NOT NULL AS password FROM dbs ORDER BY name`).toArray().map(record);
+    return this.#sql.exec(`SELECT name, created, shards, regions, replicas, classes, secret IS NOT NULL AS password FROM dbs WHERE dropped IS NULL ORDER BY name`).toArray().map(record);
+  }
+
+  /** Marks the database dropped; its record stays, so the name (and its shards' names) is never reused. */
+  drop(name) {
+    this.#sql.exec(`UPDATE dbs SET dropped = ? WHERE name = ? AND dropped IS NULL`, Date.now(), name);
   }
 }

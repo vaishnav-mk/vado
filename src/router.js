@@ -746,6 +746,7 @@ export class Router {
     }
     this.#pending = (async () => {
       const known = name === this.db.name ? this.db : await this.#lookup?.(name);
+      if (known?.dropped) return this.#reply(error(`ERR database ${name} was dropped`));
       const ok = known?.secret && !this.#trusted ? await secretMatches(known.secret, pass) : shared();
       if (!ok) return this.#reply(WRONGPASS);
       if (name !== this.db.name) {

@@ -1,7 +1,7 @@
 // Tests and limit probes that run inside Cloudflare. Clients speak RESP over TCP sockets:
 //   via=router (default)  service binding connect("<db>:6379") -> TCP Worker -> Router -> shards
 //   via=shard             one shard's DO connect() directly (shard=<i>), no router
-import { configureReplicas, database, replicaStub, shardStub } from "./index.js";
+import { configureReplicas, database, forget, lookup, replicaStub, shardStub } from "./index.js";
 import Redis from "ioredis";
 import { bindingConnector } from "./client.js";
 import { hashSecret, sameSecret } from "./router.js";
@@ -92,6 +92,18 @@ const tests = {
     if (password && stored !== secret) throw new Error("the database already exists, so it keeps the password it has");
     if (db.replicas) await configureReplicas(env, db);
     return { db: { ...db, password: !!stored }, ...(password ? { password } : {}) };
+  },
+
+  // Drops a database: the catalog marks it dropped (the name is never reused), then every shard deletes its
+  // storage, keeping only a tombstone that refuses to boot, and retires its replicas.
+  async drop(env, q) {
+    const db = await lookup(env, q.get("db"));
+    if (!db) throw new Error("no such database");
+    await env.CATALOG.getByName("catalog").drop(db.name);
+    forget(db.name);
+    const ids = [...Array.from({ length: db.shards }, (_, i) => i), "pubsub"];
+    const failed = (await Promise.all(ids.map((i) => shardStub(env, db, i).drop().then(() => null, (e) => [i, e.message])))).filter(Boolean);
+    return { dropped: db.name, shards: db.shards, failed };
   },
 
   // How long shard 0's storage takes to confirm a write, from inside the object.

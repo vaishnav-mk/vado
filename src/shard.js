@@ -44,9 +44,13 @@ export class ValkeyShard extends DurableObject {
   #inlineUntil = 0; // after a failed helper rewrite, rewrite inline until then
   #lastRewrite = null; // the last helper rewrite: phase times, bytes, error (in stats())
 
+  #dropped; // the database was dropped: storage is gone but this tombstone, and nothing boots
+
   constructor(ctx, env) {
     super(ctx, env);
     this.#replica = /\.r\.[a-z-]+$/.test(ctx.id.name ?? "");
+    this.#dropped = ctx.storage.sql.exec(`SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'dropped'`).toArray().length > 0;
+    if (this.#dropped) return;
     this.#host = new ValkeyHost(valkeyWasm, ctx.storage.sql, { args: valkeyArgs(env, this.#replica), sync: () => ctx.storage.sync() });
     if (!this.#replica) {
       this.#repl = new Replicator(ctx, env, this.#host, ctx.id.name, env[replicaBinding(Number(this.constructor.binding.slice(5) || 0))]);
@@ -98,12 +102,32 @@ export class ValkeyShard extends DurableObject {
 
   /** Primary: keep read replicas in these regions (Durable Object location hints). */
   replicate(regions) {
+    this.#live();
     if (this.#replica) throw new Error("a replica can't have replicas");
     this.#repl.configure(regions);
   }
 
+  #live() {
+    if (this.#dropped) throw new Error("ERR database dropped");
+  }
+
+  /** Drops this shard for good: retires its replicas, deletes its storage, and leaves a tombstone so it never
+   *  boots again (a router that still knows the database gets errors, not an empty shard). */
+  async drop() {
+    if (this.#dropped) return;
+    await this.#repl?.retireAll();
+    await this.ctx.storage.deleteAlarm();
+    await this.ctx.storage.deleteAll();
+    this.ctx.storage.sql.exec(`CREATE TABLE dropped (at INTEGER NOT NULL)`);
+    this.ctx.storage.sql.exec(`INSERT INTO dropped VALUES (?)`, Date.now());
+    await this.ctx.storage.sync();
+    this.#dropped = true;
+    setTimeout(() => this.ctx.abort(new Error("dropped")), 0); // Valkey still holds the data in memory; after this returns
+  }
+
   /** Primary: how many replicas have every write made so far (WAIT): once `n` do, or after `ms`. */
   async waitReplicas(n, ms) {
+    this.#live();
     if (this.#replica) throw new Error("a replica has no replicas");
     return await this.#repl.wait(n, ms);
   }
@@ -131,7 +155,7 @@ export class ValkeyShard extends DurableObject {
   }
 
   async alarm() {
-    if (this.#replica) return;
+    if (this.#replica || this.#dropped) return;
     await this.#repl.tick();
     this.#checkArmed = false;
     if (await this.#rewriteCheck()) this.#armCheck();
@@ -141,6 +165,11 @@ export class ValkeyShard extends DurableObject {
   // as the first frame, so they know exactly which instance accepted the socket (see Upstream.check).
   async connect(socket) {
     const { localAddress } = await socket.opened;
+    if (this.#dropped) {
+      const w = socket.writable.getWriter();
+      await w.write(new TextEncoder().encode("-ERR database dropped\r\n")).catch(() => {});
+      return await w.close().catch(() => {});
+    }
     if (this.#replica) {
       // The primary's stream starts a fresh copy, so stop serving reads until it has arrived.
       if (localAddress?.startsWith("repl")) { this.#ready = false; return await this.#host.serve(socket, null, true); }
@@ -152,6 +181,7 @@ export class ValkeyShard extends DurableObject {
 
   /** Runs commands on a pooled internal client and returns the decoded (RESP2) replies. For fan-out/admin. */
   async run(cmds) {
+    this.#live();
     this.#active();
     return decodeAll(await this.#host.execBatch(concat(cmds.map(command)), cmds.length));
   }
@@ -159,6 +189,7 @@ export class ValkeyShard extends DurableObject {
   /** The router's RPC mode: `count` raw RESP requests in, their raw replies out (pooled client).
    *  Without `count` (an older router mid-deploy) it falls back to a throwaway client. */
   async execRaw(bytes, count, proto = 2) {
+    this.#live();
     if (this.#replica && !this.#ready) throw new Error("replica not ready");
     this.#active();
     return count ? await this.#host.execBatch(bytes, count, proto) : await this.#host.exec(bytes);
@@ -166,6 +197,7 @@ export class ValkeyShard extends DurableObject {
 
   /** Like run, but returns the raw reply bytes. */
   async runRaw(cmds) {
+    this.#live();
     this.#active();
     return await this.#host.execBatch(concat(cmds.map(command)), cmds.length);
   }
@@ -216,6 +248,7 @@ export class ValkeyShard extends DurableObject {
   }
 
   stats() {
+    if (this.#dropped) return { dropped: true, instance: this.#instance, isolate: (isolateId ??= crypto.randomUUID()), files: [], replicas: [] };
     if (this.#colo === undefined) { this.#colo = null; coloOf().then((c) => { this.#colo = c; }, () => {}); }
     return {
       ...this.#host.stats(), instance: this.#instance, isolate: (isolateId ??= crypto.randomUUID()), colo: this.#colo, aliveSeconds: (Date.now() - this.#bornAt) / 1000, files: this.#host.files(),

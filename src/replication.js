@@ -53,6 +53,15 @@ export class Replicator {
     this.#ctx.storage.setAlarm(Date.now());
   }
 
+  /** The database is being dropped: every replica stops serving, and nothing copies again. */
+  async retireAll() {
+    const regions = [...this.#targets.keys()];
+    this.#asleep = true;
+    for (const t of this.#targets.values()) this.#drop(t, "dropped");
+    this.#targets.clear();
+    await Promise.all(regions.map((r) => this.#ns.getByName(replicaName(this.#name, r), { locationHint: r }).retire().catch(() => {})));
+  }
+
   /** Client activity on the primary: if replication went to sleep, start copying again. */
   wake() {
     if (!this.#asleep) return;
