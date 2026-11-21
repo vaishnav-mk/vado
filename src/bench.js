@@ -103,6 +103,12 @@ const tests = {
   // vs the wasm linear memory it grew (which never shrinks, and is what counts against the isolate's memory).
   // type=hash keeps the values as fields of small hashes (100 per key), which grow and shrink by realloc.
   // Run with via=shard.
+  // VFS cost on shard 0: write an mb MB file (one commit), then delete it (one commit).
+  async vfs(env, q) {
+    const db = await database(env, q.get("db"));
+    return await shardStub(env, db, 0).vfsProbe(Number(q.get("mb") ?? 32));
+  },
+
   // AOF rewrite cost on shard 0: BGREWRITEAOF while another client PINGs it in a loop. replyMs is when
   // the command answered; totalMs is when no rewrite is in progress any more.
   async rewrite(env, q) {

@@ -366,6 +366,7 @@ export class ValkeyHost {
   readFile(path, pos, len) { return this.#vfs.read(path, pos, len); }
   appendFile(path, bytes) { this.#vfs.append(path, bytes); }
   removeFile(path) { this.#vfs.remove(path); }
+  flushFiles() { this.#vfs.flush(); }
   fileSize(path) { return this.#vfs.size(path); }
   set onAppend(f) { this.#vfs.onAppend = f; }
 }

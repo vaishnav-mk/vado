@@ -160,6 +160,21 @@ export class ValkeyShard extends DurableObject {
     return { colo: this.#colo, ms: xs.sort((a, b) => a - b) };
   }
 
+  /** Test hook: how long writing, then deleting, an `mb` MB file takes, each with its storage commit. */
+  async vfsProbe(mb = 32) {
+    const chunk = crypto.getRandomValues(new Uint8Array(1 << 16)), out = {};
+    let t = Date.now();
+    for (let i = 0; i < mb * 16; i++) this.#host.appendFile("probe.bin", chunk);
+    this.#host.flushFiles();
+    await this.ctx.storage.sync();
+    out.writeMs = Date.now() - t;
+    t = Date.now();
+    this.#host.removeFile("probe.bin");
+    await this.ctx.storage.sync();
+    out.deleteMs = Date.now() - t;
+    return out;
+  }
+
   /** Test hook: hard-reset this object (as a crash or deploy would). */
   abort(reason = "test abort") {
     this.ctx.abort(new Error(reason));
