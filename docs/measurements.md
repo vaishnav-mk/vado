@@ -1,5 +1,69 @@
 # Measurements
 
+Newest first. Each section keeps its numbers as measured; later changes don't rewrite them.
+
+## 2026-11-20 and 21: group commit, rewrite scheduling and read replicas
+
+Production, one account, on builds up to fb43f17. Most numbers come from the bench API, which runs its clients
+inside Cloudflare: load generators through the router, Sender objects in each of the nine `world` regions
+(`send?region=...`), or straight to one shard (`via=shard`). Each table names its probe where it used one.
+
+### Writes
+
+| Load | Result |
+| --- | --- |
+| Deep pipelines straight to one shard | 114-130k SET/s, 250-306k GET/s |
+| 16 shards through the router, from 8 load generators | 255-304k SET/s with group commit, 48-66k before it |
+| Rows written per write, under that load | about 0.008 with group commit, about 0.26 before it |
+
+A write's latency is the network round trip plus one storage commit. Commit time measured from inside a shard
+(bench `commit`) was 10-38 ms p50 depending on where the shard ran: 10 ms in Paris, 18 ms in Atlanta, 38 ms in
+Singapore.
+
+### AOF rewrites
+
+A rewrite blocks its shard while it runs, since wasm has no `fork()`: about 1 s per 10 MB of RDB base. Under
+sustained writes, GET p99 fell from 608-776 ms to 112-141 ms once the shard scheduled its own rewrites. Under the
+same load, reads from a replica in the shard's home region stayed at p99 45 ms and max 51 ms, while the primary's
+max was 318-1117 ms.
+
+### Read replicas
+
+Replicas in all nine regions (`replicas=world`).
+
+| Check | Result |
+| --- | --- |
+| Every replica serving reads after the database was created | Within seconds |
+| A second client in each of 9 regions reads a write acknowledged to the first (bench `staleness`) | p50 3-41 ms, p99 38-141 ms |
+| Keys written, then read back from every region | 20,000 of 20,000 |
+| Read-your-writes on one connection (bench `ryw`) | 0 stale in 2,700 checks |
+| Writes per shard | 49-61k SET/s with 9 replicas, about 130k with none |
+
+At light load the staleness times are bounded by one read round trip. With 9 replicas, the replication streams
+hold back the primary's input (backpressure), and that caps its writes.
+
+### Under failure
+
+| Test | Result |
+| --- | --- |
+| Bench `durability`: 50,000 acknowledged writes, then every shard aborted | 0 missing, in each of two runs |
+| `test/hammer.mjs` with `CHAOS=1` | 11 of 11 checks held through about 20 shard aborts |
+| Connection churn (connect, AUTH, write, read, close) | Passed at 7,000 connections. The host before fd reuse stopped accepting after about 6,030: it never reused closed fds, and Valkey refuses fds past its limit |
+
+### Limits seen
+
+- Many connections times many shards pass the router's socket budget. Each connection then sends one RPC per batch:
+  200 connections over 16 shards ran at about 20-26k ops/s.
+- 9 replicas cut a shard's write throughput to about 50k SET/s.
+- A read on another connection can be up to one replication lag stale.
+
+### What these don't show
+
+One account and runs of minutes. Test traffic only, no TLS, no runs of hours, and no eviction under memory
+pressure.
+
+## 2026-11-19: first production runs
+
 Production, on Workers Paid, 2026-11-19. Each table names the build it ran on; 37e83b9 differs from 13f71a6 only
 in bench API auth and error mapping.
 
@@ -10,7 +74,7 @@ in bench API auth and error mapping.
 - **Load from inside Cloudflare:** the bench API runs load-generating Workers in the colo the request lands in, and
   they connect through a service binding to the same `connect()` handler as any client.
 
-## Capacity inside Cloudflare
+### Capacity inside Cloudflare
 
 Build 13f71a6. Each request opens 4 connections and sends pipelined SETs in batches of 2,000, with unique keys
 spread over every slot and 1-byte values.
@@ -25,7 +89,7 @@ The first warm-up on a new 16-shard database failed 47 of 48 requests with Worke
 own isolate ran out of memory, packing many requests' connections into one isolate. The next run reached 72k ops/s,
 the third 173k. These are bursts of tens of seconds, not a sustained ceiling.
 
-## Latency over TCP
+### Latency over TCP
 
 One connection, one command at a time, `TCP_NODELAY` (as ioredis does). Builds 13f71a6 and 37e83b9.
 
@@ -44,7 +108,7 @@ answered warm GETs in 18-32 ms.
 valkey-benchmark with one client reports about 88 ms p50 over this TCP path. That is an interaction between its
 socket timing and the proxy's ACKs; a client with `TCP_NODELAY` sees the numbers above.
 
-## Throughput from one client over TCP
+### Throughput from one client over TCP
 
 Build 13f71a6. `valkey-benchmark -r 100000` from the laptop. These are bound by its round trips, not by the shards.
 
@@ -59,7 +123,7 @@ connections in a few isolates most upstreams are past the socket budget and go a
 cause, not a measured one. In other runs, about one in four 200-connection runs lost a connection, on TCP and on
 the WebSocket path alike, with no matching failure on the server side.
 
-## Cold starts
+### Cold starts
 
 Build 37e83b9. Fifteen samples, three runs of five.
 
@@ -74,7 +138,7 @@ Build 37e83b9. Fifteen samples, three runs of five.
 An aborted shard here restarted in a warm isolate. An object evicted to a new isolate also compiles the wasm first;
 that wasn't measured separately.
 
-## Large values over TCP
+### Large values over TCP
 
 Build 13f71a6, one connection.
 
@@ -87,14 +151,14 @@ Build 13f71a6, one connection.
 
 Bound by the laptop's link.
 
-## Under failure
+### Under failure
 
 | Test | Build | Result |
 | --- | --- | --- |
 | Bench `durability`: 20,000 acknowledged SETs on 16 shards, then every shard aborted | 13f71a6 | 0 missing, 0 wrong |
 | `test/hammer.mjs` over TCP, `CHAOS=1`, 16 shards, 32 clients, 60 s | 13f71a6 | Every invariant held through 27 shard aborts. Clients saw 47 `LOST` errors and 5 dropped connections |
 
-## What these don't show
+### What these don't show
 
 One client location, one account and a few minutes per run. No TLS on the TCP path. Latency depends on where each
 shard lands, which varies per object. Runs of hours, eviction under memory pressure, and many clients spread across
