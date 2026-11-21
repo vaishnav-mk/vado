@@ -130,7 +130,13 @@ have (`src/replication.js`).
 - **The connection's own writes.** While a connection has a write in flight to a shard, and for 2 s
   (`READ_YOUR_WRITES_MS`) after its reply, that connection reads the shard from its primary. This holds while
   replicas are less than 2 s behind; a replica further behind can return a connection's older value after that.
-- **Other connections' writes.** A read on another connection can be up to one replication lag old.
+- **Other connections' writes.** A read on another connection can be up to one replication lag old, unless the
+  writer waits for its replicas first: `WAIT numreplicas timeout` returns how many replicas have every write the
+  connection made, counting the shard it wrote to with the fewest. Each primary sends a marker behind everything it
+  has streamed and counts the replicas that answer, up to the timeout (0 means 60 s, `REPL_STUCK_MS`, not forever).
+  It doesn't add durability: replicas keep data in memory only. `WAITAOF` answers `1 0`, since every reply already
+  waits for the shard's own AOF commit. With replicas in all 9 regions, `WAIT 9` after writes to 3 shards took
+  about 0.9 s, the slowest replica's round trip and commit.
 - **Transactions.** Inside MULTI, and while WATCH is active, reads go to the primary.
 - **Failures.** A replica that isn't ready, or resets mid-read, ends the router's connection to it. The read goes to
   the primary, and every router in that isolate leaves that replica alone for 5 s (`REPL_RETRY_MS`).

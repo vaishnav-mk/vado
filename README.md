@@ -69,9 +69,9 @@ From another Worker, use a service binding and `env.VALKEY.connect("mydb:6379")`
   Only read-only commands retry. [Durability and failures](docs/durability.md).
 - Multi-key commands across slots, other than MGET, MSET, DEL, UNLINK, EXISTS and TOUCH, get `CROSSSLOT`, as in Valkey
   Cluster. Use `{hashtags}`, or a 1-shard database.
-- A read from a replica can miss a write acknowledged on another connection, for up to one replication lag. Each
-  replica also costs its primary write throughput: about 50k SET/s per shard with 9 replicas, against about 130k
-  with none. [Durability and failures](docs/durability.md#read-replicas).
+- A read from a replica can miss a write acknowledged on another connection, for up to one replication lag (the
+  writer can `WAIT` for its replicas first). Each replica also costs its primary write throughput: about 50k SET/s
+  per shard with 9 replicas, against about 130k with none. [Durability and failures](docs/durability.md#read-replicas).
 - Latency is the client's hop to the Worker plus the Worker's hop to the shards, plus a storage commit for writes.
   Set `LOCATION_HINT` or a database's regions near your clients. [Measurements](docs/measurements.md).
 
