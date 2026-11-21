@@ -30,6 +30,7 @@ export class ValkeyHost {
   #pool = { 2: [], 3: [] }; // idle internal clients for execBatch, by RESP protocol
   #stalled = new Set(); // wake functions of readers paused by the total budget
   bootMs = 0;
+  lastActive = 0; // Date.now() of the last client input (the shard rewrites its AOF when quiet)
 
   constructor(module, sql, { args = [], log = (l) => console.log("[valkey]", l) } = {}) {
     this.#log = log;
@@ -186,6 +187,7 @@ export class ValkeyHost {
   }
 
   #schedule() {
+    this.lastActive = Date.now();
     if (this.#queued) return;
     this.#queued = true;
     // The second step runs beforeSleep, where Valkey writes the AOF and flushes replies.

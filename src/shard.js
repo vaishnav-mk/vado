@@ -5,6 +5,7 @@ import { ValkeyHost } from "./valkey-host.js";
 import { command, concat, decodeAll } from "./resp.js";
 import { coloOf } from "./pulse.js";
 import { Replicator } from "./replication.js";
+import { AOF_CHECK_MS, AOF_REWRITE_CAP, AOF_REWRITE_IDLE_MS, AOF_REWRITE_MIN } from "./constants.js";
 
 // Valkey's own config. appendfsync always + the write-through Vfs: a reply leaves only after the
 // AOF bytes behind it are in SQLite (the output gate holds it until then).
@@ -15,7 +16,10 @@ const valkeyArgs = (env, replica) => [
   // A replica keeps its data in memory only: its primary copies it again after a reset.
   ...(replica ? ["--appendonly", "no"] : ["--appendonly", "yes", "--appendfsync", "always", "--appenddirname", "aof"]),
   "--aof-use-rdb-preamble", "yes", "--aof-timestamp-enabled", "no",
-  "--auto-aof-rewrite-percentage", "100", "--auto-aof-rewrite-min-size", env.VALKEY_AOF_REWRITE_MIN || "8mb",
+  // A rewrite runs inline (no fork in wasm) and blocks the shard, so the shard picks when (#rewriteCheck).
+  "--auto-aof-rewrite-percentage", "0",
+  // Latency tracking times each command, but the Workers clock doesn't move during one.
+  "--latency-tracking", "no",
   "--maxmemory", env.VALKEY_MAXMEMORY || "64mb", "--maxmemory-policy", env.VALKEY_MAXMEMORY_POLICY || "noeviction",
   // Every RPC batch and router socket is a new Valkey connection. The default accepts 10 per event
   // loop cycle, which queued hundreds of RPC batches until callers gave up (seen at 96 x 4 load).
@@ -31,12 +35,37 @@ export class ValkeyShard extends DurableObject {
   #replica; // true for a read replica (named <primary>.r.<region>)
   #ready = false; // a replica serves reads only once its primary's copy has fully arrived
   #repl = null; // a primary's Replicator
+  #checkArmed = false; // an alarm will look at the AOF size
 
   constructor(ctx, env) {
     super(ctx, env);
     this.#replica = /\.r\.[a-z-]+$/.test(ctx.id.name ?? "");
     this.#host = new ValkeyHost(valkeyWasm, ctx.storage.sql, { args: valkeyArgs(env, this.#replica) });
-    if (!this.#replica) this.#repl = new Replicator(ctx, env, this.#host, ctx.id.name);
+    if (!this.#replica) {
+      this.#repl = new Replicator(ctx, env, this.#host, ctx.id.name);
+      this.#host.onAppend = (bytes) => { this.#repl.append(bytes); if (!this.#checkArmed) this.#armCheck(); };
+    }
+  }
+
+  #armCheck() {
+    this.#checkArmed = true;
+    // The replicator's own tick (every REPL_TICK_MS) also runs the check, so only arm without it.
+    if (!this.#repl.configured) queueMicrotask(() => this.ctx.storage.setAlarm(Date.now() + AOF_CHECK_MS));
+  }
+
+  // AOF rewrites block the shard while they run, so do them when it's quiet, unless the incr file has
+  // grown so big that a restart would take too long to replay it. Returns true if one is still due.
+  async #rewriteCheck() {
+    if (this.#repl.copying) return true; // a replica copy needs the files to only grow
+    const [txt] = decodeAll(await this.#host.execBatch(command(["INFO", "persistence"]), 1));
+    const num = (k) => Number(new RegExp(`${k}:(\\d+)`).exec(txt)?.[1] ?? 0);
+    const base = num("aof_base_size"), incr = num("aof_current_size") - base;
+    const due = incr >= Math.max(AOF_REWRITE_MIN, base);
+    if (incr >= Math.max(AOF_REWRITE_CAP, 2 * base) || (due && Date.now() - this.#host.lastActive >= AOF_REWRITE_IDLE_MS)) {
+      await this.#host.execBatch(command(["BGREWRITEAOF"]), 1);
+      return false;
+    }
+    return due;
   }
 
   /** Primary: keep read replicas in these regions (Durable Object location hints). */
@@ -52,7 +81,10 @@ export class ValkeyShard extends DurableObject {
   }
 
   async alarm() {
-    await this.#repl?.tick();
+    if (this.#replica) return;
+    await this.#repl.tick();
+    this.#checkArmed = false;
+    if (await this.#rewriteCheck()) this.#armCheck();
   }
 
   // TCP: one connection = one Valkey client. Routers dial "router:6379" and get this instance's id

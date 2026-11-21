@@ -60,6 +60,17 @@ export const VFS_CHUNK = 1 << 20;
  */
 export const VFS_TAIL = 16 << 10;
 
+// ---- AOF rewrites (src/shard.js) ----
+
+/** A rewrite is due once the incr file is this big and at least as big as the base, as Valkey's default rule. */
+export const AOF_REWRITE_MIN = 8 << 20;
+/** A due rewrite waits for the shard to be quiet this long, since it blocks every client while it runs. */
+export const AOF_REWRITE_IDLE_MS = 1_000;
+/** Rewrite anyway once the incr file reaches this (and twice the base): restarts replay it, so it bounds restart time. */
+export const AOF_REWRITE_CAP = 32 << 20;
+/** How often a shard that is appending looks at its AOF size. */
+export const AOF_CHECK_MS = 2_000;
+
 // ---- read replicas (src/replication.js) ----
 
 /** Write bytes a replica may be behind (queued during its copy, or unacknowledged on its socket) before it is dropped and copied again. */

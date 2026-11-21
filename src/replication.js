@@ -23,11 +23,11 @@ export class Replicator {
     this.#ctx = ctx; this.#env = env; this.#host = host; this.#name = name;
     ctx.storage.sql.exec(`CREATE TABLE IF NOT EXISTS repl_targets (region TEXT PRIMARY KEY)`);
     for (const { region } of ctx.storage.sql.exec(`SELECT region FROM repl_targets`).toArray()) this.#targets.set(region, idle(region));
-    host.onAppend = (bytes) => this.#append(bytes);
     if (this.#targets.size) ctx.storage.setAlarm(Date.now() + 100);
   }
 
   get configured() { return this.#targets.size > 0; }
+  get copying() { return this.#copying > 0; }
 
   /** Sets the regions this shard keeps replicas in, remembered across restarts. */
   configure(regions) {
@@ -59,7 +59,8 @@ export class Replicator {
 
   // ---- the stream ----
 
-  #append(bytes) {
+  /** Every append to the AOF's incr file, in order: the stream each replica is sent. */
+  append(bytes) {
     for (const t of this.#targets.values()) {
       if (t.phase === "copying") {
         t.queue.push(bytes); t.queued += bytes.length;
@@ -109,7 +110,7 @@ export class Replicator {
     } catch (e) {
       this.#drop(t, e.message);
     } finally {
-      if (--this.#copying === 0) await this.#host.execBatch(command(["CONFIG", "SET", "auto-aof-rewrite-percentage", "100"]), 1).catch(() => {});
+      this.#copying--;
     }
   }
 
