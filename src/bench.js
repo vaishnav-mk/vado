@@ -103,6 +103,26 @@ const tests = {
   // vs the wasm linear memory it grew (which never shrinks, and is what counts against the isolate's memory).
   // type=hash keeps the values as fields of small hashes (100 per key), which grow and shrink by realloc.
   // Run with via=shard.
+  // AOF rewrite cost on shard 0: BGREWRITEAOF while another client PINGs it in a loop. replyMs is when
+  // the command answered; totalMs is when no rewrite is in progress any more.
+  async rewrite(env, q) {
+    const db = await database(env, q.get("db")), stub = shardStub(env, db, 0), c = await open(env, q);
+    const lat = [];
+    let stop = false;
+    const pinger = (async () => { while (!stop) { const t = Date.now(); await c.call(["PING"]); lat.push(Date.now() - t); } })();
+    await new Promise((r) => setTimeout(r, 500));
+    const t0 = Date.now(), [reply] = await stub.run([["BGREWRITEAOF"]]), replyMs = Date.now() - t0;
+    while ((await stub.run([["INFO", "persistence"]]))[0].includes("aof_rewrite_in_progress:1")) await new Promise((r) => setTimeout(r, 50));
+    const totalMs = Date.now() - t0;
+    await new Promise((r) => setTimeout(r, 500));
+    stop = true;
+    await pinger;
+    c.close();
+    lat.sort((a, b) => a - b);
+    const base = (await stub.stats()).files.find((f) => /\.base\./.test(f.path));
+    return { reply, replyMs, totalMs, pings: lat.length, p50: lat[lat.length >> 1], p99: lat[Math.floor(lat.length * 0.99)], max: lat.at(-1), base: base && { path: base.path, MB: +(base.size / 2 ** 20).toFixed(1) } };
+  },
+
   async frag(env, q) {
     const n = Number(q.get("n") ?? 150000), min = Number(q.get("min") ?? 16), max = Number(q.get("max") ?? 512), rounds = Number(q.get("rounds") ?? 6);
     let seed = Number(q.get("seed") ?? 1) >>> 0;
