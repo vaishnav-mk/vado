@@ -128,5 +128,6 @@ the primary's writes down; one stuck replica is dropped before it can stall them
 - **No online resharding or moving.** A database keeps its shard count, its regions and its replica regions for
   life.
 - **Unsupported:** MONITOR, replication commands (SYNC, PSYNC, REPLICAOF, FAILOVER: vado's replicas are internal),
-  SHUTDOWN, DEBUG, MIGRATE, MOVE, SWAPDB, BGSAVE, CLIENT TRACKING and the other connection-wide CLIENT subcommands,
-  and SELECT above 0 (use another database name instead).
+  SHUTDOWN, DEBUG, MIGRATE, MOVE, SWAPDB, BGSAVE, SAVE, BGREWRITEAOF, ACL, CONFIG SET of anything but data settings,
+  CONFIG inside MULTI ([security](security.md#what-clients-can-change)), CLIENT TRACKING and the other
+  connection-wide CLIENT subcommands, and SELECT above 0 (use another database name instead).

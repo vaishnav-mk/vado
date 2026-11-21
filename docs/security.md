@@ -11,6 +11,26 @@
   make the router buffer much. An unauthenticated connection runs no command on any database. (A new isolate's
   first connection does look up the `default` database and Valkey's command table, once.)
 
+## What clients can change
+
+The shards' persistence, memory, networking and auth belong to the service, and the router keeps clients away
+from them. Without this, any client could turn the AOF off, or raise `maxmemory` past what the isolate holds, on
+every shard.
+
+- **`CONFIG SET` takes only settings that change how data behaves.** They are `maxmemory-policy`,
+  `maxmemory-samples`, `notify-keyspace-events`, the encoding thresholds (`hash-max-listpack-entries`, `hash-max-listpack-value`,
+  `hash-max-ziplist-entries`, `hash-max-ziplist-value`, `list-max-listpack-size`, `list-max-ziplist-size`,
+  `list-compress-depth`, `set-max-intset-entries`, `set-max-listpack-entries`, `set-max-listpack-value`,
+  `zset-max-listpack-entries`, `zset-max-listpack-value`, `zset-max-ziplist-entries`, `zset-max-ziplist-value`,
+  `hll-sparse-max-bytes`, `stream-node-max-bytes`, `stream-node-max-entries`), `lfu-log-factor`, `lfu-decay-time`,
+  `slowlog-log-slower-than`, `slowlog-max-len`, `latency-monitor-threshold`, `busy-reply-threshold`,
+  `lua-time-limit` and `activerehashing` (`CONFIG_SET` in `src/router.js`). Any other setting gets
+  `ERR 'config set <name>' is not supported by the sharded router`. An allowed one goes to every primary shard, not
+  to replicas or the pub/sub shard, and lasts until that shard restarts and boots with the Worker's settings again.
+- **`CONFIG` inside MULTI is refused.**
+- **`SAVE` and `BGREWRITEAOF` are refused.** The shards schedule their own persistence.
+- **`ACL` is refused.** The router does AUTH itself, and a password set on a shard would lock the routers out.
+
 ## Transport
 
 - **TCP Worker:** enable TLS on the Spectrum application (`flexible` terminates TLS at the edge). Without it the AUTH
@@ -39,7 +59,8 @@ The Worker's HTTP API (`src/bench.js`) needs `Authorization: Bearer <BENCH_TOKEN
 `BENCH_TOKEN` set. With the token, anyone can:
 
 - list every database (`dbs`), create databases, and choose their placement and replica regions (`db`);
-- read every shard's and replica's stats and Valkey INFO (`stats`, `shards`), and run any command (`run`);
+- read every shard's and replica's stats and Valkey INFO (`stats`, `shards`), and run any command (`run`), straight
+  to a shard with `via=shard`, past the router's checks above;
 - fill shards, abort shards or replicas (`fill`, `abort`, `durability`), and repoint replication (`replicate`);
 - run load from many invocations and from Sender objects in any region (`loadgen`, `send`), which you pay for;
 - read what each isolate reported to the Pulse object (`pulse`): every open connection's database and command
