@@ -102,7 +102,9 @@ export class Replicator {
     Object.assign(t, { phase: "copying", since: Date.now(), queue: [], queued: 0, inflight: 0, out: [], writing: false, marks: [], ready: false, error: null });
     this.#copying++;
     try {
-      // Commands, not RDB, in the base file, and no rewrite while the copy runs: the files only grow.
+      // Commands, not RDB, in the base file (a replica runs the files as commands), and no rewrite while the
+      // copy runs: the files only grow. Once no copy is running the base goes back to RDB, which is ~6x
+      // smaller, so each later rewrite (one commit that holds every reply) blocks the shard ~6x less.
       await this.#host.execBatch(command(["CONFIG", "SET", "aof-use-rdb-preamble", "no"]), 1);
       if (this.#files().base?.endsWith(".rdb")) await this.#host.execBatch(command(["BGREWRITEAOF"]), 1);
       if (t.phase !== "copying") return;
@@ -124,7 +126,7 @@ export class Replicator {
     } catch (e) {
       this.#drop(t, e.message);
     } finally {
-      this.#copying--;
+      if (--this.#copying === 0) await this.#host.execBatch(command(["CONFIG", "SET", "aof-use-rdb-preamble", "yes"]), 1).catch(() => {});
     }
   }
 
