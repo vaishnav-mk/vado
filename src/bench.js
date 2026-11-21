@@ -318,6 +318,30 @@ const tests = {
     return { requested: n, opened: cs.length, ms: Date.now() - t0, errors };
   },
 
+  // Connection churn from inside Cloudflare (the router's own connect handler, no TCP ingress in between): n
+  // connections, par at a time, each AUTH, SET, GET, close. Compare with test/hammer or a client over TCP.
+  async churn(env, q) {
+    const n = Number(q.get("n") ?? 2000), par = Number(q.get("par") ?? 50), fails = [];
+    let next = 0, ok = 0;
+    const t0 = Date.now();
+    await Promise.all(Array.from({ length: par }, async () => {
+      for (let i; (i = next++) < n; ) {
+        let c = null;
+        try {
+          c = await open(env, q);
+          const [set, get] = await c.call(["SET", `churn:${i}`, `v${i}`], ["GET", `churn:${i}`]);
+          if (set !== "OK" || get !== `v${i}`) throw new Error(`replies ${JSON.stringify([set, get])}`);
+          ok++;
+        } catch (e) {
+          if (fails.length < 20) fails.push([i, e.message]);
+        } finally {
+          c?.close();
+        }
+      }
+    }));
+    return { n, ok, failed: n - ok, ms: Date.now() - t0, fails };
+  },
+
   // Fill with `value`-byte strings until Valkey refuses (OOM) or a connection dies.
   async fill(env, q) {
     const c = await open(env, q), size = Number(q.get("value") ?? 65536), v = "x".repeat(size), limitKeys = Number(q.get("max") ?? 1e9);
