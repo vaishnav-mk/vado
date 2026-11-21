@@ -65,7 +65,7 @@ export class ValkeyShard extends DurableObject {
   async #rewriteByHelper(tmp, rdb) {
     const t0 = Date.now();
     try {
-      await rewriteByHelper(this.#host, this.env.REWRITER.getByName(this.ctx.id.name), tmp, rdb);
+      await rewriteByHelper(this.#host, this.env.REWRITER.getByName(this.ctx.id.name), tmp, rdb, () => this.ctx.storage.sync());
       console.log(`rewrite by helper: ${Date.now() - t0} ms`);
       return true;
     } catch (e) {

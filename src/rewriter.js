@@ -15,10 +15,13 @@ import { valkeyArgs } from "./shard.js";
 import { AOF_HELPER_TIMEOUT_MS, VFS_CHUNK } from "./constants.js";
 
 const line = (o) => new TextEncoder().encode(JSON.stringify(o) + "\n");
+// FNV-1a of the base, sent after it: the shard installs only a base that arrived exactly as it was sent.
+const FNV0 = 2166136261;
+const fnv = (h, b) => { for (let i = 0; i < b.length; i++) h = Math.imul(h ^ b[i], 16777619); return h >>> 0; };
+const yieldTurn = () => new Promise((r) => setTimeout(r, 0));
 
-// A JSON header line, and whatever arrived after it.
-async function readLine(reader) {
-  let acc = new Uint8Array(0);
+// A JSON line (after the bytes already in `acc`), and whatever arrived after it.
+async function readLine(reader, acc = new Uint8Array(0)) {
   for (;;) {
     const i = acc.indexOf(10);
     if (i >= 0) return [JSON.parse(new TextDecoder().decode(acc.subarray(0, i))), acc.subarray(i + 1)];
@@ -29,8 +32,9 @@ async function readLine(reader) {
   }
 }
 
-/** Shard side: writes the base for the rewrite Valkey just started to `tmp` (RDB if `rdb`), via `stub`. */
-export async function rewriteByHelper(host, stub, tmp, rdb) {
+/** Shard side: writes the base for the rewrite Valkey just started to `tmp` (RDB if `rdb`), via `stub`.
+ *  `sync` resolves once storage has every write so far. */
+export async function rewriteByHelper(host, stub, tmp, rdb, sync) {
   const { entries } = aofFiles(host);
   const incrs = entries.filter((e) => e.type === "i");
   const before = entries.filter((e) => e.type === "b" || (e.type === "i" && e !== incrs.at(-1))); // the last incr is the new one
@@ -40,19 +44,31 @@ export async function rewriteByHelper(host, stub, tmp, rdb) {
   try {
     const writer = socket.writable.getWriter(), reader = socket.readable.getReader();
     await writer.write(line({ manifest: before.map((e) => e.line).join("\n") + "\n", files, rdb }));
-    for (const [path, size] of files) for (let pos = 0; pos < size; pos += VFS_CHUNK) await writer.write(host.readFile(path, pos, VFS_CHUNK));
+    // Reading the files is synchronous SQLite work: yield between chunks so requests keep running.
+    for (const [path, size] of files) for (let pos = 0; pos < size; pos += VFS_CHUNK) { await writer.write(host.readFile(path, pos, VFS_CHUNK)); await yieldTurn(); }
     const [head, rest] = await readLine(reader);
     if (head.error) throw new Error(`rewriter: ${head.error}`);
     host.removeFile(tmp); // one left by a rewrite that a restart cut short
-    let got = 0;
-    for (let b = rest; ; ) {
-      if (b.length) { host.appendFile(tmp, b); got += b.length; }
+    // Every reply waits for the storage writes before it, so take the base one chunk's commit at a time:
+    // a reply then waits for at most one chunk, not for all of the base that arrived ahead of it.
+    let got = 0, synced = 0, sum = FNV0, b = rest;
+    for (;;) {
+      if (b.length) {
+        const take = b.subarray(0, head.size - got);
+        host.appendFile(tmp, take);
+        sum = fnv(sum, take);
+        got += take.length;
+        b = b.subarray(take.length);
+        if (got - synced >= VFS_CHUNK) { await sync(); synced = got; }
+      }
       if (got >= head.size) break;
-      const { value, done } = await reader.read();
-      if (done) break;
-      b = value;
+      const r = await reader.read();
+      if (r.done) break;
+      b = r.value;
     }
     if (got !== head.size) throw new Error(`base cut short: ${got} of ${head.size} bytes`);
+    const [tail] = await readLine(reader, b);
+    if (tail.sum !== sum) throw new Error("base checksum mismatch");
     return true;
   } finally {
     clearTimeout(timer);
@@ -93,7 +109,9 @@ export class ValkeyRewriter extends DurableObject {
       const { base } = aofFiles(host), size = host.fileSize(base);
       streaming = true;
       await writer.write(line({ size }));
-      for (let pos = 0; pos < size; pos += VFS_CHUNK) await writer.write(host.readFile(base, pos, VFS_CHUNK));
+      let sum = FNV0;
+      for (let pos = 0; pos < size; pos += VFS_CHUNK) { const c = host.readFile(base, pos, VFS_CHUNK); sum = fnv(sum, c); await writer.write(c); }
+      await writer.write(line({ sum }));
       await writer.close();
     } catch (e) {
       if (streaming) await writer.abort(e).catch(() => {});
