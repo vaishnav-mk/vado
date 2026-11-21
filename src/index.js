@@ -27,19 +27,18 @@ export const shardStub = (env, db, i) =>
 
 // Where shard i's primary lives, and which replica (if any) a router here should read it from: one in
 // this router's region, else a neighbouring one, unless the primary is at least as close.
-export const homeOf = (env, db, i) => (db.regions ? db.regions[i % db.regions.length] : env.LOCATION_HINT);
 const NEAR = { wnam: ["enam"], enam: ["wnam"], sam: ["enam", "wnam"], weur: ["eeur"], eeur: ["weur"], me: ["eeur", "weur"], afr: ["weur", "eeur"], apac: ["oc"], oc: ["apac"] };
 function replicaRegion(env, db, i) {
   const mine = db.replicas && REGION_OF.get(live.colo);
   if (!mine) return null;
-  const home = homeOf(env, db, i);
-  for (const r of [mine, ...NEAR[mine]]) { if (r === home) return null; if (db.replicas.includes(r)) return r; }
+  // The home region has a replica too: the primary's replies wait for its storage commits, a replica's don't.
+  for (const r of [mine, ...NEAR[mine]]) if (db.replicas.includes(r)) return r;
   return null;
 }
 export const replicaStub = (env, db, i, region) => env.SHARD.getByName(replicaName(shardName(db, i), region), objectOptions(env, region));
 /** Tell every primary shard of a replicated database where to keep its replicas (idempotent). */
 export const configureReplicas = (env, db) =>
-  Promise.all(Array.from({ length: db.shards }, (_, i) => shardStub(env, db, i).replicate(db.replicas.filter((r) => r !== homeOf(env, db, i)))));
+  Promise.all(Array.from({ length: db.shards }, (_, i) => shardStub(env, db, i).replicate(db.replicas)));
 
 export function database(env, name, shards, regions, replicas) {
   let db = dbs.get(name);

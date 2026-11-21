@@ -1,7 +1,7 @@
 // Tests and limit probes that run inside Cloudflare. Clients speak RESP over TCP sockets:
 //   via=router (default)  service binding connect("<db>:6379") -> TCP Worker -> Router -> shards
 //   via=shard             one shard's DO connect() directly (shard=<i>), no router
-import { configureReplicas, database, homeOf, replicaStub, shardStub } from "./index.js";
+import { configureReplicas, database, replicaStub, shardStub } from "./index.js";
 import Redis from "ioredis";
 import { bindingConnector } from "./client.js";
 import { sameSecret } from "./router.js";
@@ -102,7 +102,7 @@ const tests = {
   async replicate(env, q) {
     const db = await database(env, q.get("db")), v = q.get("regions");
     const regions = v === "none" ? [] : v === "world" ? WORLD : v.split(",");
-    await Promise.all(Array.from({ length: db.shards }, (_, i) => shardStub(env, db, i).replicate(regions.filter((r) => r !== homeOf(env, db, i)))));
+    await Promise.all(Array.from({ length: db.shards }, (_, i) => shardStub(env, db, i).replicate(regions)));
     return { regions };
   },
 
@@ -133,7 +133,7 @@ const tests = {
     const db = await database(env, q.get("db"));
     const one = (stub) => stub.snapshot().catch((e) => ({ down: e.message }));
     const shards = await Promise.all(Array.from({ length: db.shards }, async (_, i) => {
-      const regions = db.replicas ? db.replicas.filter((r) => r !== homeOf(env, db, i)) : [];
+      const regions = db.replicas ?? [];
       const [primary, ...copies] = await Promise.all([one(shardStub(env, db, i)), ...regions.map((r) => one(replicaStub(env, db, i, r)))]);
       return { ...primary, replicaSnapshots: copies.map((c, k) => ({ region: regions[k], ...c })) };
     }));
