@@ -99,13 +99,18 @@ const tests = {
   },
 
   // Fragmentation: n keys with seeded random value sizes in [min, max], then `rounds` times delete a random
-  // half and rewrite it with new sizes. After each round: Valkey's used_memory vs the wasm linear memory it
-  // grew (which never shrinks, and is what counts against the isolate's memory). Run with via=shard.
+  // half and rewrite it with sizes in [min2, max2] (default [min, max]). After each round: Valkey's used_memory
+  // vs the wasm linear memory it grew (which never shrinks, and is what counts against the isolate's memory).
+  // type=hash keeps the values as fields of small hashes (100 per key), which grow and shrink by realloc.
+  // Run with via=shard.
   async frag(env, q) {
     const n = Number(q.get("n") ?? 150000), min = Number(q.get("min") ?? 16), max = Number(q.get("max") ?? 512), rounds = Number(q.get("rounds") ?? 6);
     let seed = Number(q.get("seed") ?? 1) >>> 0;
     const rnd = () => ((seed = (seed * 1664525 + 1013904223) >>> 0) / 2 ** 32);
-    const val = () => "x".repeat(min + Math.floor(rnd() * (max - min + 1)));
+    const min2 = Number(q.get("min2") ?? min), max2 = Number(q.get("max2") ?? max), hash = q.get("type") === "hash";
+    const val = (lo = min, hi = max) => "x".repeat(lo + Math.floor(rnd() * (hi - lo + 1)));
+    const set = (i, v) => (hash ? ["HSET", `f:${Math.floor(i / 100)}`, i, v] : ["SET", `f:${i}`, v]);
+    const del = (i) => (hash ? ["HDEL", `f:${Math.floor(i / 100)}`, i] : ["DEL", `f:${i}`]);
     const db = await database(env, q.get("db")), stub = shardStub(env, db, 0), c = await open(env, q);
     const mem = async (round) => {
       const [info] = await c.call(["INFO", "memory"]);
@@ -117,16 +122,16 @@ const tests = {
     const out = [];
     await c.call(["FLUSHALL"]);
     out.push(await mem("empty"));
-    await batch(Array.from({ length: n }, (_, i) => ["SET", `f:${i}`, val()]));
+    await batch(Array.from({ length: n }, (_, i) => set(i, val())));
     out.push(await mem("filled"));
     for (let r = 1; r <= rounds; r++) {
       const pick = Array.from({ length: n }, (_, i) => i).filter(() => rnd() < 0.5);
-      await batch(pick.map((i) => ["DEL", `f:${i}`]));
-      await batch(pick.map((i) => ["SET", `f:${i}`, val()]));
+      await batch(pick.map(del));
+      await batch(pick.map((i) => set(i, val(min2, max2))));
       out.push(await mem(r));
     }
     c.close();
-    return { n, min, max, rounds, memory: out };
+    return { n, min, max, min2, max2, type: hash ? "hash" : "string", rounds, memory: out };
   },
 
   // One execRaw (the router's RPC mode) of k SETs straight to shard 0: are all k replies there?
