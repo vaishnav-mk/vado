@@ -73,8 +73,11 @@ export const VFS_TAIL = 16 << 10;
 export const AOF_REWRITE_MIN = 8 << 20;
 /** A due rewrite waits for the shard to be quiet this long, since it blocks every client while it runs. */
 export const AOF_REWRITE_IDLE_MS = 1_000;
-/** Rewrite anyway once the incr file reaches this (and twice the base): restarts replay it, so it bounds restart time. */
-export const AOF_REWRITE_CAP = 32 << 20;
+/**
+ * Rewrite anyway once the incr file reaches this (and twice the base), quiet or not. A restart replays the incr
+ * file (~1 s per 64 MB), and each forced rewrite blocks the shard for ~1 s per 10 MB of RDB base.
+ */
+export const AOF_REWRITE_CAP = 64 << 20;
 /** How often a shard that is appending looks at its AOF size. */
 export const AOF_CHECK_MS = 2_000;
 
