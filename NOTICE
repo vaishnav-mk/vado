@@ -6,3 +6,7 @@ contributors, and Copyright (c) 2006-2020, Redis Ltd., made with valkey-wasm
 (https://github.com/michaelkremenetsky/valkey-wasm), Copyright (c) 2026-present,
 Michael Kremenetsky. Both are licensed under the BSD 3-Clause License; see
 vendor/LICENSE. vendor/valkey-wasm.patch lists the changes made for this build.
+
+The wasm/ directory, which builds that module from upstream Valkey, is derived
+from valkey-wasm: the WASI shims in wasm/wasi/, the build script and the
+patches. It is licensed under the BSD 3-Clause License; see wasm/LICENSE.
