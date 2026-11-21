@@ -44,8 +44,18 @@ export const sameSecret = (a, b) => { const x = te.encode(a), y = te.encode(b); 
 
 const SUBSCRIBE = new Set(["subscribe", "psubscribe", "ssubscribe"]);
 const PUBSUB = new Set(["publish", "spublish", "pubsub", "unsubscribe", "punsubscribe", "sunsubscribe", ...SUBSCRIBE]);
+// save/bgrewriteaof: the shards schedule their own AOF rewrites (src/shard.js).
+// acl: the router does AUTH itself; a password set on a shard would lock the routers out.
 const UNSUPPORTED = new Set(["monitor", "sync", "psync", "replicaof", "slaveof", "failover", "shutdown", "debug",
-  "migrate", "move", "swapdb", "bgsave", "lpush_x"]);
+  "migrate", "move", "swapdb", "bgsave", "save", "bgrewriteaof", "acl", "lpush_x"]);
+// CONFIG SET goes to every shard, so it may change how the database's data behaves, never durability,
+// memory, networking or auth: those belong to the service, and a shard shares its isolate's memory.
+const CONFIG_SET = new Set(["maxmemory-policy", "maxmemory-samples", "notify-keyspace-events", "hash-max-listpack-entries",
+  "hash-max-listpack-value", "hash-max-ziplist-entries", "hash-max-ziplist-value", "list-max-listpack-size", "list-max-ziplist-size",
+  "list-compress-depth", "set-max-intset-entries", "set-max-listpack-entries", "set-max-listpack-value", "zset-max-listpack-entries",
+  "zset-max-listpack-value", "zset-max-ziplist-entries", "zset-max-ziplist-value", "hll-sparse-max-bytes", "stream-node-max-bytes",
+  "stream-node-max-entries", "lfu-log-factor", "lfu-decay-time", "slowlog-log-slower-than", "slowlog-max-len",
+  "latency-monitor-threshold", "busy-reply-threshold", "lua-time-limit", "activerehashing"]);
 const BLOCKED_SUB = { client: new Set(["tracking", "caching", "getredir", "trackinginfo", "kill", "pause", "unpause", "unblock", "reply", "list", "no-evict", "no-touch", "capa", "import-source"]) };
 
 // Appends a chunk to the unparsed tail `a`. Grows into spare capacity (doubling) so a frame that
@@ -490,11 +500,14 @@ export class Router {
       case "script": return this.#scriptOrFunction(argv, raw);
       case "function": return this.#scriptOrFunction(argv, raw);
       case "config":
+        if (lower(argv[1] ?? new Uint8Array()) === "set") {
+          const bad = argv.slice(2).filter((_, i) => i % 2 === 0).map(lower).find((p) => !CONFIG_SET.has(p));
+          if (bad !== undefined) return this.#reply(unsupported(`config set ${bad}`));
+        }
         if (lower(argv[1] ?? new Uint8Array()) === "set" || lower(argv[1] ?? new Uint8Array()) === "resetstat") {
           return this.#fanout(argv, (rs) => rs.find((r) => r?.err) ? error(rs.find((r) => r?.err).err) : OK);
         }
         return this.#forward(0, raw);
-      case "save": case "bgrewriteaof": return this.#fanout(argv, (rs) => rs.find((r) => r?.err) ? error(rs.find((r) => r?.err).err) : simple(name === "save" ? "OK" : "Background append only file rewriting started"));
     }
     if (UNSUPPORTED.has(name)) return this.#reply(unsupported(name));
     if (PUBSUB.has(name)) return this.#pubsub(name, argv, raw);
@@ -594,7 +607,8 @@ export class Router {
     const m = this.#multi;
     const bad = this.#arity(name, argv);
     if (bad) { m.failed = true; return this.#reply(bad); }
-    if (PUBSUB.has(name) || UNSUPPORTED.has(name)) { m.failed = true; return this.#reply(unsupported(`${name} in MULTI`)); }
+    // config: CONFIG SET is checked (and fanned out) only outside a transaction.
+    if (PUBSUB.has(name) || UNSUPPORTED.has(name) || name === "config") { m.failed = true; return this.#reply(unsupported(`${name} in MULTI`)); }
     const idx = keyIndexes(this.table, name, argv);
     if (idx === null) { m.failed = true; return this.#reply(unsupported(`${name} in MULTI`)); }
     if (idx.length && this.db.shards > 1) {
