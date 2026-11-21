@@ -83,6 +83,10 @@ export const AOF_REWRITE_IDLE_MS = 1_000;
 export const AOF_REWRITE_CAP = 64 << 20;
 /** How often a shard that is appending looks at its AOF size. */
 export const AOF_CHECK_MS = 2_000;
+// A rewrite by a ValkeyRewriter (src/rewriter.js) that takes longer than this fails; after a failure the
+// shard rewrites inline (blocking, at quiet moments) for AOF_HELPER_RETRY_MS before trying a helper again.
+export const AOF_HELPER_TIMEOUT_MS = 120_000;
+export const AOF_HELPER_RETRY_MS = 600_000;
 
 // ---- read replicas (src/replication.js) ----
 

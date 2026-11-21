@@ -9,10 +9,19 @@ const REPLY_OFF = command(["CLIENT", "REPLY", "OFF"]);
 // With replies off, only this comes back: "+OK" then "+PONG", once the replica has run everything before it.
 const MARK = concat([command(["CLIENT", "REPLY", "ON"]), command(["PING"]), command(["CLIENT", "REPLY", "OFF"])]);
 const START = concat([REPLY_OFF, command(["FLUSHALL"])]);
-const MANIFEST = "aof/appendonly.aof.manifest";
+export const MANIFEST = "aof/appendonly.aof.manifest";
 const COPY_CHUNK = 1 << 20;
 
 export const replicaName = (primary, region) => `${primary}.r.${region}`;
+
+/** The AOF files as of now, from the manifest: the base, the incr files in order, and every entry with its line. */
+export function aofFiles(host) {
+  const size = host.fileSize(MANIFEST);
+  if (size === null) throw new Error("no AOF manifest yet");
+  const entries = new TextDecoder().decode(host.readFile(MANIFEST, 0, size)).split("\n").filter((l) => l.startsWith("file "))
+    .map((line) => { const w = line.trim().split(/\s+/); return { path: `aof/${w[1]}`, type: w[w.indexOf("type") + 1], line }; });
+  return { base: entries.find((e) => e.type === "b")?.path, incrs: entries.filter((e) => e.type === "i").map((e) => e.path), entries };
+}
 
 export class Replicator {
   #ctx; #env; #host; #name; #ns;
@@ -90,14 +99,7 @@ export class Replicator {
     }, (e) => this.#drop(t, `socket: ${e.message}`));
   }
 
-  // The AOF files as of now: the base, then the incr files in order, from the manifest.
-  #files() {
-    const size = this.#host.fileSize(MANIFEST);
-    if (size === null) throw new Error("no AOF manifest yet");
-    const lines = new TextDecoder().decode(this.#host.readFile(MANIFEST, 0, size)).split("\n").map((l) => l.trim().split(/\s+/)).filter((w) => w[0] === "file");
-    const pick = (type) => lines.filter((w) => w[w.indexOf("type") + 1] === type).map((w) => `aof/${w[1]}`);
-    return { base: pick("b")[0], incrs: pick("i") };
-  }
+  #files() { return aofFiles(this.#host); }
 
   async #sync(t) {
     Object.assign(t, { phase: "copying", since: Date.now(), queue: [], queued: 0, inflight: 0, out: [], writing: false, marks: [], ready: false, error: null });
@@ -107,8 +109,10 @@ export class Replicator {
       // copy runs: the files only grow. Once no copy is running the base goes back to RDB, which is ~6x
       // smaller, so each later rewrite (one commit that holds every reply) blocks the shard ~6x less.
       await this.#host.execBatch(command(["CONFIG", "SET", "aof-use-rdb-preamble", "no"]), 1);
-      if (this.#files().base?.endsWith(".rdb")) await this.#host.execBatch(command(["BGREWRITEAOF"]), 1);
+      await this.#host.rewriting; // a rewrite that is running would replace the files mid-copy
+      if (this.#files().base?.endsWith(".rdb")) { await this.#host.execBatch(command(["BGREWRITEAOF"]), 1); await this.#host.rewriting; }
       if (t.phase !== "copying") return;
+      if (this.#files().base?.endsWith(".rdb")) throw new Error("the base is still RDB (its rewrite failed)");
       // Sizes now, synchronously: appends from here on are queued for this replica.
       const { base, incrs } = this.#files();
       const parts = [base, ...incrs].filter(Boolean).map((p) => [p, this.#host.fileSize(p) ?? 0]);

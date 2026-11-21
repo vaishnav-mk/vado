@@ -10,6 +10,7 @@ import { replicaName } from "./replication.js";
 
 export { ValkeyShard, ValkeyShard1, ValkeyShard2, ValkeyShard3, ValkeyShard4, ValkeyShard5, ValkeyShard6, ValkeyShard7 } from "./shard.js";
 export { Catalog } from "./catalog.js";
+export { ValkeyRewriter } from "./rewriter.js";
 export { Pulse } from "./pulse.js";
 export { Sender } from "./sender.js";
 

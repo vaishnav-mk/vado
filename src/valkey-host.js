@@ -30,6 +30,10 @@ export class ValkeyHost {
   #pool = { 2: [], 3: [] }; // idle internal clients for execBatch, by RESP protocol
   #stalled = new Set(); // wake functions of readers paused by the total budget
   bootMs = 0;
+  // (tmp, rdb) => null, or an async () => ok that writes the base for an AOF rewrite Valkey just started
+  // to `tmp` (patches/0004). null: Valkey rewrites inline, blocking, as before.
+  onRewrite = null;
+  rewriting = null; // a Promise while a rewrite taken by onRewrite runs
   lastActive = 0; // Date.now() of the last client input (the shard rewrites its AOF when quiet)
 
   #sync; // () => Promise: resolves when every storage write so far is confirmed (group commit), or null
@@ -149,6 +153,21 @@ export class ValkeyHost {
         this.#freeFds.push(fd);
         s.done();
         this.#updateTimer();
+      },
+      aof_rewrite: (ptr, len, rdb) => {
+        const tmp = new TextDecoder().decode(mem().slice(ptr, ptr + len));
+        const job = this.onRewrite?.(tmp, rdb === 1);
+        if (!job) return 0;
+        this.rewriting = (async () => {
+          await null; // after the wasm call that started the rewrite has returned
+          let ok = false;
+          try { ok = await job(); } catch (e) { this.#log(`rewrite: ${e?.stack ?? e}`); }
+          // Valkey renames tmp into place and swaps the manifest, as when a forked child exits.
+          if (!this.#vk.exports.rk_rewrite_done(ok ? 1 : 0)) this.#vfs.remove(tmp);
+          this.rewriting = null;
+          this.#schedule();
+        })();
+        return 1;
       },
       poll: (interestPtr, count, firedPtr, max) => {
         const view = dv();
@@ -341,6 +360,8 @@ export class ValkeyHost {
 
   files() { return this.#vfs.listing(); }
   readFile(path, pos, len) { return this.#vfs.read(path, pos, len); }
+  appendFile(path, bytes) { this.#vfs.append(path, bytes); }
+  removeFile(path) { this.#vfs.remove(path); }
   fileSize(path) { return this.#vfs.size(path); }
   set onAppend(f) { this.#vfs.onAppend = f; }
 }

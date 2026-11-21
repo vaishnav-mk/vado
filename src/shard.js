@@ -5,18 +5,19 @@ import { ValkeyHost } from "./valkey-host.js";
 import { command, concat, decodeAll } from "./resp.js";
 import { coloOf } from "./pulse.js";
 import { Replicator } from "./replication.js";
-import { AOF_CHECK_MS, AOF_REWRITE_CAP, AOF_REWRITE_IDLE_MS, AOF_REWRITE_MIN } from "./constants.js";
+import { rewriteByHelper } from "./rewriter.js";
+import { AOF_CHECK_MS, AOF_HELPER_RETRY_MS, AOF_REWRITE_CAP, AOF_REWRITE_IDLE_MS, AOF_REWRITE_MIN } from "./constants.js";
 
 // Valkey's own config. appendfsync always + the write-through Vfs: a reply leaves only after the
 // AOF bytes behind it are in SQLite (the output gate holds it until then).
-const valkeyArgs = (env, replica) => [
+export const valkeyArgs = (env, replica) => [
   "--port", "6379", "--bind", "127.0.0.1", "--protected-mode", "no", "--daemonize", "no",
   "--io-threads", "1", "--logfile", "", "--loglevel", env.VALKEY_LOGLEVEL || "warning",
   "--dir", "/data", "--save", "",
   // A replica keeps its data in memory only: its primary copies it again after a reset.
   ...(replica ? ["--appendonly", "no"] : ["--appendonly", "yes", "--appendfsync", "always", "--appenddirname", "aof"]),
   "--aof-use-rdb-preamble", "yes", "--aof-timestamp-enabled", "no",
-  // A rewrite runs inline (no fork in wasm) and blocks the shard, so the shard picks when (#rewriteCheck).
+  // No fork in wasm: a rewrite runs in a ValkeyRewriter, or inline (blocking). The shard picks when (#rewriteCheck).
   "--auto-aof-rewrite-percentage", "0",
   // Latency tracking times each command, but the Workers clock doesn't move during one.
   "--latency-tracking", "no",
@@ -40,6 +41,7 @@ export class ValkeyShard extends DurableObject {
   #ready = false; // a replica serves reads only once its primary's copy has fully arrived
   #repl = null; // a primary's Replicator
   #checkArmed = false; // an alarm will look at the AOF size
+  #inlineUntil = 0; // after a failed helper rewrite, rewrite inline until then
 
   constructor(ctx, env) {
     super(ctx, env);
@@ -48,6 +50,7 @@ export class ValkeyShard extends DurableObject {
     if (!this.#replica) {
       this.#repl = new Replicator(ctx, env, this.#host, ctx.id.name, env[this.constructor.binding]);
       this.#host.onAppend = (bytes) => { this.#repl.append(bytes); if (!this.#checkArmed) this.#armCheck(); };
+      if (env.REWRITER) this.#host.onRewrite = (tmp, rdb) => (this.#helper() ? () => this.#rewriteByHelper(tmp, rdb) : null);
     }
   }
 
@@ -57,15 +60,31 @@ export class ValkeyShard extends DurableObject {
     if (!this.#repl.configured) queueMicrotask(() => this.ctx.storage.setAlarm(Date.now() + AOF_CHECK_MS));
   }
 
-  // AOF rewrites block the shard while they run, so do them when it's quiet, unless the incr file has
-  // grown so big that a restart would take too long to replay it. Returns true if one is still due.
+  #helper() { return !!this.env.REWRITER && Date.now() >= this.#inlineUntil; }
+
+  async #rewriteByHelper(tmp, rdb) {
+    const t0 = Date.now();
+    try {
+      await rewriteByHelper(this.#host, this.env.REWRITER.getByName(this.ctx.id.name), tmp, rdb);
+      console.log(`rewrite by helper: ${Date.now() - t0} ms`);
+      return true;
+    } catch (e) {
+      this.#inlineUntil = Date.now() + AOF_HELPER_RETRY_MS;
+      console.log(`rewrite by helper failed after ${Date.now() - t0} ms: ${e.message}`);
+      return false;
+    }
+  }
+
+  // Rewrite once the incr file outgrows the base. A rewriter helper doesn't stop the shard; an inline
+  // rewrite does, so that waits for a quiet moment, unless the incr file has grown so big that a restart
+  // would take too long to replay it. Returns true if one is still due.
   async #rewriteCheck() {
-    if (this.#repl.copying) return true; // a replica copy needs the files to only grow
+    if (this.#repl.copying || this.#host.rewriting) return true; // a replica copy needs the files to only grow
     const [txt] = decodeAll(await this.#host.execBatch(command(["INFO", "persistence"]), 1));
     const num = (k) => Number(new RegExp(`${k}:(\\d+)`).exec(txt)?.[1] ?? 0);
     const base = num("aof_base_size"), incr = num("aof_current_size") - base;
     const due = incr >= Math.max(AOF_REWRITE_MIN, base) || this.#repl.rdbDue;
-    if (incr >= Math.max(AOF_REWRITE_CAP, 2 * base) || (due && Date.now() - this.#host.lastActive >= AOF_REWRITE_IDLE_MS)) {
+    if (incr >= Math.max(AOF_REWRITE_CAP, 2 * base) || (due && (this.#helper() || Date.now() - this.#host.lastActive >= AOF_REWRITE_IDLE_MS))) {
       await this.#host.execBatch(command(["BGREWRITEAOF"]), 1);
       this.#repl.rdbDue = false;
       return false;

@@ -433,6 +433,35 @@ export class Vfs {
     return this.#node(path)?.size ?? null;
   }
 
+  // ---- host-side file access (outside Valkey: a rewrite helper's copy of a shard's files, a base it sends back) ----
+  /** Deletes every file and directory. */
+  clear() {
+    this.#write(`DELETE FROM vfs_chunk`);
+    this.#write(`DELETE FROM vfs_node`);
+    this.#nodes.clear();
+  }
+
+  /** Appends to the file at `path`, creating it (and its directory) if missing. Buffered like a non-AOF fd: see flush. */
+  append(path, bytes) {
+    let n = this.#node(path);
+    if (!n) {
+      const dir = path.includes("/") ? path.slice(0, path.lastIndexOf("/")) : "";
+      if (dir && !this.#row(dir)) this.#write(`INSERT INTO vfs_node (path, is_dir, size) VALUES (?, 1, 0)`, dir);
+      this.#write(`INSERT INTO vfs_node (path, is_dir, size, chunks) VALUES (?, 0, 0, ?)`, path, `#${crypto.randomUUID()}`);
+      n = this.#node(path);
+    }
+    this.#append(n, bytes, false);
+  }
+
+  /** Writes out what append() buffered. */
+  flush() {
+    for (const n of this.#nodes.values()) this.#flush(n);
+  }
+
+  remove(path) {
+    if (this.#row(path)) this.#unlink(path);
+  }
+
   listing() {
     return this.#sql.exec(`SELECT n.path, n.is_dir, coalesce((SELECT sum(length(c.data)) FROM vfs_chunk c WHERE c.path = coalesce(n.chunks, n.path)), 0) AS size, (SELECT count(*) FROM vfs_chunk c WHERE c.path = coalesce(n.chunks, n.path)) AS rows FROM vfs_node n ORDER BY n.path`).toArray();
   }
