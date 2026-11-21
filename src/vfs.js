@@ -440,13 +440,17 @@ export class Vfs {
     return this.#node(path)?.size ?? null;
   }
 
-  /** Deletes up to `rows` chunks of deleted files. Returns whether any are left. */
-  sweep(rows) {
+  /** Deletes about `bytes` of deleted files' chunks (at least one row). Returns whether any are left. */
+  sweep(bytes) {
     const t = this.#sql.exec(`SELECT key FROM vfs_trash LIMIT 1`).toArray()[0];
     if (!t) return false;
-    const r = this.#sql.exec(`DELETE FROM vfs_chunk WHERE path = ? AND seq IN (SELECT seq FROM vfs_chunk WHERE path = ? ORDER BY seq DESC LIMIT ?)`, t.key, t.key, rows);
-    this.stats.rowsWritten += r.rowsWritten;
-    if (!r.rowsWritten) this.#write(`DELETE FROM vfs_trash WHERE key = ?`, t.key);
+    let from = null, sum = 0;
+    for (const r of this.#sql.exec(`SELECT seq, length(data) AS len FROM vfs_chunk WHERE path = ? ORDER BY seq DESC LIMIT 4096`, t.key).toArray()) {
+      from = r.seq;
+      if ((sum += r.len) >= bytes) break;
+    }
+    if (from === null) this.#write(`DELETE FROM vfs_trash WHERE key = ?`, t.key);
+    else this.#write(`DELETE FROM vfs_chunk WHERE path = ? AND seq >= ?`, t.key, from);
     return true;
   }
 

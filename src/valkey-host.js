@@ -2,7 +2,7 @@
 // Object: sockets from connect(socket) become Valkey client fds; files live in DO SQLite (Vfs).
 import { Vfs } from "./vfs.js";
 import { frameEnd } from "./resp.js";
-import { CLIENT_HIGH_WATER, CLIENT_LOW_WATER, POOL_MAX, SHARD_COMMITS, SHARD_HIGH_WATER, SHARD_LOW_WATER, VFS_SWEEP_ROWS } from "./constants.js";
+import { CLIENT_HIGH_WATER, CLIENT_LOW_WATER, POOL_MAX, SHARD_COMMITS, SHARD_HIGH_WATER, SHARD_LOW_WATER, VFS_SWEEP_BYTES, VFS_SWEEP_MS } from "./constants.js";
 
 const FD_BASE = 4096; // valkey-wasm sock_shim: fds >= this are host sockets
 const AE_READABLE = 1;
@@ -255,14 +255,14 @@ export class ValkeyHost {
     else if (!clients && this.#timer) { clearInterval(this.#timer); this.#timer = null; }
   }
 
-  // Deletes the chunks of deleted files a few rows per storage commit, in the background.
+  // Deletes the chunks of deleted files a little at a time, in the background.
   #sweeping = false;
   async #sweep() {
     if (this.#sweeping) return;
     this.#sweeping = true;
     try {
       await null; // not inside the wasm call that deleted the file
-      while (this.#vfs.sweep(VFS_SWEEP_ROWS)) await (this.#sync?.() ?? new Promise((r) => setTimeout(r, 0)));
+      while (this.#vfs.sweep(VFS_SWEEP_BYTES)) await new Promise((r) => setTimeout(r, VFS_SWEEP_MS));
     } catch (e) {
       this.#log(`vfs sweep: ${e?.message ?? e}`);
     } finally {
