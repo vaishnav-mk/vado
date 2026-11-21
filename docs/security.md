@@ -18,9 +18,9 @@ from them. Without this, any client could turn the AOF off, or raise `maxmemory`
 every shard.
 
 - **`CONFIG SET` takes only settings that change how data behaves.** They are `maxmemory-policy`,
-  `maxmemory-samples`, `notify-keyspace-events`, the encoding thresholds (`hash-max-listpack-entries`, `hash-max-listpack-value`,
-  `hash-max-ziplist-entries`, `hash-max-ziplist-value`, `list-max-listpack-size`, `list-max-ziplist-size`,
-  `list-compress-depth`, `set-max-intset-entries`, `set-max-listpack-entries`, `set-max-listpack-value`,
+  `maxmemory-samples`, `notify-keyspace-events`, the encoding thresholds (`hash-max-listpack-entries`,
+  `hash-max-listpack-value`, `hash-max-ziplist-entries`, `hash-max-ziplist-value`, `list-max-listpack-size`,
+  `list-max-ziplist-size`, `list-compress-depth`, `set-max-intset-entries`, `set-max-listpack-entries`, `set-max-listpack-value`,
   `zset-max-listpack-entries`, `zset-max-listpack-value`, `zset-max-ziplist-entries`, `zset-max-ziplist-value`,
   `hll-sparse-max-bytes`, `stream-node-max-bytes`, `stream-node-max-entries`), `lfu-log-factor`, `lfu-decay-time`,
   `slowlog-log-slower-than`, `slowlog-max-len`, `latency-monitor-threshold`, `busy-reply-threshold`,
