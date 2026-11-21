@@ -108,7 +108,9 @@ const tests = {
     let seed = Number(q.get("seed") ?? 1) >>> 0;
     const rnd = () => ((seed = (seed * 1664525 + 1013904223) >>> 0) / 2 ** 32);
     const min2 = Number(q.get("min2") ?? min), max2 = Number(q.get("max2") ?? max), hash = q.get("type") === "hash";
-    const val = (lo = min, hi = max) => "x".repeat(lo + Math.floor(rnd() * (hi - lo + 1)));
+    // rand=1: incompressible values (RDB compresses repeated bytes to almost nothing).
+    const pool = q.get("rand") === "1" ? btoa(String.fromCharCode(...crypto.getRandomValues(new Uint8Array(3 << 10)))) : null;
+    const val = (lo = min, hi = max) => { const len = lo + Math.floor(rnd() * (hi - lo + 1)); if (!pool) return "x".repeat(len); const at = Math.floor(rnd() * (pool.length - len)); return pool.slice(at, at + len); };
     const set = (i, v) => (hash ? ["HSET", `f:${Math.floor(i / 100)}`, i, v] : ["SET", `f:${i}`, v]);
     const del = (i) => (hash ? ["HDEL", `f:${Math.floor(i / 100)}`, i] : ["DEL", `f:${i}`]);
     const db = await database(env, q.get("db")), stub = shardStub(env, db, 0), c = await open(env, q);
