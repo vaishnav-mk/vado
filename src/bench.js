@@ -119,8 +119,8 @@ const tests = {
     await pinger;
     c.close();
     lat.sort((a, b) => a - b);
-    const base = (await stub.stats()).files.find((f) => /\.base\./.test(f.path));
-    return { reply, replyMs, totalMs, pings: lat.length, p50: lat[lat.length >> 1], p99: lat[Math.floor(lat.length * 0.99)], max: lat.at(-1), base: base && { path: base.path, MB: +(base.size / 2 ** 20).toFixed(1) } };
+    const st = await stub.stats(), base = st.files.find((f) => /\.base\./.test(f.path));
+    return { reply, replyMs, totalMs, pings: lat.length, p50: lat[lat.length >> 1], p99: lat[Math.floor(lat.length * 0.99)], max: lat.at(-1), base: base && { path: base.path, MB: +(base.size / 2 ** 20).toFixed(1) }, helper: st.lastRewrite };
   },
 
   async frag(env, q) {

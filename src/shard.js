@@ -42,6 +42,7 @@ export class ValkeyShard extends DurableObject {
   #repl = null; // a primary's Replicator
   #checkArmed = false; // an alarm will look at the AOF size
   #inlineUntil = 0; // after a failed helper rewrite, rewrite inline until then
+  #lastRewrite = null; // the last helper rewrite: phase times, bytes, error (in stats())
 
   constructor(ctx, env) {
     super(ctx, env);
@@ -63,14 +64,15 @@ export class ValkeyShard extends DurableObject {
   #helper() { return !!this.env.REWRITER && Date.now() >= this.#inlineUntil; }
 
   async #rewriteByHelper(tmp, rdb) {
-    const t0 = Date.now();
+    const log = (this.#lastRewrite = { at: Date.now(), rdb });
     try {
-      await rewriteByHelper(this.#host, this.env.REWRITER.getByName(this.ctx.id.name), tmp, rdb, () => this.ctx.storage.sync());
-      console.log(`rewrite by helper: ${Date.now() - t0} ms`);
+      await rewriteByHelper(this.#host, this.env.REWRITER.getByName(this.ctx.id.name), tmp, rdb, () => this.ctx.storage.sync(), log);
+      log.ms = Date.now() - log.at;
       return true;
     } catch (e) {
       this.#inlineUntil = Date.now() + AOF_HELPER_RETRY_MS;
-      console.log(`rewrite by helper failed after ${Date.now() - t0} ms: ${e.message}`);
+      Object.assign(log, { ms: Date.now() - log.at, error: e.message });
+      console.log(`rewrite by helper failed after ${log.ms} ms: ${e.message}`);
       return false;
     }
   }
@@ -175,7 +177,7 @@ export class ValkeyShard extends DurableObject {
     if (this.#colo === undefined) { this.#colo = null; coloOf().then((c) => { this.#colo = c; }, () => {}); }
     return {
       ...this.#host.stats(), instance: this.#instance, isolate: (isolateId ??= crypto.randomUUID()), colo: this.#colo, aliveSeconds: (Date.now() - this.#bornAt) / 1000, files: this.#host.files(),
-      role: this.#replica ? "replica" : "primary", ...(this.#replica ? { ready: this.#ready } : { replicas: this.#repl.status() }),
+      role: this.#replica ? "replica" : "primary", ...(this.#replica ? { ready: this.#ready } : { replicas: this.#repl.status(), lastRewrite: this.#lastRewrite }),
     };
   }
 }

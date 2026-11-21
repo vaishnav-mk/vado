@@ -34,7 +34,8 @@ async function readLine(reader, acc = new Uint8Array(0)) {
 
 /** Shard side: writes the base for the rewrite Valkey just started to `tmp` (RDB if `rdb`), via `stub`.
  *  `sync` resolves once storage has every write so far. */
-export async function rewriteByHelper(host, stub, tmp, rdb, sync) {
+export async function rewriteByHelper(host, stub, tmp, rdb, sync, log = {}) {
+  const t0 = Date.now(), at = (k) => { log[k] = Date.now() - t0; };
   const { entries } = aofFiles(host);
   const incrs = entries.filter((e) => e.type === "i");
   const before = entries.filter((e) => e.type === "b" || (e.type === "i" && e !== incrs.at(-1))); // the last incr is the new one
@@ -46,8 +47,12 @@ export async function rewriteByHelper(host, stub, tmp, rdb, sync) {
     await writer.write(line({ manifest: before.map((e) => e.line).join("\n") + "\n", files, rdb }));
     // Reading the files is synchronous SQLite work: yield between chunks so requests keep running.
     for (const [path, size] of files) for (let pos = 0; pos < size; pos += VFS_CHUNK) { await writer.write(host.readFile(path, pos, VFS_CHUNK)); await yieldTurn(); }
+    at("sentMs");
+    log.sentBytes = files.reduce((n, [, size]) => n + size, 0);
     const [head, rest] = await readLine(reader);
+    at("headMs");
     if (head.error) throw new Error(`rewriter: ${head.error}`);
+    log.baseBytes = head.size;
     host.removeFile(tmp); // one left by a rewrite that a restart cut short
     // Every reply waits for the storage writes before it, so take the base one chunk's commit at a time:
     // a reply then waits for at most one chunk, not for all of the base that arrived ahead of it.
@@ -67,6 +72,7 @@ export async function rewriteByHelper(host, stub, tmp, rdb, sync) {
       b = r.value;
     }
     if (got !== head.size) throw new Error(`base cut short: ${got} of ${head.size} bytes`);
+    at("receivedMs");
     const [tail] = await readLine(reader, b);
     if (tail.sum !== sum) throw new Error("base checksum mismatch");
     return true;
