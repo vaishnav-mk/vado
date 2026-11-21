@@ -41,6 +41,11 @@ const WRONGPASS = error("WRONGPASS invalid username-password pair or user is dis
 const te = new TextEncoder();
 // Length leaks; contents don't.
 export const sameSecret = (a, b) => { const x = te.encode(a), y = te.encode(b); return x.length === y.length && crypto.subtle.timingSafeEqual(x, y); };
+// A database's own password is stored as "salt:sha256(salt + password)". Passwords are generated (high
+// entropy), so a fast hash is enough, and AUTH stays cheap for clients that connect often.
+const sha256 = async (s) => [...new Uint8Array(await crypto.subtle.digest("SHA-256", te.encode(s)))].map((b) => b.toString(16).padStart(2, "0")).join("");
+export const hashSecret = async (pass) => { const salt = crypto.randomUUID(); return `${salt}:${await sha256(salt + pass)}`; };
+const secretMatches = async (stored, pass) => { const i = stored.indexOf(":"); return sameSecret(await sha256(stored.slice(0, i) + pass), stored.slice(i + 1)); };
 
 const SUBSCRIBE = new Set(["subscribe", "psubscribe", "ssubscribe"]);
 const PUBSUB = new Set(["publish", "spublish", "pubsub", "unsubscribe", "punsubscribe", "sunsubscribe", ...SUBSCRIBE]);
@@ -293,7 +298,10 @@ export class Router {
   #writeStart(i) { this.#writing.set(i, (this.#writing.get(i) ?? 0) + 1); }
   #writeDone(i) { this.#writing.set(i, this.#writing.get(i) - 1); this.#wrote.set(i, Date.now()); }
 
-  constructor(socket, { db, table, shard, pubsub, replica, password, open, idleMs = IDLE_MS }) {
+  #trusted; // a service binding (our own Workers): the shared password opens any database
+  #lookup; // (name) => the database's record, or null; never creates one
+
+  constructor(socket, { db, table, shard, pubsub, replica, password, trusted = false, lookup = null, open, idleMs = IDLE_MS }) {
     this.socket = socket;
     this.db = db; // { name, created, shards, regions, replicas }
     this.table = table;
@@ -301,6 +309,8 @@ export class Router {
     this.pubsubStub = pubsub; // () => stub
     this.replicaStub = replica; // (i) => stub of a nearby replica of shard i, or null
     this.#password = password || undefined;
+    this.#trusted = trusted;
+    this.#lookup = lookup;
     this.#open = open;
     this.#authed = !this.#password;
     this.#idleMs = idleMs;
@@ -721,22 +731,34 @@ export class Router {
     this.#forward(0, command(["HELLO", String(proto)]));
   }
 
-  // AUTH [user] pass. With VALKEY_PASSWORD set the password must match; `user` names the database
-  // ("default" keeps the one chosen by the dialed host), since one shared secret guards them all.
-  // Database lookup is async, so requests after this wait (run() awaits #pending) to keep order.
+  // AUTH [user] pass. `user` names the database ("default" keeps the one chosen by the dialed host). A
+  // database with its own password takes only that one, except through a service binding; any other takes
+  // VALKEY_PASSWORD (if set), checked before the database is looked up or created. The lookup is async, so
+  // requests after this wait (run() awaits #pending) to keep order.
   #login(user, pass, then) {
-    if (this.#password !== undefined && !sameSecret(pass, this.#password)) return this.#reply(WRONGPASS);
-    if (!user || user === "default" || user === this.db.name) { this.#authed = true; return then(); }
-    if (!DB_NAME.test(user)) return this.#reply(error(`ERR ${DB_NAME_RULE}`));
-    this.#pending = this.#open(user).then((next) => {
-      for (const up of this.#ups.values()) up.close();
-      this.#ups.clear();
-      this.#clearWatch();
-      this.endPassthrough(false);
-      Object.assign(this, { db: next.db, shardStub: next.shard, pubsubStub: next.pubsub, replicaStub: next.replica });
+    const name = !user || user === "default" ? this.db.name : user;
+    if (!DB_NAME.test(name)) return this.#reply(error(`ERR ${DB_NAME_RULE}`));
+    const shared = () => this.#password === undefined || sameSecret(pass, this.#password);
+    if (name === this.db.name && !(this.db.secret && !this.#trusted)) {
+      if (!shared()) return this.#reply(WRONGPASS);
+      this.#authed = true;
+      return then();
+    }
+    this.#pending = (async () => {
+      const known = name === this.db.name ? this.db : await this.#lookup?.(name);
+      const ok = known?.secret && !this.#trusted ? await secretMatches(known.secret, pass) : shared();
+      if (!ok) return this.#reply(WRONGPASS);
+      if (name !== this.db.name) {
+        const next = await this.#open(name);
+        for (const up of this.#ups.values()) up.close();
+        this.#ups.clear();
+        this.#clearWatch();
+        this.endPassthrough(false);
+        Object.assign(this, { db: next.db, shardStub: next.shard, pubsubStub: next.pubsub, replicaStub: next.replica });
+      }
       this.#authed = true;
       then();
-    }, (e) => this.#reply(error(`ERR ${e.message}`))).finally(() => { this.#pending = null; });
+    })().catch((e) => this.#reply(error(`ERR ${e.message}`))).finally(() => { this.#pending = null; });
   }
 
   #client(argv) {

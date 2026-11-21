@@ -47,14 +47,21 @@ export const replicaStub = (env, db, i, region) => env[replicaBinding(classOf(db
 export const configureReplicas = (env, db) =>
   Promise.all(Array.from({ length: db.shards }, (_, i) => shardStub(env, db, i).replicate(db.replicas)));
 
-export function database(env, name, shards, regions, replicas, classes) {
+export function database(env, name, shards, regions, replicas, classes, secret) {
   let db = dbs.get(name);
   if (!db) {
-    db = env.CATALOG.getByName("catalog").get(name, shards, regions, replicas, classes);
+    db = env.CATALOG.getByName("catalog").get(name, shards, regions, replicas, classes, secret);
     db.catch(() => dbs.delete(name));
     dbs.set(name, db);
   }
   return db;
+}
+
+/** The database's record if it exists (null if not): unlike database(), never creates one. */
+export async function lookup(env, name) {
+  const cached = dbs.get(name);
+  if (cached) return await cached;
+  return await env.CATALOG.getByName("catalog").find(name);
 }
 
 function commands(env) {
@@ -124,6 +131,8 @@ async function serveRouter(socket, env, name, conn) {
     ...handles(env, db),
     table: t,
     password: env.VALKEY_PASSWORD,
+    trusted: conn.via === "binding", // our own Workers: the shared password opens any database
+    lookup: (n) => lookup(env, n),
     open: async (n) => handles(env, await database(env, n)),
     idleMs: Number(env.ROUTER_IDLE_MS || IDLE_MS),
   });

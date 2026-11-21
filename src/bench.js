@@ -4,7 +4,7 @@
 import { configureReplicas, database, replicaStub, shardStub } from "./index.js";
 import Redis from "ioredis";
 import { bindingConnector } from "./client.js";
-import { sameSecret } from "./router.js";
+import { hashSecret, sameSecret } from "./router.js";
 import { HINTS, WORLD } from "./catalog.js";
 
 const enc = new TextEncoder();
@@ -82,11 +82,16 @@ const allShards = async (env, name, fn) => { const db = await database(env, name
 const tests = {
   // regions=world spreads a new database's shards over WORLD; regions=a,b,c over those hints.
   // replicas=world (or a,b,c) keeps a read replica of every shard in each of those regions.
+  // password=new gives a new database its own password, returned only here; AUTH over TCP or WebSocket then
+  // takes only that one (the shared VALKEY_PASSWORD still works through a service binding).
   async db(env, q) {
     const list = (v) => (v === "world" ? WORLD : v ? v.split(",") : undefined);
-    const db = await database(env, q.get("db"), q.get("shards") ? Number(q.get("shards")) : undefined, list(q.get("regions")), list(q.get("replicas")), q.get("classes") ? Number(q.get("classes")) : undefined);
+    const password = q.get("password") === "new" ? btoa(String.fromCharCode(...crypto.getRandomValues(new Uint8Array(24)))).replace(/\+/g, "-").replace(/\//g, "_") : null;
+    const secret = password && (await hashSecret(password));
+    const { secret: stored, ...db } = await database(env, q.get("db"), q.get("shards") ? Number(q.get("shards")) : undefined, list(q.get("regions")), list(q.get("replicas")), q.get("classes") ? Number(q.get("classes")) : undefined, secret);
+    if (password && stored !== secret) throw new Error("the database already exists, so it keeps the password it has");
     if (db.replicas) await configureReplicas(env, db);
-    return { db };
+    return { db: { ...db, password: !!stored }, ...(password ? { password } : {}) };
   },
 
   // How long shard 0's storage takes to confirm a write, from inside the object.

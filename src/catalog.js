@@ -32,24 +32,33 @@ export class Catalog extends DurableObject {
     if (!cols.includes("replicas")) this.#sql.exec(`ALTER TABLE dbs ADD COLUMN replicas TEXT`);
     // Added later: how many shard classes the shards rotate over; NULL = 1 (every shard in ValkeyShard).
     if (!cols.includes("classes")) this.#sql.exec(`ALTER TABLE dbs ADD COLUMN classes INTEGER`);
+    // Added later: the database's own password, as "salt:sha256(salt + password)" in hex; NULL = VALKEY_PASSWORD.
+    if (!cols.includes("secret")) this.#sql.exec(`ALTER TABLE dbs ADD COLUMN secret TEXT`);
   }
 
   /** The database's record, created on first use. `shards`, `regions` and `replicas` apply only to a new database. */
-  get(name, shards, regions, replicas, classes = SHARD_CLASSES) {
+  get(name, shards, regions, replicas, classes = SHARD_CLASSES, secret = null) {
     if (!DB_NAME.test(name)) throw new Error(DB_NAME_RULE);
-    const row = this.#sql.exec(`SELECT name, created, shards, regions, replicas, classes FROM dbs WHERE name = ?`, name).toArray()[0];
-    if (row) return record(row);
+    const row = this.find(name);
+    if (row) return row;
     const created = Date.now();
     const count = shards ?? epochAt(this.#epochs, created).shards;
     if (!Number.isSafeInteger(count) || count < 1 || count > 16384) throw new Error("shards must be 1..16384");
     for (const list of [regions, replicas]) if (list !== undefined && (!Array.isArray(list) || !list.length || !list.every((r) => HINTS.has(r)))) throw new Error(`regions and replicas must be lists of ${[...HINTS].join(", ")}`);
     if (!Number.isSafeInteger(classes) || classes < 1 || classes > SHARD_CLASSES) throw new Error(`classes must be 1..${SHARD_CLASSES}`);
-    const r = { name, created, shards: count, regions: regions ? JSON.stringify(regions) : null, replicas: replicas ? JSON.stringify(replicas) : null, classes };
-    this.#sql.exec(`INSERT INTO dbs (name, created, shards, regions, replicas, classes) VALUES (?, ?, ?, ?, ?, ?)`, r.name, r.created, r.shards, r.regions, r.replicas, r.classes);
+    const r = { name, created, shards: count, regions: regions ? JSON.stringify(regions) : null, replicas: replicas ? JSON.stringify(replicas) : null, classes, secret };
+    this.#sql.exec(`INSERT INTO dbs (name, created, shards, regions, replicas, classes, secret) VALUES (?, ?, ?, ?, ?, ?, ?)`, r.name, r.created, r.shards, r.regions, r.replicas, r.classes, r.secret);
     return record(r);
   }
 
+  /** The database's record, or null: never creates one. */
+  find(name) {
+    const row = this.#sql.exec(`SELECT name, created, shards, regions, replicas, classes, secret FROM dbs WHERE name = ?`, name).toArray()[0];
+    return row ? record(row) : null;
+  }
+
+  /** Every database, without password hashes. */
   list() {
-    return this.#sql.exec(`SELECT name, created, shards, regions, replicas, classes FROM dbs ORDER BY name`).toArray().map(record);
+    return this.#sql.exec(`SELECT name, created, shards, regions, replicas, classes, secret IS NOT NULL AS password FROM dbs ORDER BY name`).toArray().map(record);
   }
 }
