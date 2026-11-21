@@ -98,6 +98,37 @@ const tests = {
     return { colo: r.colo, p50: r.ms[r.ms.length >> 1], min: r.ms[0], max: r.ms.at(-1) };
   },
 
+  // Fragmentation: n keys with seeded random value sizes in [min, max], then `rounds` times delete a random
+  // half and rewrite it with new sizes. After each round: Valkey's used_memory vs the wasm linear memory it
+  // grew (which never shrinks, and is what counts against the isolate's memory). Run with via=shard.
+  async frag(env, q) {
+    const n = Number(q.get("n") ?? 150000), min = Number(q.get("min") ?? 16), max = Number(q.get("max") ?? 512), rounds = Number(q.get("rounds") ?? 6);
+    let seed = Number(q.get("seed") ?? 1) >>> 0;
+    const rnd = () => ((seed = (seed * 1664525 + 1013904223) >>> 0) / 2 ** 32);
+    const val = () => "x".repeat(min + Math.floor(rnd() * (max - min + 1)));
+    const db = await database(env, q.get("db")), stub = shardStub(env, db, 0), c = await open(env, q);
+    const mem = async (round) => {
+      const [info] = await c.call(["INFO", "memory"]);
+      const f = (k) => Number(new RegExp(`${k}:(\\d+)`).exec(info)?.[1] ?? NaN);
+      const wasm = (await stub.stats()).wasmMemoryBytes, used = f("used_memory");
+      return { round, usedMB: +(used / 2 ** 20).toFixed(1), wasmMB: +(wasm / 2 ** 20).toFixed(1), wasmPerUsed: +(wasm / used).toFixed(2), allocator: /mem_allocator:(\S+)/.exec(info)?.[1] };
+    };
+    const batch = async (cmds) => { for (let i = 0; i < cmds.length; i += 1000) { const rs = await c.call(...cmds.slice(i, i + 1000)); const e = rs.find((r) => r?.err); if (e) throw new Error(e.err); } };
+    const out = [];
+    await c.call(["FLUSHALL"]);
+    out.push(await mem("empty"));
+    await batch(Array.from({ length: n }, (_, i) => ["SET", `f:${i}`, val()]));
+    out.push(await mem("filled"));
+    for (let r = 1; r <= rounds; r++) {
+      const pick = Array.from({ length: n }, (_, i) => i).filter(() => rnd() < 0.5);
+      await batch(pick.map((i) => ["DEL", `f:${i}`]));
+      await batch(pick.map((i) => ["SET", `f:${i}`, val()]));
+      out.push(await mem(r));
+    }
+    c.close();
+    return { n, min, max, rounds, memory: out };
+  },
+
   // One execRaw (the router's RPC mode) of k SETs straight to shard 0: are all k replies there?
   async rpcbatch(env, q) {
     const db = await database(env, q.get("db")), k = Number(q.get("k") ?? 1000), par = Number(q.get("par") ?? 1);
