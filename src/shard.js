@@ -4,7 +4,7 @@ import valkeyWasm from "../vendor/valkey.wasm";
 import { ValkeyHost } from "./valkey-host.js";
 import { command, concat, decodeAll } from "./resp.js";
 import { coloOf } from "./pulse.js";
-import { Replicator } from "./replication.js";
+import { replicaBinding, Replicator } from "./replication.js";
 import { rewriteByHelper } from "./rewriter.js";
 import { AOF_CHECK_MS, AOF_HELPER_RETRY_MS, AOF_REWRITE_CAP, AOF_REWRITE_IDLE_MS, AOF_REWRITE_MIN } from "./constants.js";
 
@@ -49,7 +49,7 @@ export class ValkeyShard extends DurableObject {
     this.#replica = /\.r\.[a-z-]+$/.test(ctx.id.name ?? "");
     this.#host = new ValkeyHost(valkeyWasm, ctx.storage.sql, { args: valkeyArgs(env, this.#replica), sync: () => ctx.storage.sync() });
     if (!this.#replica) {
-      this.#repl = new Replicator(ctx, env, this.#host, ctx.id.name, env[this.constructor.binding]);
+      this.#repl = new Replicator(ctx, env, this.#host, ctx.id.name, env[replicaBinding(Number(this.constructor.binding.slice(5) || 0))]);
       this.#host.onAppend = (bytes) => { this.#repl.append(bytes); if (!this.#checkArmed) this.#armCheck(); };
       if (this.#rewriter()) this.#host.onRewrite = (tmp, rdb) => (this.#helper() ? () => this.#rewriteByHelper(tmp, rdb) : null);
     }
@@ -206,3 +206,12 @@ export class ValkeyShard4 extends ValkeyShard { static binding = "SHARD4"; }
 export class ValkeyShard5 extends ValkeyShard { static binding = "SHARD5"; }
 export class ValkeyShard6 extends ValkeyShard { static binding = "SHARD6"; }
 export class ValkeyShard7 extends ValkeyShard { static binding = "SHARD7"; }
+// Read replicas: class 8 + k holds the replicas of class k's shards (replicaBinding in replication.js).
+export class ValkeyShard8 extends ValkeyShard { static binding = "SHARD8"; }
+export class ValkeyShard9 extends ValkeyShard { static binding = "SHARD9"; }
+export class ValkeyShard10 extends ValkeyShard { static binding = "SHARD10"; }
+export class ValkeyShard11 extends ValkeyShard { static binding = "SHARD11"; }
+export class ValkeyShard12 extends ValkeyShard { static binding = "SHARD12"; }
+export class ValkeyShard13 extends ValkeyShard { static binding = "SHARD13"; }
+export class ValkeyShard14 extends ValkeyShard { static binding = "SHARD14"; }
+export class ValkeyShard15 extends ValkeyShard { static binding = "SHARD15"; }

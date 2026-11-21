@@ -13,6 +13,14 @@
       { "name": "SHARD5", "class_name": "ValkeyShard5" },
       { "name": "SHARD6", "class_name": "ValkeyShard6" },
       { "name": "SHARD7", "class_name": "ValkeyShard7" },
+      { "name": "SHARD8", "class_name": "ValkeyShard8" },
+      { "name": "SHARD9", "class_name": "ValkeyShard9" },
+      { "name": "SHARD10", "class_name": "ValkeyShard10" },
+      { "name": "SHARD11", "class_name": "ValkeyShard11" },
+      { "name": "SHARD12", "class_name": "ValkeyShard12" },
+      { "name": "SHARD13", "class_name": "ValkeyShard13" },
+      { "name": "SHARD14", "class_name": "ValkeyShard14" },
+      { "name": "SHARD15", "class_name": "ValkeyShard15" },
       { "name": "REWRITER", "class_name": "ValkeyRewriter" },
       { "name": "REWRITER1", "class_name": "ValkeyRewriter1" },
       { "name": "REWRITER2", "class_name": "ValkeyRewriter2" },
@@ -33,7 +41,8 @@
     { "tag": "v4", "new_sqlite_classes": ["Sender"] },
     { "tag": "v5", "new_sqlite_classes": ["ValkeyShard1", "ValkeyShard2", "ValkeyShard3", "ValkeyShard4", "ValkeyShard5", "ValkeyShard6", "ValkeyShard7"] },
     { "tag": "v6", "new_sqlite_classes": ["ValkeyRewriter"] },
-    { "tag": "v7", "new_sqlite_classes": ["ValkeyRewriter1", "ValkeyRewriter2", "ValkeyRewriter3", "ValkeyRewriter4", "ValkeyRewriter5", "ValkeyRewriter6", "ValkeyRewriter7"] }
+    { "tag": "v7", "new_sqlite_classes": ["ValkeyRewriter1", "ValkeyRewriter2", "ValkeyRewriter3", "ValkeyRewriter4", "ValkeyRewriter5", "ValkeyRewriter6", "ValkeyRewriter7"] },
+    { "tag": "v8", "new_sqlite_classes": ["ValkeyShard8", "ValkeyShard9", "ValkeyShard10", "ValkeyShard11", "ValkeyShard12", "ValkeyShard13", "ValkeyShard14", "ValkeyShard15"] }
   ],
   // Self-binding: bench requests reach the TCP connect() handler the way a client Worker would.
   "services": [{ "binding": "SELF", "service": "valkey-do" }],

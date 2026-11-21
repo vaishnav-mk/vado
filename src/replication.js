@@ -13,6 +13,8 @@ export const MANIFEST = "aof/appendonly.aof.manifest";
 const COPY_CHUNK = 1 << 20;
 
 export const replicaName = (primary, region) => `${primary}.r.${region}`;
+// The class (binding) that holds the replicas of shard class k's primaries: never one a primary uses.
+export const replicaBinding = (k) => `SHARD${8 + k}`;
 
 /** The AOF files as of now, from the manifest: the base, the incr files in order, and every entry with its line. */
 export function aofFiles(host) {
@@ -29,7 +31,7 @@ export class Replicator {
   #copying = 0;
 
   constructor(ctx, env, host, name, ns) {
-    this.#ctx = ctx; this.#env = env; this.#host = host; this.#name = name; this.#ns = ns; // ns: this primary's own class
+    this.#ctx = ctx; this.#env = env; this.#host = host; this.#name = name; this.#ns = ns; // ns: the class its replicas live in
     ctx.storage.sql.exec(`CREATE TABLE IF NOT EXISTS repl_targets (region TEXT PRIMARY KEY)`);
     for (const { region } of ctx.storage.sql.exec(`SELECT region FROM repl_targets`).toArray()) this.#targets.set(region, idle(region));
     if (this.#targets.size) ctx.storage.setAlarm(Date.now() + 100);
