@@ -84,7 +84,8 @@ placement, the password, and what happens to clients when a shard resets.
   reads stay fast while the primary is busy with writes or a rewrite.
 - **Trade-off:** a read on another connection can be up to one replication lag old. Each replica's stream holds back
   the primary's input: one shard with 9 replicas took 49-61k SET/s, against about 130k with none. A primary with
-  replicas wakes every 2 s to measure them, so it doesn't go idle. Details in
+  replicas measures them every 2 s while it's in use, and after 10 minutes with no activity anywhere it retires them
+  and sleeps. Details in
   [durability and failures](durability.md#read-replicas).
 
 ### Rewriters
@@ -148,7 +149,7 @@ placement, the password, and what happens to clients when a shard resets.
 | AOF in SQLite, `appendfsync always` | Acknowledged writes survive resets and deploys | Each write waits for a storage commit. Rows written are billed: one per unpipelined write, far fewer under load |
 | Group commit, two commits in flight | Under load one commit carries many writes, so more writes per second and fewer rows | Input that arrives during two commits waits for one of them |
 | AOF rewrites in a rewriter object | The shard keeps serving during a rewrite: PING p99 128-175 ms, against 1.4-1.9 s blocked inline for a 35.6 MB base | Each rewrite copies the files to another object and the base back. After a rewriter fails, rewrites run inline, blocking, for 10 minutes |
-| Read replicas fed by the AOF | Reads near the client that don't wait for commits | Reads across connections can be stale; fewer writes per shard; primaries that don't go idle |
+| Read replicas fed by the AOF | Reads near the client that don't wait for commits | Reads across connections can be stale; fewer writes per shard; an idle database's replicas are retired and copied again on its next use |
 | A router per connection | Stock clients, no cluster support needed | An extra hop; cross-slot limits |
 | Shards spread over eight classes | A database's first eight shards never share an isolate's memory or thread | Eight bindings and migrations to keep; shards `i` and `i + 8`, or of different databases, can still share |
 | Shard count and placement fixed at creation | Routing is computed, with no directory to keep consistent | No online resharding or moving |

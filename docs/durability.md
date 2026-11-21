@@ -124,6 +124,12 @@ have (`src/replication.js`).
   (`REPL_BACKLOG`), or one that hasn't answered a marker for 60 s (`REPL_STUCK_MS`), is dropped and copied again.
 - **The primary resets.** Its acknowledged writes are in its AOF. Its replicas keep serving what they have, which
   may miss the last writes before the reset, until the restarted primary copies them again.
+- **The database goes idle.** After 10 minutes (`REPL_IDLE_MS`) with no writes, no client activity on the primary and
+  no reads on any replica, the primary retires its replicas (they stop serving reads), closes the streams and stops
+  its alarm, so every object can be evicted. It checks once more after asking the replicas, so a write during the
+  check keeps it awake. The next client activity on the primary wakes it and it copies every replica again; a read
+  meanwhile finds its replica retired and goes to the primary, which wakes it too. Retired replicas serve nothing,
+  so sleeping never makes reads stale.
 
 ### What a read from a replica can see
 

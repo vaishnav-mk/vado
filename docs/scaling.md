@@ -88,8 +88,11 @@ batches over RPC instead, one RPC per batch per connection. Each shard keeps up 
 end up on RPC batches, which are slower: 200 connections over 16 shards measured about 20-26k ops/s.
 
 Shard sockets idle for 30 s (`IDLE_MS`) close, so an idle shard stops being billed and can sleep. The client's
-connection doesn't notice. A primary with replicas doesn't go idle: it measures its replicas every 2 s
-(`REPL_TICK_MS`) and keeps a socket open to each.
+connection doesn't notice. A primary with replicas measures them every 2 s (`REPL_TICK_MS`) and keeps a socket open
+to each, so it stays awake while it's in use. After 10 minutes (`REPL_IDLE_MS`) with no writes, no client activity
+on the primary and no reads on any of its replicas, it retires the replicas (they stop serving), closes the streams
+and stops its alarm, so the database can sleep. The next client activity on the primary, or a read that falls back
+to it from a retired replica, starts copying again.
 
 ## Backpressure
 
