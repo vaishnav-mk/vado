@@ -488,7 +488,7 @@ export class Router {
         this.#forward(this.#watch, raw);
         this.#clearWatch();
         return;
-      case "wait": return this.#reply(integer(0));
+      case "wait": return this.#wait(argv);
       case "waitaof": return this.#reply(arrayOf([integer(1), integer(0)]));
       case "cluster": return this.#cluster(argv);
       case "dbsize": return this.#fanout(argv, (rs) => integer(rs.reduce((n, r) => n + r, 0)));
@@ -799,6 +799,18 @@ export class Router {
     await Promise.all(Array.from({ length: Math.min(FAN_OUT, N) }, worker));
     return out;
   }
+  // WAIT numreplicas timeout: how many replicas have every write this connection made, i.e. the fewest for any
+  // shard it wrote to. Each shard counts its own replicas after the earlier replies (the writes) are back.
+  #wait(argv) {
+    const [n, ms] = argv.slice(1).map((a) => Number(str(a)));
+    if (argv.length !== 3 || !Number.isSafeInteger(n) || !Number.isSafeInteger(ms) || ms < 0) return this.#reply(error("ERR value is not an integer or out of range"));
+    if (!this.db.replicas) return this.#reply(integer(0));
+    const s = this.#slot(), wrote = [...new Set([...this.#wrote.keys(), ...this.#writing.keys()])];
+    this.#hold(this.#afterEarlierReplies(s)
+      .then(() => (wrote.length ? Promise.all(wrote.map((i) => this.shardStub(i).waitReplicas(n, ms))) : [this.db.replicas.length]))
+      .then((counts) => this.#resolve(s, integer(Math.min(...counts))), this.#lost(s)));
+  }
+
   #fanout(argv, merge) {
     const s = this.#slot();
     this.#hold(this.#afterEarlierReplies(s).then(() => this.#all([argv.map(str)], false))

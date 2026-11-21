@@ -102,6 +102,12 @@ export class ValkeyShard extends DurableObject {
     this.#repl.configure(regions);
   }
 
+  /** Primary: how many replicas have every write made so far (WAIT): once `n` do, or after `ms`. */
+  async waitReplicas(n, ms) {
+    if (this.#replica) throw new Error("a replica has no replicas");
+    return await this.#repl.wait(n, ms);
+  }
+
   /** Replica: its primary's copy has arrived; serve reads. Returns where this replica runs. */
   async replicaReady() {
     this.#ready = true;

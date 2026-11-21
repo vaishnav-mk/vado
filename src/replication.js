@@ -65,6 +65,21 @@ export class Replicator {
     await Promise.all(copies);
   }
 
+  /** How many replicas have applied every append so far: a marker goes behind everything already sent to each
+   *  live replica, and this resolves once `n` have answered, or after `ms` (0: REPL_STUCK_MS). */
+  wait(n, ms) {
+    const live = [...this.#targets.values()].filter((t) => t.phase === "live");
+    let acked = 0, finish;
+    const done = new Promise((r) => (finish = r));
+    const timer = setTimeout(() => finish(acked), ms > 0 ? ms : REPL_STUCK_MS);
+    if (acked >= n || !live.length) { clearTimeout(timer); finish(acked); }
+    for (const t of live) {
+      t.marks.push({ at: Date.now(), onAck: () => { if (++acked >= n) { clearTimeout(timer); finish(acked); } } });
+      this.#send(t, MARK);
+    }
+    return done;
+  }
+
   status() {
     return [...this.#targets.values()].map((t) => ({ region: t.region, state: t.phase === "live" ? (t.ready ? "ready" : "catching up") : t.phase, lagMs: t.lagMs, colo: t.colo, behindBytes: t.phase === "live" ? t.inflight : t.queued, error: t.error }));
   }
@@ -154,6 +169,7 @@ export class Replicator {
           const m = t.marks.shift();
           if (!m) continue;
           t.lagMs = Date.now() - m.at;
+          m.onAck?.();
           if (m.ready) t.colo = await t.stub.replicaReady().then((c) => { t.ready = true; return c; }, () => null);
         }
         carry = text.slice(Math.max(at, text.length - 6));
