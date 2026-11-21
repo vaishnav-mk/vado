@@ -97,6 +97,7 @@ export class ValkeyRewriter extends DurableObject {
       vfs.clear();
       let b = rest;
       for (const [path, size] of files) {
+        vfs.append(path, new Uint8Array(0)); // creates it: an empty incr file must exist too
         for (let got = 0; got < size; ) {
           if (!b.length) { const r = await reader.read(); if (r.done) throw new Error("the shard closed early"); b = r.value; }
           const take = Math.min(size - got, b.length);
