@@ -26,6 +26,9 @@ const valkeyArgs = (env, replica) => [
   "--max-new-connections-per-cycle", "1000",
 ];
 
+// Objects of one class share isolates (and an isolate's memory limit), so stats() says which one this is.
+let isolateId = null;
+
 export class ValkeyShard extends DurableObject {
   #host;
   #bornAt = Date.now();
@@ -151,7 +154,7 @@ export class ValkeyShard extends DurableObject {
   stats() {
     if (this.#colo === undefined) { this.#colo = null; coloOf().then((c) => { this.#colo = c; }, () => {}); }
     return {
-      ...this.#host.stats(), instance: this.#instance, colo: this.#colo, aliveSeconds: (Date.now() - this.#bornAt) / 1000, files: this.#host.files(),
+      ...this.#host.stats(), instance: this.#instance, isolate: (isolateId ??= crypto.randomUUID()), colo: this.#colo, aliveSeconds: (Date.now() - this.#bornAt) / 1000, files: this.#host.files(),
       role: this.#replica ? "replica" : "primary", ...(this.#replica ? { ready: this.#ready } : { replicas: this.#repl.status() }),
     };
   }
