@@ -91,6 +91,7 @@ export class ValkeyRewriter extends DurableObject {
     this.#busy = true;
     const sql = this.ctx.storage.sql, vfs = new Vfs(sql, () => null);
     let streaming = false; // after the size line, an error can only cut the base short
+    const logs = []; // Valkey's log, sent back with an error
     try {
       const [{ manifest, files, rdb }, rest] = await readLine(reader);
       vfs.clear();
@@ -109,7 +110,7 @@ export class ValkeyRewriter extends DurableObject {
       // Valkey loads the files as it boots; the rewrite then runs inline, blocking only this object.
       // import-mode: no expiry or eviction here, so the base keeps a key that expired after the shard's
       // rewrite started (the shard may have PERSISTed it since). A forked child never expires keys either.
-      const host = new ValkeyHost(valkeyWasm, sql, { args: [...valkeyArgs(this.env, false), "--aof-use-rdb-preamble", rdb ? "yes" : "no", "--import-mode", "yes"] });
+      const host = new ValkeyHost(valkeyWasm, sql, { args: [...valkeyArgs(this.env, false), "--aof-use-rdb-preamble", rdb ? "yes" : "no", "--import-mode", "yes"], log: (l) => logs.push(l) });
       const [reply] = decodeAll(await host.execBatch(command(["BGREWRITEAOF"]), 1));
       if (reply?.err) throw new Error(reply.err);
       const { base } = aofFiles(host), size = host.fileSize(base);
@@ -121,7 +122,7 @@ export class ValkeyRewriter extends DurableObject {
       await writer.close();
     } catch (e) {
       if (streaming) await writer.abort(e).catch(() => {});
-      else await writer.write(line({ error: e.message })).then(() => writer.close()).catch(() => {});
+      else await writer.write(line({ error: [e.message, ...logs.slice(-4)].join(" | ") })).then(() => writer.close()).catch(() => {});
     } finally {
       vfs.clear(); // only copies, kept for the job
       this.#busy = false;
