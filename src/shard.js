@@ -51,7 +51,7 @@ export class ValkeyShard extends DurableObject {
     if (!this.#replica) {
       this.#repl = new Replicator(ctx, env, this.#host, ctx.id.name, env[this.constructor.binding]);
       this.#host.onAppend = (bytes) => { this.#repl.append(bytes); if (!this.#checkArmed) this.#armCheck(); };
-      if (env.REWRITER) this.#host.onRewrite = (tmp, rdb) => (this.#helper() ? () => this.#rewriteByHelper(tmp, rdb) : null);
+      if (this.#rewriter()) this.#host.onRewrite = (tmp, rdb) => (this.#helper() ? () => this.#rewriteByHelper(tmp, rdb) : null);
     }
   }
 
@@ -61,12 +61,14 @@ export class ValkeyShard extends DurableObject {
     if (!this.#repl.configured) queueMicrotask(() => this.ctx.storage.setAlarm(Date.now() + AOF_CHECK_MS));
   }
 
-  #helper() { return !!this.env.REWRITER && Date.now() >= this.#inlineUntil; }
+  // This shard's rewriter namespace: REWRITER for class SHARD, REWRITERk for SHARDk.
+  #rewriter() { return this.env[this.constructor.binding.replace("SHARD", "REWRITER")]; }
+  #helper() { return !!this.#rewriter() && Date.now() >= this.#inlineUntil; }
 
   async #rewriteByHelper(tmp, rdb) {
     const log = (this.#lastRewrite = { at: Date.now(), rdb });
     try {
-      await rewriteByHelper(this.#host, this.env.REWRITER.getByName(this.ctx.id.name), tmp, rdb, () => this.ctx.storage.sync(), log);
+      await rewriteByHelper(this.#host, this.#rewriter().getByName(this.ctx.id.name), tmp, rdb, () => this.ctx.storage.sync(), log);
       log.ms = Date.now() - log.at;
       return true;
     } catch (e) {

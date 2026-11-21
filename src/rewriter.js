@@ -3,8 +3,9 @@
 // host takes the rewrite (wasm/patches/0004): a ValkeyRewriter object loads the files the rewrite starts
 // from (the base, and the incr files before the one Valkey just opened), rewrites them in a Valkey of its
 // own, and sends back the new base. The shard writes it to Valkey's temp file while it keeps serving,
-// and Valkey swaps it in exactly as if a forked child had written it. Rewriters are their own class, so
-// one never shares an isolate (or its memory limit) with a shard.
+// and Valkey swaps it in exactly as if a forked child had written it. Rewriters are their own classes, so
+// one never shares an isolate (or its memory limit) with a shard; a shard of class k uses rewriter class k,
+// so a database's shards rewriting at once don't all land in one rewriter isolate.
 import { DurableObject } from "cloudflare:workers";
 import valkeyWasm from "../vendor/valkey.wasm";
 import { ValkeyHost } from "./valkey-host.js";
@@ -135,3 +136,12 @@ export class ValkeyRewriter extends DurableObject {
     }
   }
 }
+
+// The same object under other class names, one per shard class (see #rewriter in shard.js).
+export class ValkeyRewriter1 extends ValkeyRewriter {}
+export class ValkeyRewriter2 extends ValkeyRewriter {}
+export class ValkeyRewriter3 extends ValkeyRewriter {}
+export class ValkeyRewriter4 extends ValkeyRewriter {}
+export class ValkeyRewriter5 extends ValkeyRewriter {}
+export class ValkeyRewriter6 extends ValkeyRewriter {}
+export class ValkeyRewriter7 extends ValkeyRewriter {}
