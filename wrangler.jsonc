@@ -7,13 +7,15 @@
     "bindings": [
       { "name": "SHARD", "class_name": "ValkeyShard" },
       { "name": "CATALOG", "class_name": "Catalog" },
-      { "name": "PULSE", "class_name": "Pulse" }
+      { "name": "PULSE", "class_name": "Pulse" },
+      { "name": "SENDER", "class_name": "Sender" }
     ]
   },
   "migrations": [
     { "tag": "v1", "new_sqlite_classes": ["Valkey"] },
     { "tag": "v2", "new_sqlite_classes": ["ValkeyShard", "Catalog"], "deleted_classes": ["Valkey"] },
-    { "tag": "v3", "new_sqlite_classes": ["Pulse"] }
+    { "tag": "v3", "new_sqlite_classes": ["Pulse"] },
+    { "tag": "v4", "new_sqlite_classes": ["Sender"] }
   ],
   // Self-binding: bench requests reach the TCP connect() handler the way a client Worker would.
   "services": [{ "binding": "SELF", "service": "valkey-do" }],

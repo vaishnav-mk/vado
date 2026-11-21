@@ -5,7 +5,7 @@ import { database, shardStub } from "./index.js";
 import Redis from "ioredis";
 import { bindingConnector } from "./client.js";
 import { sameSecret } from "./router.js";
-import { WORLD } from "./catalog.js";
+import { HINTS, WORLD } from "./catalog.js";
 
 const enc = new TextEncoder();
 const cmd = (...a) => `*${a.length}\r\n` + a.map((x) => ((x = String(x)), `$${enc.encode(x).length}\r\n${x}\r\n`)).join("");
@@ -84,6 +84,15 @@ const tests = {
   async db(env, q) {
     const list = (v) => (v === "world" ? WORLD : v ? v.split(",") : undefined);
     return { db: await database(env, q.get("db"), q.get("shards") ? Number(q.get("shards")) : undefined, list(q.get("regions"))) };
+  },
+
+  // Run a test (default throughput) from a Sender object in `region`, so its traffic enters Cloudflare there.
+  async send(env, q) {
+    const region = q.get("region");
+    if (!HINTS.has(region)) throw new Error(`region must be one of ${[...HINTS].join(", ")}`);
+    const params = Object.fromEntries(q);
+    delete params.region;
+    return { region, ...(await env.SENDER.getByName(region, { locationHint: region }).run(params)) };
   },
 
   // Chaos hook: hard-reset one shard (shard=<i>) or all of them, as a crash or deploy would.
@@ -365,6 +374,8 @@ const tests = {
     return { replies: out };
   },
 };
+
+export const runTest = (name, env, q) => { if (!tests[name]) throw new Error(`no test named ${name}`); return tests[name](env, q); };
 
 export async function bench(req, env) {
   const url = new URL(req.url);

@@ -9,6 +9,7 @@ import { HINTS } from "./catalog.js";
 export { ValkeyShard } from "./shard.js";
 export { Catalog } from "./catalog.js";
 export { Pulse } from "./pulse.js";
+export { Sender } from "./sender.js";
 
 // Per isolate, cache the promise, not the result: hundreds of connections landing on a cold isolate
 // would otherwise all fetch the COMMAND table at once (796 RPCs in a minute, and the isolate hit its
