@@ -4,7 +4,8 @@
 // reply until the AOF bytes behind it are durable. Other files buffer until fsync or close.
 // Rows written are billed, so a small last row grows in place: one row per AOF append, and a
 // rewrite deletes one row per VFS_TAIL bytes instead of one per append. File sizes are derived from
-// the chunks, never stored separately.
+// the chunks, never stored separately. A file's chunks are stored under its key (vfs_node.chunks, or
+// its path for files made before keys existed), so a rename moves one row, not the whole file.
 
 import { VFS_CHUNK, VFS_TAIL } from "./constants.js";
 
@@ -34,6 +35,8 @@ export class Vfs {
     this.#mem = memory; // () => WebAssembly.Memory
     sql.exec(`CREATE TABLE IF NOT EXISTS vfs_node (path TEXT PRIMARY KEY, is_dir INTEGER NOT NULL, size INTEGER NOT NULL)`);
     sql.exec(`CREATE TABLE IF NOT EXISTS vfs_chunk (path TEXT NOT NULL, seq INTEGER NOT NULL, data BLOB NOT NULL, PRIMARY KEY (path, seq)) WITHOUT ROWID`);
+    // Added later: the key a file's chunks are stored under (vfs_chunk.path); NULL = the file's own path.
+    if (!sql.exec(`PRAGMA table_info(vfs_node)`).toArray().some((c) => c.name === "chunks")) sql.exec(`ALTER TABLE vfs_node ADD COLUMN chunks TEXT`);
   }
 
   // ---- helpers ----
@@ -61,7 +64,7 @@ export class Vfs {
   }
 
   #row(path) {
-    return this.#sql.exec(`SELECT is_dir, coalesce((SELECT sum(length(data)) FROM vfs_chunk WHERE path = ?), 0) AS size FROM vfs_node WHERE path = ?`, path, path).toArray()[0];
+    return this.#sql.exec(`SELECT is_dir, coalesce(chunks, path) AS key, coalesce((SELECT sum(length(data)) FROM vfs_chunk WHERE vfs_chunk.path = coalesce(n.chunks, n.path)), 0) AS size FROM vfs_node n WHERE path = ?`, path).toArray()[0];
   }
 
   // Every write statement goes through here so rowsWritten counts what is billed.
@@ -74,8 +77,8 @@ export class Vfs {
     if (n) return n;
     const row = this.#row(path);
     if (!row || row.is_dir) return null;
-    const seq = this.#sql.exec(`SELECT coalesce(max(seq), -1) AS s FROM vfs_chunk WHERE path = ?`, path).one().s;
-    n = { path, size: row.size, nextSeq: seq + 1, pending: [], pendingLen: 0, rows: null, cache: null, tail: undefined };
+    const seq = this.#sql.exec(`SELECT coalesce(max(seq), -1) AS s FROM vfs_chunk WHERE path = ?`, row.key).one().s;
+    n = { path, key: row.key, size: row.size, nextSeq: seq + 1, pending: [], pendingLen: 0, rows: null, cache: null, tail: undefined };
     this.#nodes.set(path, n);
     return n;
   }
@@ -86,7 +89,7 @@ export class Vfs {
     let o = 0;
     for (const p of n.pending) { all.set(p, o); o += p.length; }
     if (n.tail === undefined) {
-      const last = this.#sql.exec(`SELECT seq, data FROM vfs_chunk WHERE path = ? ORDER BY seq DESC LIMIT 1`, n.path).toArray()[0];
+      const last = this.#sql.exec(`SELECT seq, data FROM vfs_chunk WHERE path = ? ORDER BY seq DESC LIMIT 1`, n.key).toArray()[0];
       n.tail = last && last.data.byteLength < VFS_TAIL ? { seq: last.seq, data: new Uint8Array(last.data) } : null;
     }
     let i = 0;
@@ -94,13 +97,13 @@ export class Vfs {
       const data = new Uint8Array(n.tail.data.length + all.length);
       data.set(n.tail.data);
       data.set(all, n.tail.data.length);
-      this.#write(`UPDATE vfs_chunk SET data = ? WHERE path = ? AND seq = ?`, data, n.path, n.tail.seq);
+      this.#write(`UPDATE vfs_chunk SET data = ? WHERE path = ? AND seq = ?`, data, n.key, n.tail.seq);
       n.tail.data = data;
       i = all.length;
     }
     for (; i < all.length; i += VFS_CHUNK) {
       const part = all.subarray(i, i + VFS_CHUNK), seq = n.nextSeq++;
-      this.#write(`INSERT INTO vfs_chunk (path, seq, data) VALUES (?, ?, ?)`, n.path, seq, part);
+      this.#write(`INSERT INTO vfs_chunk (path, seq, data) VALUES (?, ?, ?)`, n.key, seq, part);
       n.tail = part.length < VFS_TAIL ? { seq, data: part.slice() } : null;
     }
     this.stats.writes++;
@@ -116,7 +119,7 @@ export class Vfs {
     if (n.rows) return n.rows;
     this.#flush(n);
     let start = 0;
-    n.rows = this.#sql.exec(`SELECT seq, length(data) AS len FROM vfs_chunk WHERE path = ? ORDER BY seq`, n.path).toArray()
+    n.rows = this.#sql.exec(`SELECT seq, length(data) AS len FROM vfs_chunk WHERE path = ? ORDER BY seq`, n.key).toArray()
       .map((r) => { const e = { seq: r.seq, start, len: r.len }; start += r.len; return e; });
     return n.rows;
   }
@@ -129,7 +132,7 @@ export class Vfs {
     for (; i >= 0 && i < rows.length && done < dst.length; i++) {
       const r = rows[i];
       if (n.cache?.seq !== r.seq) {
-        n.cache = { seq: r.seq, data: new Uint8Array(this.#sql.exec(`SELECT data FROM vfs_chunk WHERE path = ? AND seq = ?`, n.path, r.seq).one().data) };
+        n.cache = { seq: r.seq, data: new Uint8Array(this.#sql.exec(`SELECT data FROM vfs_chunk WHERE path = ? AND seq = ?`, n.key, r.seq).one().data) };
       }
       const from = pos + done - r.start;
       if (from < 0 || from >= r.len) continue;
@@ -150,7 +153,7 @@ export class Vfs {
     }
     const keep = new Uint8Array(size);
     this.#readAt(n, 0, keep);
-    this.#write(`DELETE FROM vfs_chunk WHERE path = ?`, n.path);
+    this.#write(`DELETE FROM vfs_chunk WHERE path = ?`, n.key);
     n.nextSeq = 0;
     n.size = 0;
     n.tail = null;
@@ -208,7 +211,7 @@ export class Vfs {
           if (!(oflags & O.CREAT)) return E.NOENT;
           const parent = path.includes("/") ? path.slice(0, path.lastIndexOf("/")) : "";
           if (parent && !this.#row(parent)?.is_dir) return E.NOENT;
-          this.#write(`INSERT INTO vfs_node (path, is_dir, size) VALUES (?, 0, 0)`, path);
+          this.#write(`INSERT INTO vfs_node (path, is_dir, size, chunks) VALUES (?, 0, 0, ?)`, path, `#${crypto.randomUUID()}`);
         }
         const n = this.#node(path);
         if (oflags & O.TRUNC && n.size) this.#truncate(n, 0);
@@ -365,8 +368,7 @@ export class Vfs {
         const n = this.#nodes.get(from);
         if (n) this.#flush(n);
         this.#unlink(to);
-        this.#write(`UPDATE vfs_node SET path = ? WHERE path = ?`, to, from);
-        this.#write(`UPDATE vfs_chunk SET path = ? WHERE path = ?`, to, from);
+        this.#write(`UPDATE vfs_node SET path = ?, chunks = coalesce(chunks, ?) WHERE path = ?`, to, from, from);
         if (n) { this.#nodes.delete(from); n.path = to; this.#nodes.set(to, n); }
         return E.OK;
       },
@@ -383,9 +385,9 @@ export class Vfs {
   }
 
   #unlink(path) {
-    const n = this.#nodes.get(path);
+    const n = this.#nodes.get(path), key = n?.key ?? this.#row(path)?.key;
     if (n) { n.pending = []; n.pendingLen = 0; this.#nodes.delete(path); n.path = `\0deleted:${path}`; }
-    this.#write(`DELETE FROM vfs_chunk WHERE path = ?`, path);
+    if (key !== undefined) this.#write(`DELETE FROM vfs_chunk WHERE path = ?`, key);
     this.#write(`DELETE FROM vfs_node WHERE path = ?`, path);
   }
 
@@ -405,7 +407,7 @@ export class Vfs {
       this.#readAt(n, 0, all.subarray(0, n.size));
       let o = pos;
       for (const c of chunks) { all.set(c, o); o += c.length; }
-      this.#write(`DELETE FROM vfs_chunk WHERE path = ?`, n.path);
+      this.#write(`DELETE FROM vfs_chunk WHERE path = ?`, n.key);
       n.nextSeq = 0; n.size = 0; n.pending = []; n.pendingLen = 0; n.tail = null;
       this.#append(n, all, true);
     } else {
@@ -432,6 +434,6 @@ export class Vfs {
   }
 
   listing() {
-    return this.#sql.exec(`SELECT n.path, n.is_dir, coalesce((SELECT sum(length(c.data)) FROM vfs_chunk c WHERE c.path = n.path), 0) AS size, (SELECT count(*) FROM vfs_chunk c WHERE c.path = n.path) AS rows FROM vfs_node n ORDER BY n.path`).toArray();
+    return this.#sql.exec(`SELECT n.path, n.is_dir, coalesce((SELECT sum(length(c.data)) FROM vfs_chunk c WHERE c.path = coalesce(n.chunks, n.path)), 0) AS size, (SELECT count(*) FROM vfs_chunk c WHERE c.path = coalesce(n.chunks, n.path)) AS rows FROM vfs_node n ORDER BY n.path`).toArray();
   }
 }
