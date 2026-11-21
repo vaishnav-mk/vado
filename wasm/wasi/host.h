@@ -1,5 +1,5 @@
 /* Host-import contract. Every function here is implemented in JS
- * (bridge/valkey-server.mjs) and imported into the wasm instance under the
+ * (src/valkey-host.js) and imported into the wasm instance under the
  * module name "host". This is the ENTIRE surface between Valkey and the
  * outside world: sockets + the event-loop poll. Keep it tiny and stable. */
 #ifndef VALKEY_WASM_HOST_H

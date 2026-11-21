@@ -1,4 +1,4 @@
-/* Reactor entry points exported to the host (bridge/valkey-server.mjs).
+/* Reactor entry points exported to the host (src/valkey-host.js).
  *
  * Valkey's main() is patched (server.c, VALKEY_WASM) to run full init and then
  * return instead of entering aeMain(). We call it once via rk_boot() to bring
