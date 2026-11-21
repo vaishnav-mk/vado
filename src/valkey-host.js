@@ -17,6 +17,7 @@ export class ValkeyHost {
   #vk;
   #vfs;
   #nextFd = FD_BASE;
+  #freeFds = []; // closed fds, reused first: Valkey rejects fds past its setsize (maxclients + 128)
   #socks = new Map(); // fd -> { chunks, off, eof, writer, done, internal }
   #pending = [];
   #listenFd = -1;
@@ -100,10 +101,10 @@ export class ValkeyHost {
   }
 
   #hostImports(memory) {
-    const mem = () => new Uint8Array(memory().buffer);
-    const dv = () => new DataView(memory().buffer);
+    const mem = viewOf(memory, Uint8Array);
+    const dv = viewOf(memory, DataView);
     return {
-      socket: () => this.#nextFd++,
+      socket: () => this.#freeFds.pop() ?? this.#nextFd++,
       listen: (fd) => ((this.#listenFd = fd), 0),
       accept: (fd) => (fd === this.#listenFd && this.#pending.length ? this.#pending.shift() : -1),
       read: (fd, ptr, len) => {
@@ -140,6 +141,7 @@ export class ValkeyHost {
         const s = this.#socks.get(fd);
         if (!s) return;
         this.#socks.delete(fd);
+        this.#freeFds.push(fd);
         s.done();
         this.#updateTimer();
       },
@@ -199,7 +201,7 @@ export class ValkeyHost {
   }
 
   #open(writer, internal) {
-    const fd = this.#nextFd++;
+    const fd = this.#freeFds.pop() ?? this.#nextFd++;
     let done;
     const closed = new Promise((r) => (done = r));
     const s = { fd, chunks: [], off: 0, eof: false, writer, done, internal, inflight: 0, wake: null };
