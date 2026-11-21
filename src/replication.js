@@ -2,7 +2,7 @@
 // the commands that redo it. So a replica is sent the AOF files as a starting copy, then every append
 // as it happens, over one socket per replica. Replicas keep their data in memory only; one that
 // resets starts empty, and its primary copies it again.
-import { REPL_BACKLOG, REPL_RETRY_MS, REPL_STUCK_MS, REPL_TICK_MS } from "./constants.js";
+import { REPL_BACKLOG, REPL_IDLE_MS, REPL_RETRY_MS, REPL_STUCK_MS, REPL_TICK_MS } from "./constants.js";
 import { command, concat } from "./resp.js";
 
 const REPLY_OFF = command(["CLIENT", "REPLY", "OFF"]);
@@ -29,6 +29,8 @@ export class Replicator {
   #ctx; #env; #host; #name; #ns;
   #targets = new Map(); // region -> state
   #copying = 0;
+  #lastAppend = Date.now();
+  #asleep = false; // idle: replicas retired, no alarm; activity or a write wakes it
 
   constructor(ctx, env, host, name, ns) {
     this.#ctx = ctx; this.#env = env; this.#host = host; this.#name = name; this.#ns = ns; // ns: the class its replicas live in
@@ -51,9 +53,31 @@ export class Replicator {
     this.#ctx.storage.setAlarm(Date.now());
   }
 
+  /** Client activity on the primary: if replication went to sleep, start copying again. */
+  wake() {
+    if (!this.#asleep) return;
+    this.#asleep = false;
+    for (const t of this.#targets.values()) t.retryAt = 0;
+    this.#ctx.storage.setAlarm(Date.now());
+  }
+
+  // Nothing has happened on the primary or its replicas for REPL_IDLE_MS: retire the replicas and stop the
+  // alarm, so the whole database can be evicted instead of waking every REPL_TICK_MS forever.
+  async #sleepIfIdle(now) {
+    const ts = [...this.#targets.values()];
+    if (now - this.#lastAppend < REPL_IDLE_MS || now - this.#host.lastActive < REPL_IDLE_MS) return false;
+    if (!ts.every((t) => t.phase === "live" && t.ready && !t.inflight)) return false;
+    const idle = await Promise.all(ts.map((t) => t.stub.replicaIdleMs().catch(() => 0)));
+    if (!idle.every((ms) => ms >= REPL_IDLE_MS) || this.#lastAppend > now || this.#host.lastActive > now) return false;
+    this.#asleep = true;
+    for (const t of ts) { t.stub.retire().catch(() => {}); this.#drop(t, "asleep: idle"); }
+    return true;
+  }
+
   /** Called from the shard's alarm: starts copies for replicas that need one, and measures the others. */
   async tick() {
     const now = Date.now(), copies = [];
+    if (this.#asleep || (this.#targets.size && (await this.#sleepIfIdle(now)))) return;
     for (const t of this.#targets.values()) {
       if (t.phase === "idle" && now >= t.retryAt) copies.push(this.#sync(t));
       else if (t.phase === "live") {
@@ -81,13 +105,15 @@ export class Replicator {
   }
 
   status() {
-    return [...this.#targets.values()].map((t) => ({ region: t.region, state: t.phase === "live" ? (t.ready ? "ready" : "catching up") : t.phase, lagMs: t.lagMs, colo: t.colo, behindBytes: t.phase === "live" ? t.inflight : t.queued, error: t.error }));
+    return [...this.#targets.values()].map((t) => ({ region: t.region, state: this.#asleep ? "asleep" : t.phase === "live" ? (t.ready ? "ready" : "catching up") : t.phase, lagMs: t.lagMs, colo: t.colo, behindBytes: t.phase === "live" ? t.inflight : t.queued, error: t.error }));
   }
 
   // ---- the stream ----
 
   /** Every append to the AOF's incr file, in order: the stream each replica is sent. */
   append(bytes) {
+    this.#lastAppend = Date.now();
+    this.wake();
     for (const t of this.#targets.values()) {
       if (t.phase === "copying") {
         t.queue.push(bytes); t.queued += bytes.length; this.#host.hold(bytes.length);

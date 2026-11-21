@@ -108,6 +108,22 @@ export class ValkeyShard extends DurableObject {
     return await this.#repl.wait(n, ms);
   }
 
+  /** Replica: ms since a client last read it (the primary's stream doesn't count). */
+  replicaIdleMs() {
+    return Date.now() - this.#host.lastActive;
+  }
+
+  /** Replica: its primary has gone idle and closes the stream; stop serving reads until it copies again. */
+  retire() {
+    this.#ready = false;
+  }
+
+  // Client activity: wakes a primary's replication if it went to sleep.
+  #active() {
+    this.#host.lastActive = Date.now();
+    this.#repl?.wake();
+  }
+
   /** Replica: its primary's copy has arrived; serve reads. Returns where this replica runs. */
   async replicaReady() {
     this.#ready = true;
@@ -127,14 +143,16 @@ export class ValkeyShard extends DurableObject {
     const { localAddress } = await socket.opened;
     if (this.#replica) {
       // The primary's stream starts a fresh copy, so stop serving reads until it has arrived.
-      if (localAddress?.startsWith("repl")) { this.#ready = false; return await this.#host.serve(socket); }
+      if (localAddress?.startsWith("repl")) { this.#ready = false; return await this.#host.serve(socket, null, true); }
       if (!this.#ready) return await socket.close(); // the router reads from the primary instead
     }
+    this.#repl?.wake();
     await this.#host.serve(socket, localAddress?.startsWith("router") ? `+${this.#instance}\r\n` : null);
   }
 
   /** Runs commands on a pooled internal client and returns the decoded (RESP2) replies. For fan-out/admin. */
   async run(cmds) {
+    this.#active();
     return decodeAll(await this.#host.execBatch(concat(cmds.map(command)), cmds.length));
   }
 
@@ -142,11 +160,13 @@ export class ValkeyShard extends DurableObject {
    *  Without `count` (an older router mid-deploy) it falls back to a throwaway client. */
   async execRaw(bytes, count, proto = 2) {
     if (this.#replica && !this.#ready) throw new Error("replica not ready");
+    this.#active();
     return count ? await this.#host.execBatch(bytes, count, proto) : await this.#host.exec(bytes);
   }
 
   /** Like run, but returns the raw reply bytes. */
   async runRaw(cmds) {
+    this.#active();
     return await this.#host.execBatch(concat(cmds.map(command)), cmds.length);
   }
 

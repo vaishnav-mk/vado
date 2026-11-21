@@ -35,7 +35,7 @@ export class ValkeyHost {
   onRewrite = null;
   rewriting = null; // a Promise while a rewrite taken by onRewrite runs
   rewriteDoneMs = null; // the last one's finish: Valkey's swap plus its storage commit
-  lastActive = 0; // Date.now() of the last client input (the shard rewrites its AOF when quiet)
+  lastActive = 0; // Date.now() of the last client input: on sockets (not quiet ones), or set by the shard for RPCs
 
   #sync; // () => Promise: resolves when every storage write so far is confirmed (group commit), or null
   #commits = 0; // AOF commits in flight; at SHARD_COMMITS, input waits for one, then runs in one pass
@@ -227,7 +227,6 @@ export class ValkeyHost {
   }
 
   #schedule() {
-    this.lastActive = Date.now();
     if (this.#queued) return;
     this.#queued = true;
     if (this.#commits < SHARD_COMMITS) queueMicrotask(() => this.#wake());
@@ -281,8 +280,9 @@ export class ValkeyHost {
     return { s, closed };
   }
 
-  // One TCP client = one Valkey client fd. Resolves when Valkey closes the fd.
-  async serve(socket, greeting = null) {
+  // One TCP client = one Valkey client fd. Resolves when Valkey closes the fd. A quiet socket (a replica's
+  // stream from its primary) isn't client activity.
+  async serve(socket, greeting = null, quiet = false) {
     const writer = socket.writable.getWriter();
     if (greeting) writer.write(new TextEncoder().encode(greeting)).catch(() => {});
     const { s, closed } = this.#open(writer, false);
@@ -297,6 +297,7 @@ export class ValkeyHost {
         const { value, done } = await reader.read();
         if (done) break;
         s.chunks.push(value);
+        if (!quiet) this.lastActive = Date.now();
         this.#schedule();
       }
     })().catch(() => {}).finally(() => { s.eof = true; this.#schedule(); });

@@ -109,6 +109,9 @@ export const REPL_TICK_MS = 2_000;
 export const REPL_RETRY_MS = 5_000;
 /** A marker unanswered this long means the replica is stuck; it is dropped and copied again. */
 export const REPL_STUCK_MS = 60_000;
+// A primary with no client activity or writes for this long, whose replicas haven't been read for this long
+// either, retires its replicas and stops its alarm, so an idle replicated database sleeps. Activity wakes it.
+export const REPL_IDLE_MS = 10 * 60_000;
 /** After a connection writes to a shard, its reads of that shard go to the primary for this long, so it reads its own writes. */
 export const READ_YOUR_WRITES_MS = 2_000;
 
