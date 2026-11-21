@@ -2,7 +2,7 @@
 // Object: sockets from connect(socket) become Valkey client fds; files live in DO SQLite (Vfs).
 import { Vfs } from "./vfs.js";
 import { frameEnd } from "./resp.js";
-import { CLIENT_HIGH_WATER, CLIENT_LOW_WATER, POOL_MAX, SHARD_HIGH_WATER, SHARD_LOW_WATER } from "./constants.js";
+import { CLIENT_HIGH_WATER, CLIENT_LOW_WATER, POOL_MAX, SHARD_COMMITS, SHARD_HIGH_WATER, SHARD_LOW_WATER } from "./constants.js";
 
 const FD_BASE = 4096; // valkey-wasm sock_shim: fds >= this are host sockets
 const AE_READABLE = 1;
@@ -32,7 +32,11 @@ export class ValkeyHost {
   bootMs = 0;
   lastActive = 0; // Date.now() of the last client input (the shard rewrites its AOF when quiet)
 
-  constructor(module, sql, { args = [], log = (l) => console.log("[valkey]", l) } = {}) {
+  #sync; // () => Promise: resolves when every storage write so far is confirmed (group commit), or null
+  #commits = 0; // AOF commits in flight; at SHARD_COMMITS, input waits for one, then runs in one pass
+
+  constructor(module, sql, { args = [], log = (l) => console.log("[valkey]", l), sync = null } = {}) {
+    this.#sync = sync;
     this.#log = log;
     const memory = () => this.#vk.exports.memory;
     this.#vfs = new Vfs(sql, memory);
@@ -193,7 +197,21 @@ export class ValkeyHost {
     this.lastActive = Date.now();
     if (this.#queued) return;
     this.#queued = true;
-    queueMicrotask(() => { this.#queued = false; this.step(); if (!this.#vk.exports.rk_tick) this.step(); });
+    if (this.#commits < SHARD_COMMITS) queueMicrotask(() => this.#wake());
+  }
+
+  // Group commit: every socket's data used to get its own pass, so its own AOF write and SQLite commit
+  // (~4 SETs each under load). While a commit is in flight its replies are held by the output gate anyway,
+  // so input that arrives meanwhile waits for it and then runs in one pass, with one commit.
+  #wake() {
+    this.#queued = false;
+    const flushes = this.#vfs.stats.writes;
+    this.step();
+    if (!this.#vk.exports.rk_tick) this.step();
+    if (this.#sync && this.#vfs.stats.writes !== flushes) {
+      this.#commits++;
+      this.#sync().catch(() => {}).finally(() => { this.#commits--; if (this.#queued) this.#wake(); });
+    }
   }
 
   // serverCron runs only while clients are connected, so an idle object can be evicted.

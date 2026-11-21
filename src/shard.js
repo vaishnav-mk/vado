@@ -40,7 +40,7 @@ export class ValkeyShard extends DurableObject {
   constructor(ctx, env) {
     super(ctx, env);
     this.#replica = /\.r\.[a-z-]+$/.test(ctx.id.name ?? "");
-    this.#host = new ValkeyHost(valkeyWasm, ctx.storage.sql, { args: valkeyArgs(env, this.#replica) });
+    this.#host = new ValkeyHost(valkeyWasm, ctx.storage.sql, { args: valkeyArgs(env, this.#replica), sync: () => ctx.storage.sync() });
     if (!this.#replica) {
       this.#repl = new Replicator(ctx, env, this.#host, ctx.id.name);
       this.#host.onAppend = (bytes) => { this.#repl.append(bytes); if (!this.#checkArmed) this.#armCheck(); };

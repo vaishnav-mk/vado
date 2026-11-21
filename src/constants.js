@@ -47,6 +47,13 @@ export const CLIENT_HIGH_WATER = 256 << 10;
 export const CLIENT_LOW_WATER = 64 << 10;
 export const SHARD_HIGH_WATER = 16 << 20;
 export const SHARD_LOW_WATER = 8 << 20;
+/**
+ * AOF commits a shard keeps in flight. More input waits for one to finish and then runs in one pass, so under
+ * load a commit carries ~100 writes instead of ~4 (5x the SETs/s through the router, 30x fewer rows written).
+ * 2 measured best: 1 serializes commits, 4 batches less.
+ */
+export const SHARD_COMMITS = 2;
+
 /** Idle internal Valkey clients kept per RESP protocol for RPC batches. */
 export const POOL_MAX = 64;
 
