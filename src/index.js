@@ -22,7 +22,7 @@ let table = null; // Promise<command table>
 
 export const objectOptions = (env, hint = env.LOCATION_HINT) => (HINTS.has(hint) ? { locationHint: hint } : {});
 export const shardName = (db, i) => `${db.name}.${db.created.toString(36)}.${i}`;
-// Shard i (and its replicas) uses class i % db.classes, so a database's shards never share an isolate.
+// Shard i (and its replicas) uses class i % db.classes, so shards less than db.classes apart never share an isolate.
 // Databases from before classes have none: all their shards are ValkeyShard. Pub/sub stays there too.
 const shardNs = (env, db, i) => (typeof i === "number" && db.classes > 1 && i % db.classes ? env[`SHARD${i % db.classes}`] : env.SHARD);
 // A spread database places data shard i in regions[i % n]; its pub/sub shard stays at LOCATION_HINT.

@@ -98,12 +98,8 @@ const tests = {
     return { colo: r.colo, p50: r.ms[r.ms.length >> 1], min: r.ms[0], max: r.ms.at(-1) };
   },
 
-  // Fragmentation: n keys with seeded random value sizes in [min, max], then `rounds` times delete a random
-  // half and rewrite it with sizes in [min2, max2] (default [min, max]). After each round: Valkey's used_memory
-  // vs the wasm linear memory it grew (which never shrinks, and is what counts against the isolate's memory).
-  // type=hash keeps the values as fields of small hashes (100 per key), which grow and shrink by realloc.
-  // Run with via=shard.
-  // VFS cost on shard 0: write an mb MB file (one commit), then delete it (one commit).
+  // VFS cost on shard 0: storage commit times for writing two mb MB files, then deleting the first (in the
+  // middle of the database) and the second (at its end).
   async vfs(env, q) {
     const db = await database(env, q.get("db"));
     return await shardStub(env, db, 0).vfsProbe(Number(q.get("mb") ?? 32));
@@ -130,6 +126,11 @@ const tests = {
     return { reply, replyMs, totalMs, pings: lat.length, p50: lat[lat.length >> 1], p99: lat[Math.floor(lat.length * 0.99)], max: lat.at(-1), slow, base: base && { path: base.path, MB: +(base.size / 2 ** 20).toFixed(1) }, helper: st.lastRewrite && { ...st.lastRewrite, at: st.lastRewrite.at - t0 } };
   },
 
+  // Fragmentation: n keys with seeded random value sizes in [min, max], then `rounds` times delete a random
+  // half and rewrite it with sizes in [min2, max2] (default [min, max]). After each round: Valkey's used_memory
+  // vs the wasm linear memory it grew (which never shrinks, and is what counts against the isolate's memory).
+  // type=hash keeps the values as fields of small hashes (100 per key), which grow and shrink by realloc.
+  // Run with via=shard.
   async frag(env, q) {
     const n = Number(q.get("n") ?? 150000), min = Number(q.get("min") ?? 16), max = Number(q.get("max") ?? 512), rounds = Number(q.get("rounds") ?? 6);
     let seed = Number(q.get("seed") ?? 1) >>> 0;
