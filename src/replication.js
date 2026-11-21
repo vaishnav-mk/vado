@@ -69,10 +69,24 @@ export class Replicator {
     }
   }
 
+  // One socket write at a time per replica: each write waits for the output gate and a turn of the event
+  // loop, so appends that arrive meanwhile go out together as one write.
   #send(t, bytes) {
     t.inflight += bytes.length;
     if (t.inflight > REPL_BACKLOG) return this.#drop(t, "fell too far behind");
-    t.writer.write(bytes).then(() => { t.inflight -= bytes.length; }, (e) => this.#drop(t, `socket: ${e.message}`));
+    t.out.push(bytes);
+    if (!t.writing) this.#pump(t);
+  }
+
+  #pump(t) {
+    const out = t.out.length === 1 ? t.out[0] : concat(t.out);
+    t.out = []; t.writing = true;
+    const writer = t.writer;
+    writer.write(out).then(() => {
+      if (t.writer !== writer) return;
+      t.inflight -= out.length; t.writing = false;
+      if (t.out.length) this.#pump(t);
+    }, (e) => this.#drop(t, `socket: ${e.message}`));
   }
 
   // The AOF files as of now: the base, then the incr files in order, from the manifest.
@@ -85,11 +99,11 @@ export class Replicator {
   }
 
   async #sync(t) {
-    Object.assign(t, { phase: "copying", since: Date.now(), queue: [], queued: 0, inflight: 0, marks: [], ready: false, error: null });
+    Object.assign(t, { phase: "copying", since: Date.now(), queue: [], queued: 0, inflight: 0, out: [], writing: false, marks: [], ready: false, error: null });
     this.#copying++;
     try {
       // Commands, not RDB, in the base file, and no rewrite while the copy runs: the files only grow.
-      await this.#host.execBatch(command(["CONFIG", "SET", "aof-use-rdb-preamble", "no", "auto-aof-rewrite-percentage", "0"]), 1);
+      await this.#host.execBatch(command(["CONFIG", "SET", "aof-use-rdb-preamble", "no"]), 1);
       if (this.#files().base?.endsWith(".rdb")) await this.#host.execBatch(command(["BGREWRITEAOF"]), 1);
       if (t.phase !== "copying") return;
       // Sizes now, synchronously: appends from here on are queued for this replica.
@@ -140,7 +154,7 @@ export class Replicator {
     if (t.phase === "idle") return;
     try { t.writer?.abort?.(why); } catch { /* gone */ }
     try { t.socket?.close?.(); } catch { /* gone */ }
-    Object.assign(t, { phase: "idle", socket: null, writer: null, queue: [], queued: 0, inflight: 0, marks: [], ready: false, error: why, retryAt: Date.now() + REPL_RETRY_MS });
+    Object.assign(t, { phase: "idle", socket: null, writer: null, queue: [], queued: 0, inflight: 0, out: [], writing: false, marks: [], ready: false, error: why, retryAt: Date.now() + REPL_RETRY_MS });
     console.log(`replica ${this.#name} -> ${t.region} dropped: ${why}`);
   }
 }
