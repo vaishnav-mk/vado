@@ -211,13 +211,14 @@ const tests = {
   async throughput(env, q) {
     const n = Number(q.get("n") ?? 100000), batch = Number(q.get("batch") ?? 1000), conns = Number(q.get("conns") ?? 1);
     const size = Number(q.get("value") ?? 1), v = "v".repeat(size), get = q.get("op") === "get"; // op=get reads the same keys back
+    const keys = Number(q.get("keys") ?? Infinity), key = (ci, j) => `${q.get("prefix") ?? "t"}${ci}:${j % keys}`; // keys=<m>: reuse m keys per conn
     const cs = await Promise.all(Array.from({ length: conns }, () => open(env, q)));
     await Promise.all(cs.map((c) => c.call(["PING"])));
     let errors = 0, firstError = null, hits = 0;
     const t0 = performance.now();
     await Promise.all(cs.map(async (c, ci) => {
       for (let i = 0; i < n / conns; i += batch) {
-        const rs = await c.call(...Array.from({ length: batch }, (_, k) => (get ? ["GET", `${q.get("prefix") ?? "t"}${ci}:${i + k}`] : ["SET", `${q.get("prefix") ?? "t"}${ci}:${i + k}`, v])));
+        const rs = await c.call(...Array.from({ length: batch }, (_, k) => (get ? ["GET", key(ci, i + k)] : ["SET", key(ci, i + k), v])));
         for (const r of rs) if (get ? r?.err : r !== "OK") { errors++; firstError ??= r; } else if (get && r === v) hits++;
       }
     }));
