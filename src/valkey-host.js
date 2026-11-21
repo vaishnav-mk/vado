@@ -154,18 +154,22 @@ export class ValkeyHost {
         s.done();
         this.#updateTimer();
       },
-      aof_rewrite: (ptr, len, rdb) => {
+      aof_rewrite: (ptr, len, rdb, gen) => {
         const tmp = new TextDecoder().decode(mem().slice(ptr, ptr + len));
-        const job = this.onRewrite?.(tmp, rdb === 1);
+        const job = !this.rewriting && this.onRewrite?.(tmp, rdb === 1);
         if (!job) return 0;
         this.rewriting = (async () => {
           await null; // after the wasm call that started the rewrite has returned
           let ok = false;
           try { ok = await job(); } catch (e) { this.#log(`rewrite: ${e?.stack ?? e}`); }
-          // Valkey renames tmp into place and swaps the manifest, as when a forked child exits.
-          if (!this.#vk.exports.rk_rewrite_done(ok ? 1 : 0)) this.#vfs.remove(tmp);
-          this.rewriting = null;
-          this.#schedule();
+          try {
+            // Valkey renames tmp into place and swaps the manifest, as when a forked child exits. 0: that
+            // rewrite was killed meanwhile (and maybe another started), so tmp is a leftover.
+            if (!this.#vk.exports.rk_rewrite_done(ok ? 1 : 0, gen)) this.#vfs.remove(tmp);
+          } finally {
+            this.rewriting = null;
+            this.#schedule();
+          }
         })();
         return 1;
       },
