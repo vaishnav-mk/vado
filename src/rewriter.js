@@ -85,7 +85,9 @@ export class ValkeyRewriter extends DurableObject {
       vfs.append(MANIFEST, new TextEncoder().encode(manifest));
       vfs.flush();
       // Valkey loads the files as it boots; the rewrite then runs inline, blocking only this object.
-      const host = new ValkeyHost(valkeyWasm, sql, { args: [...valkeyArgs(this.env, false), "--aof-use-rdb-preamble", rdb ? "yes" : "no"] });
+      // import-mode: no expiry or eviction here, so the base keeps a key that expired after the shard's
+      // rewrite started (the shard may have PERSISTed it since). A forked child never expires keys either.
+      const host = new ValkeyHost(valkeyWasm, sql, { args: [...valkeyArgs(this.env, false), "--aof-use-rdb-preamble", rdb ? "yes" : "no", "--import-mode", "yes"] });
       const [reply] = decodeAll(await host.execBatch(command(["BGREWRITEAOF"]), 1));
       if (reply?.err) throw new Error(reply.err);
       const { base } = aofFiles(host), size = host.fileSize(base);
