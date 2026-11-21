@@ -37,8 +37,9 @@ every shard.
   password and all data cross the internet in plaintext.
 - **WebSocket:** use the `wss://` URL. The shim's local TCP port is plaintext on 127.0.0.1.
 - **Service binding:** stays inside Cloudflare.
-- **Between objects:** routers, shards and replicas talk over Durable Object sockets and RPC, which only code in this
-  Worker can open: a stub needs the `SHARD` binding. Clients reach only the router.
+- **Between objects:** routers, shards, replicas and rewriters talk over Durable Object sockets and RPC, which only
+  code in this Worker can open: a stub needs one of the `SHARD` or `REWRITER` bindings. Clients reach only the
+  router.
 
 ## Replicas
 
@@ -79,5 +80,6 @@ elsewhere.
 ## Data at rest
 
 Data is stored in Durable Object SQLite storage, with no encryption of its own on top. Replicas keep their copy in
-memory only, never in storage. Keys live until you delete or expire them, or until a full shard evicts them under
+memory only, never in storage. A rewriter keeps a copy of its shard's AOF files in its own storage while a rewrite
+runs, and deletes it when the rewrite ends, or at the start of the next one if a reset cut it short. Keys live until you delete or expire them, or until a full shard evicts them under
 `allkeys-lru`.
