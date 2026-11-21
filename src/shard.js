@@ -89,6 +89,19 @@ export class ValkeyShard extends DurableObject {
     return this.#instance;
   }
 
+  /** Test hook: how long this object's storage takes to confirm a write (what every reply waits for). */
+  async commitProbe(n = 20) {
+    const sql = this.ctx.storage.sql, xs = [];
+    sql.exec(`CREATE TABLE IF NOT EXISTS commit_probe (k INTEGER PRIMARY KEY, v INTEGER)`);
+    for (let i = 0; i < n; i++) {
+      const t0 = Date.now(); // Date.now only advances across I/O, which sync() is
+      sql.exec(`INSERT OR REPLACE INTO commit_probe VALUES (0, ?)`, i);
+      await this.ctx.storage.sync();
+      xs.push(Date.now() - t0);
+    }
+    return { colo: this.#colo, ms: xs.sort((a, b) => a - b) };
+  }
+
   /** Test hook: hard-reset this object (as a crash or deploy would). */
   abort(reason = "test abort") {
     this.ctx.abort(new Error(reason));

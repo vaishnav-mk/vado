@@ -89,6 +89,23 @@ const tests = {
     return { db };
   },
 
+  // How long shard 0's storage takes to confirm a write, from inside the object.
+  async commit(env, q) {
+    const db = await database(env, q.get("db"));
+    const stub = shardStub(env, db, 0);
+    await stub.stats(); // learn its colo
+    const r = await stub.commitProbe(Number(q.get("n") ?? 20));
+    return { colo: r.colo, p50: r.ms[r.ms.length >> 1], min: r.ms[0], max: r.ms.at(-1) };
+  },
+
+  // A/B on one primary: point its shards' replication at `regions` (none | world | a,b), leaving reads alone.
+  async replicate(env, q) {
+    const db = await database(env, q.get("db")), v = q.get("regions");
+    const regions = v === "none" ? [] : v === "world" ? WORLD : v.split(",");
+    await Promise.all(Array.from({ length: db.shards }, (_, i) => shardStub(env, db, i).replicate(regions.filter((r) => r !== homeOf(env, db, i)))));
+    return { regions };
+  },
+
   // Run a test (default throughput) from a Sender object in `region`, so its traffic enters Cloudflare there.
   async send(env, q) {
     const region = q.get("region");
@@ -145,6 +162,28 @@ const tests = {
     }
     c.close();
     return { n, stale, failedWrites, samples };
+  },
+
+  // How long after an acknowledged write another client, on its own connection, can still read the old
+  // value: the replica lag a user sees. 0 when reads come from the primary.
+  async staleness(env, q) {
+    const n = Number(q.get("n") ?? 200), tag = q.get("prefix") ?? "stale", a = await open(env, q), b = await open(env, q);
+    const xs = [];
+    let failedWrites = 0, gaveUp = 0, firstRead = 0;
+    for (let i = 0; i < n; i++) {
+      const k = `${tag}:${i % 20}`, v = `${tag}-${i}-${Date.now()}`;
+      const [set] = await a.call(["SET", k, v]);
+      const acked = performance.now();
+      if (set !== "OK") { failedWrites++; continue; }
+      for (let tries = 1; ; tries++) {
+        const [got] = await b.call(["GET", k]);
+        if (got === v) { xs.push(performance.now() - acked); if (tries === 1) firstRead++; break; }
+        if (performance.now() - acked > 10000) { gaveUp++; break; }
+      }
+    }
+    a.close(); b.close();
+    const ms = (p) => Math.round(pct(xs, p) ?? NaN);
+    return { n, p50: ms(0.5), p90: ms(0.9), p99: ms(0.99), max: Math.round(Math.max(...xs)), firstRead, failedWrites, gaveUp };
   },
 
   async stats(env, q) {
