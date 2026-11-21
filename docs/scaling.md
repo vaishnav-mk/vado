@@ -107,7 +107,10 @@ the primary's writes down; one stuck replica is dropped before it can stall them
 ## Limits
 
 - **Memory:** 64 MB of data per shard (`VALKEY_MAXMEMORY`). With `noeviction`, writes past it get Valkey's `OOM`
-  error; with `allkeys-lru` it evicts like a cache. A replica holds the same data in its own 64 MB.
+  error; with `allkeys-lru` it evicts like a cache. A replica holds the same data in its own 64 MB. That limit
+  counts Valkey's `used_memory`; the isolate counts wasm linear memory, which measured 1.08-1.29x `used_memory`
+  with the vendored build's allocator and never shrinks: after deleting data from 39 MB to 9 MB, it stayed at 44 MB
+  ([measurements](measurements.md)).
 - **Request size:** about 8 MB per request, all arguments together, and 64 KB before AUTH. A shard needs room for the
   query buffer, the value and its AOF entry at once.
 - **CPU:** a shard is one thread, shared with any object of its class in the same isolate. The runtime resets an

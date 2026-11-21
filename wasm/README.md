@@ -65,12 +65,17 @@ provides. Its exports match the libc build's.
 
 What to watch when trying it:
 
-- The first allocation reserves a 16 MiB arena, so linear memory starts about 16 MiB larger than with dlmalloc.
+- Linear memory starts larger, since allocations come from arenas of at least 16 MiB: 34 MB at boot in production,
+  against 2.6 MB with dlmalloc.
 - wasm memory never shrinks. Freed arena space is reused, but an allocation that fits no arena reserves a new one of
   its size plus up to 16 MiB: a 20 MiB hashtable resize that misses gets a 48 MiB arena.
 - `mi_usable_size` returns the whole size-class block (classes are 12.5% apart), and zmalloc counts that, so
   `used_memory` and maxmemory accounting read higher than with dlmalloc for the same data. Partly empty pages aren't
   counted at all; the real footprint is the wasm memory size.
+
+Measured in production with the bench `frag` probe ([measurements](../docs/measurements.md)), linear memory was
+1.08-1.29x Valkey's `used_memory` with dlmalloc, flat across rounds of deleting and rewriting half the keys, and
+1.6-4.3x with mimalloc. So `vendor/valkey.wasm` stays on dlmalloc.
 
 ## Reproducibility
 
