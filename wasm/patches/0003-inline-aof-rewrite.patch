@@ -1,0 +1,30 @@
+diff --git a/src/aof.c b/src/aof.c
+index 276dcbe..baed2e4 100644
+--- a/src/aof.c
++++ b/src/aof.c
+@@ -2623,6 +2623,25 @@ int rewriteAppendOnlyFileBackground(void) {
+ 
+     server.stat_aof_rewrites++;
+ 
++#ifdef VALKEY_WASM
++    /* No fork on wasm: run the child's rewrite inline, then finish the way
++     * checkChildrenDone() would after the child exits. Blocks for the rewrite. */
++    {
++        char tmpfile[256];
++        server.child_pid = getpid();
++        server.child_type = CHILD_TYPE_AOF;
++        server.aof_rewrite_scheduled = 0;
++        server.aof_rewrite_time_start = time(NULL);
++        server.aof_rewrite_use_rdb_preamble = server.aof_use_rdb_preamble;
++        snprintf(tmpfile, 256, "temp-rewriteaof-bg-%d.aof", (int)server.child_pid);
++        int ok = rewriteAppendOnlyFile(tmpfile) == C_OK;
++        backgroundRewriteDoneHandler(ok ? 0 : 1, 0);
++        resetChildState();
++        (void)childpid;
++        return ok ? C_OK : C_ERR;
++    }
++#endif
++
+     if ((childpid = serverFork(CHILD_TYPE_AOF)) == 0) {
+         char tmpfile[256];
+ 

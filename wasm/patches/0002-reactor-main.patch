@@ -1,0 +1,22 @@
+diff --git a/src/server.c b/src/server.c
+index 3f1129d..b051d6f 100644
+--- a/src/server.c
++++ b/src/server.c
+@@ -7762,9 +7762,17 @@ __attribute__((weak)) int main(int argc, char **argv) {
+     serverSetCpuAffinity(server.server_cpulist);
+     setOOMScoreAdj(-1);
+ 
++#ifdef VALKEY_WASM
++    /* Reactor: don't enter the blocking aeMain loop. Init is done and the
++     * beforeSleep/afterSleep hooks are installed; the host drives one event loop
++     * pass per socket event or timer through the exports in wasm/wasi/reactor.c,
++     * and all server state stays resident in the wasm instance. */
++    return 0;
++#else
+     aeMain(server.el);
+     aeDeleteEventLoop(server.el);
+     return 0;
++#endif
+ }
+ 
+ /*
