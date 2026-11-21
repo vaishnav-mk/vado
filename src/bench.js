@@ -98,6 +98,16 @@ const tests = {
     return { colo: r.colo, p50: r.ms[r.ms.length >> 1], min: r.ms[0], max: r.ms.at(-1) };
   },
 
+  // One execRaw (the router's RPC mode) of k SETs straight to shard 0: are all k replies there?
+  async rpcbatch(env, q) {
+    const db = await database(env, q.get("db")), k = Number(q.get("k") ?? 1000), par = Number(q.get("par") ?? 1);
+    const body = new TextEncoder().encode(Array.from({ length: k }, (_, i) => cmd("SET", `rb:${i}`, "v")).join(""));
+    const stub = shardStub(env, db, 0), t0 = Date.now();
+    const rs = await Promise.allSettled(Array.from({ length: par }, () => stub.execRaw(body, k, 2)));
+    const frames = (r) => { let n = 0; for (let i = 0; i < r.length; i += 5) n += r[i] === 43 ? 1 : 0; return n; }; // "+OK\r\n"
+    return { k, par, bodyBytes: body.length, ms: Date.now() - t0, results: rs.map((r) => (r.status === "fulfilled" ? { bytes: r.value.length, frames: frames(r.value) } : { error: String(r.reason?.message ?? r.reason) })) };
+  },
+
   // A/B on one primary: point its shards' replication at `regions` (none | world | a,b), leaving reads alone.
   async replicate(env, q) {
     const db = await database(env, q.get("db")), v = q.get("regions");
