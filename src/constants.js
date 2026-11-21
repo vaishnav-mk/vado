@@ -69,6 +69,9 @@ export const VFS_CHUNK = 1 << 20;
  * makes an AOF append one row, and a rewrite deletes one row per VFS_TAIL bytes instead of one per append.
  */
 export const VFS_TAIL = 16 << 10;
+// Deleted files' chunks are removed VFS_SWEEP_ROWS rows (of up to VFS_CHUNK) per storage commit, so no
+// single commit frees, and makes SQLite move, a whole base file's pages.
+export const VFS_SWEEP_ROWS = 2;
 
 // ---- AOF rewrites (src/shard.js) ----
 

@@ -37,7 +37,11 @@ export class Vfs {
     sql.exec(`CREATE TABLE IF NOT EXISTS vfs_chunk (path TEXT NOT NULL, seq INTEGER NOT NULL, data BLOB NOT NULL, PRIMARY KEY (path, seq)) WITHOUT ROWID`);
     // Added later: the key a file's chunks are stored under (vfs_chunk.path); NULL = the file's own path.
     if (!sql.exec(`PRAGMA table_info(vfs_node)`).toArray().some((c) => c.name === "chunks")) sql.exec(`ALTER TABLE vfs_node ADD COLUMN chunks TEXT`);
+    // Keys of deleted files whose chunks sweep() hasn't removed yet. Freeing a big file's pages in one
+    // commit is slow (SQLite moves the pages after them down), so an unlink only drops the node.
+    sql.exec(`CREATE TABLE IF NOT EXISTS vfs_trash (key TEXT PRIMARY KEY)`);
   }
+  onTrash = null; // () => void: there are chunks for sweep() to delete
 
   // ---- helpers ----
   #u8v = null; #dvv = null; // rebuilt only when wasm memory grows
@@ -389,7 +393,8 @@ export class Vfs {
   #unlink(path) {
     const n = this.#nodes.get(path), key = n?.key ?? this.#row(path)?.key;
     if (n) { n.pending = []; n.pendingLen = 0; this.#nodes.delete(path); n.path = `\0deleted:${path}`; }
-    if (key !== undefined) this.#write(`DELETE FROM vfs_chunk WHERE path = ?`, key);
+    // A key is never reused (new files get a fresh one), so its chunks can go later.
+    if (key !== undefined) { this.#write(`INSERT OR IGNORE INTO vfs_trash (key) VALUES (?)`, key); this.onTrash?.(); }
     this.#write(`DELETE FROM vfs_node WHERE path = ?`, path);
   }
 
@@ -435,11 +440,22 @@ export class Vfs {
     return this.#node(path)?.size ?? null;
   }
 
+  /** Deletes up to `rows` chunks of deleted files. Returns whether any are left. */
+  sweep(rows) {
+    const t = this.#sql.exec(`SELECT key FROM vfs_trash LIMIT 1`).toArray()[0];
+    if (!t) return false;
+    const r = this.#sql.exec(`DELETE FROM vfs_chunk WHERE path = ? AND seq IN (SELECT seq FROM vfs_chunk WHERE path = ? ORDER BY seq DESC LIMIT ?)`, t.key, t.key, rows);
+    this.stats.rowsWritten += r.rowsWritten;
+    if (!r.rowsWritten) this.#write(`DELETE FROM vfs_trash WHERE key = ?`, t.key);
+    return true;
+  }
+
   // ---- host-side file access (outside Valkey: a rewrite helper's copy of a shard's files, a base it sends back) ----
   /** Deletes every file and directory. */
   clear() {
     this.#write(`DELETE FROM vfs_chunk`);
     this.#write(`DELETE FROM vfs_node`);
+    this.#write(`DELETE FROM vfs_trash`);
     this.#nodes.clear();
   }
 
