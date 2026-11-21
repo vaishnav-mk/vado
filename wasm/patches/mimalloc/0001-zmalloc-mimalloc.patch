@@ -1,0 +1,36 @@
+diff --git a/src/zmalloc.c b/src/zmalloc.c
+index 453b83f..6d58078 100644
+--- a/src/zmalloc.c
++++ b/src/zmalloc.c
+@@ -89,6 +89,13 @@ void zlibc_free(void *ptr) {
+ #define calloc(count, size) je_calloc(count, size)
+ #define realloc(ptr, size) je_realloc(ptr, size)
+ #define free(ptr) je_free(ptr)
++/* Explicitly override malloc/free etc when using mimalloc. */
++#elif defined(USE_MIMALLOC)
++#define malloc(size) mi_malloc(size)
++#define calloc(count, size) mi_calloc(count, size)
++#define realloc(ptr, size) mi_realloc(ptr, size)
++#define free(ptr) mi_free(ptr)
++#define posix_memalign(ptr, alignment, size) mi_posix_memalign(ptr, alignment, size)
+ #endif
+ 
+ #define thread_local _Thread_local
+diff --git a/src/zmalloc.h b/src/zmalloc.h
+index a35b7cb..8da30bf 100644
+--- a/src/zmalloc.h
++++ b/src/zmalloc.h
+@@ -58,6 +58,13 @@
+ #error "Newer version of jemalloc required"
+ #endif
+ 
++#elif defined(USE_MIMALLOC)
++/* mimalloc.h has no dotted version macro; the build passes MIMALLOC_VERSION ("x.y.z"). */
++#define ZMALLOC_LIB ("mimalloc-" MIMALLOC_VERSION)
++#include <mimalloc.h>
++#define HAVE_MALLOC_SIZE 1
++#define zmalloc_size(p) mi_usable_size(p)
++
+ #elif defined(__APPLE__) && !defined(NO_MALLOC_USABLE_SIZE)
+ #include <malloc/malloc.h>
+ #define HAVE_MALLOC_SIZE 1

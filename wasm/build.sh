@@ -3,7 +3,7 @@
 # and the WASI shims in wasi/. Writes build/valkey.wasm. No fork, no threads;
 # networking and the event loop are bridged to the host (see wasi/host.h).
 #
-#   WASI_SDK=/path/to/wasi-sdk-34 [OPT=-O3] wasm/build.sh
+#   WASI_SDK=/path/to/wasi-sdk-34 [ALLOCATOR=libc|mimalloc] [OPT=-O3] wasm/build.sh
 set -euo pipefail
 # The link globs build/obj/*.o; a fixed collation keeps the object order, and so
 # the output bytes, the same on every machine.
@@ -11,9 +11,13 @@ export LC_ALL=C
 
 VALKEY_VERSION=9.1.1
 VALKEY_SHA256=7d7232acd1b8a49b4e05d07a00b3ca8c801ae06ab633ca6a3423bc5f385ab7ee
+MIMALLOC_VERSION=3.7.0
+MIMALLOC_SHA256=1b8653b9ff9b841a97f2c50fd996e89e1a0cb712c3c5b0980ef16a027eb7acf8
 
 : "${WASI_SDK:?set WASI_SDK to a wasi-sdk 34 install}"
+ALLOCATOR="${ALLOCATOR:-libc}"
 OPT="${OPT:--O3}" # one -O level, for clang and wasm-opt
+case "$ALLOCATOR" in libc | mimalloc) ;; *) echo "ALLOCATOR must be libc or mimalloc" >&2; exit 1 ;; esac
 
 HERE="$(cd "$(dirname "$0")" && pwd)"
 CACHE="$HERE/.cache"
@@ -39,7 +43,9 @@ fetch "valkey-$VALKEY_VERSION" "https://github.com/valkey-io/valkey/archive/refs
 VK="$CACHE/valkey-$VALKEY_VERSION"
 SRC="$VK/src"
 DEPS="$VK/deps"
-for p in "$HERE"/patches/*.patch; do
+PATCHES=("$HERE"/patches/*.patch)
+[ "$ALLOCATOR" = libc ] || PATCHES+=("$HERE/patches/$ALLOCATOR"/*.patch)
+for p in "${PATCHES[@]}"; do
   echo "patch $(basename "$p")"
   patch -s -p1 -F0 -d "$VK" -i "$p"
 done
@@ -57,15 +63,42 @@ EOF
 rm -rf "$OUT"
 mkdir -p "$OBJ"
 
+if [ "$ALLOCATOR" = mimalloc ]; then
+  fetch "mimalloc-$MIMALLOC_VERSION" "https://github.com/microsoft/mimalloc/archive/refs/tags/v$MIMALLOC_VERSION.tar.gz" "$MIMALLOC_SHA256"
+  MI="$CACHE/mimalloc-$MIMALLOC_VERSION"
+  # zmalloc calls mi_* directly (patches/mimalloc); INFO shows mimalloc-x.y.z.
+  ALLOC_CFLAGS=(-DUSE_MIMALLOC "-DMIMALLOC_VERSION=\"$MIMALLOC_VERSION\"" -I"$MI/include")
+  # mimalloc's overrides have explicit default visibility, so --export-dynamic
+  # would export ~50 of them. Export only what it adds to the libc build.
+  ALLOC_LDFLAGS=(-Wl,--export=__stack_pointer)
+  # The whole library as one object. MI_MALLOC_OVERRIDE defines malloc/free/
+  # calloc/realloc/posix_memalign/aligned_alloc/malloc_usable_size and the
+  # __libc_* entry points, so wasi-libc's dlmalloc is never pulled from libc.a
+  # and Lua (lauxlib's l_alloc) and libc internals share mimalloc's heap.
+  # MI_DEFAULT_ARENA_RESERVE is in KiB. mimalloc quarters it where memory can't
+  # be reserved without committing (wasm), and on wasm32 an arena can't be
+  # smaller than 16 MiB, so 64 MiB gives the smallest step: linear memory grows
+  # 16 MiB at a time instead of 32 MiB.
+  echo "[mimalloc $MIMALLOC_VERSION]"
+  "$CC" --target=wasm32-wasip1 --sysroot="$SYSROOT" $OPT \
+    -DNDEBUG -DMI_DEBUG=0 -DMI_SECURE=0 -DMI_STATS=0 -DMI_PADDING=0 -DMI_GUARDED=0 -DMI_PROFILE=0 \
+    -DMI_MALLOC_OVERRIDE -DMI_DEFAULT_ARENA_RESERVE=65536 \
+    -D_WASI_EMULATED_PROCESS_CLOCKS -I"$MI/include" \
+    -c "$MI/src/static.c" -o "$OBJ/mimalloc.o"
+else
+  # wasi-libc's dlmalloc has malloc_usable_size: zmalloc drops its 8-byte size
+  # prefix per allocation and asks the allocator instead.
+  ALLOC_CFLAGS=(-DUSE_MALLOC_USABLE_SIZE)
+  ALLOC_LDFLAGS=(-Wl,--export-dynamic)
+fi
+
 CFLAGS=(
   --target=wasm32-wasip1 --sysroot="$SYSROOT"
   $OPT -fno-strict-aliasing -Wno-implicit-function-declaration
   -Wno-int-conversion -Wno-macro-redefined -Wno-unused
   -D_WASI_EMULATED_SIGNAL -D_WASI_EMULATED_PROCESS_CLOCKS -D_WASI_EMULATED_MMAN -D_WASI_EMULATED_GETPID
   -DVALKEY_WASM=1 -DHAVE_WASI_AE=1
-  # wasi-libc's dlmalloc has malloc_usable_size: zmalloc drops its 8-byte size
-  # prefix per allocation and asks the allocator instead.
-  -DUSE_MALLOC_USABLE_SIZE
+  "${ALLOC_CFLAGS[@]}"
   # 9.x builds Lua as a static module; server.c registers the "lua" scripting
   # engine only with these set (else EVAL: "Could not find scripting engine").
   -DLUA_ENABLED -DSTATIC_LUA=1
@@ -86,7 +119,7 @@ LDFLAGS=(
   # long doubles (INCRBYFLOAT, ZADD scores, blocking timeouts via strtold).
   -lc-printscan-long-double
   -Wl,--allow-undefined # host imports resolve at instantiation
-  -Wl,--export-dynamic
+  "${ALLOC_LDFLAGS[@]}"
   -Wl,-z,stack-size=1048576
   # sock_shim.c provides __wrap_* for the fd-multiplexed libc calls: host fds
   # (>= HOST_FD_BASE) go to the host, the rest to wasi-libc.
