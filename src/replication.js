@@ -64,7 +64,7 @@ export class Replicator {
   append(bytes) {
     for (const t of this.#targets.values()) {
       if (t.phase === "copying") {
-        t.queue.push(bytes); t.queued += bytes.length;
+        t.queue.push(bytes); t.queued += bytes.length; this.#host.hold(bytes.length);
         if (t.queued > REPL_BACKLOG) this.#drop(t, "fell too far behind while copying");
       } else if (t.phase === "live") this.#send(t, bytes);
     }
@@ -73,7 +73,7 @@ export class Replicator {
   // One socket write at a time per replica: each write waits for the output gate and a turn of the event
   // loop, so appends that arrive meanwhile go out together as one write.
   #send(t, bytes) {
-    t.inflight += bytes.length;
+    t.inflight += bytes.length; this.#host.hold(bytes.length);
     if (t.inflight > REPL_BACKLOG) return this.#drop(t, "fell too far behind");
     t.out.push(bytes);
     if (!t.writing) this.#pump(t);
@@ -85,7 +85,7 @@ export class Replicator {
     const writer = t.writer;
     writer.write(out).then(() => {
       if (t.writer !== writer) return;
-      t.inflight -= out.length; t.writing = false;
+      t.inflight -= out.length; this.#host.release(out.length); t.writing = false;
       if (t.out.length) this.#pump(t);
     }, (e) => this.#drop(t, `socket: ${e.message}`));
   }
@@ -112,7 +112,7 @@ export class Replicator {
       // Sizes now, synchronously: appends from here on are queued for this replica.
       const { base, incrs } = this.#files();
       const parts = [base, ...incrs].filter(Boolean).map((p) => [p, this.#host.fileSize(p) ?? 0]);
-      t.queue = []; t.queued = 0;
+      this.#host.release(t.queued); t.queue = []; t.queued = 0;
       const stub = this.#env.SHARD.getByName(replicaName(this.#name, t.region), { locationHint: t.region });
       t.stub = stub;
       t.socket = stub.connect("repl:6379");
@@ -122,7 +122,7 @@ export class Replicator {
       for (const [p, size] of parts) for (let pos = 0; pos < size && t.phase === "copying"; pos += COPY_CHUNK) await t.writer.write(this.#host.readFile(p, pos, COPY_CHUNK));
       t.marks.push({ at: Date.now(), ready: true });
       await t.writer.write(MARK);
-      while (t.phase === "copying" && t.queue.length) { const b = t.queue.shift(); t.queued -= b.length; await t.writer.write(b); }
+      while (t.phase === "copying" && t.queue.length) { const b = t.queue.shift(); t.queued -= b.length; this.#host.release(b.length); await t.writer.write(b); }
       if (t.phase === "copying") t.phase = "live"; // no await since the queue emptied, so no append is missed
     } catch (e) {
       this.#drop(t, e.message);
@@ -160,6 +160,7 @@ export class Replicator {
     if (t.phase === "idle") return;
     try { t.writer?.abort?.(why); } catch { /* gone */ }
     try { t.socket?.close?.(); } catch { /* gone */ }
+    this.#host.release(t.inflight + t.queued);
     Object.assign(t, { phase: "idle", socket: null, writer: null, queue: [], queued: 0, inflight: 0, out: [], writing: false, marks: [], ready: false, error: why, retryAt: Date.now() + REPL_RETRY_MS });
     console.log(`replica ${this.#name} -> ${t.region} dropped: ${why}`);
   }

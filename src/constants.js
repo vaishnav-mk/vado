@@ -83,8 +83,13 @@ export const AOF_CHECK_MS = 2_000;
 
 // ---- read replicas (src/replication.js) ----
 
-/** Write bytes a replica may be behind (queued during its copy, or unacknowledged on its socket) before it is dropped and copied again. */
-export const REPL_BACKLOG = 32 << 20;
+/**
+ * Write bytes a replica may be behind (queued during its copy, or unacknowledged on its socket) before it is
+ * dropped and copied again. Replication bytes also count toward SHARD_HIGH_WATER, which pauses client input:
+ * with this below it, one stuck replica is dropped before it can stall the primary, while replicas that all
+ * lag slow the writes down instead (32 MB each over 9 replicas ran a primary out of its 128 MB).
+ */
+export const REPL_BACKLOG = 8 << 20;
 /** How often a primary checks its replicas: restarts failed ones, and sends a marker that measures how far behind each one is. */
 export const REPL_TICK_MS = 2_000;
 /** A replica that fails waits this long before it is copied again. */

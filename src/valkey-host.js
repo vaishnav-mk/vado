@@ -177,8 +177,12 @@ export class ValkeyHost {
     };
   }
 
+  /** Bytes held for something other than replies (a primary's replication stream): reading pauses on them too. */
+  hold(n) { this.#total += n; }
+  release(n) { this.#total -= n; this.#wakeReaders(null); }
+
   #wakeReaders(s) {
-    if (s.wake && s.inflight <= CLIENT_LOW_WATER && this.#total <= SHARD_HIGH_WATER) { const w = s.wake; s.wake = null; w(); }
+    if (s?.wake && s.inflight <= CLIENT_LOW_WATER && this.#total <= SHARD_HIGH_WATER) { const w = s.wake; s.wake = null; w(); }
     if (this.#total <= SHARD_LOW_WATER && this.#stalled.size) {
       const all = [...this.#stalled];
       this.#stalled.clear();
