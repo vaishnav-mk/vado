@@ -10,6 +10,9 @@ Experimental. Independent project, not an official Cloudflare or Valkey product.
 
 - Real Valkey 9.1 per shard, so replies and errors are Valkey's own, behind one address for stock clients.
 - Acknowledged writes survive resets and deploys. Under load, many writes share one storage commit.
+- AOF rewrites run in a separate rewriter object, so a shard keeps serving while Valkey compacts its log.
+- A database's shards rotate over eight Durable Object classes, so its first eight shards never share an isolate's
+  memory or thread.
 - A database's shards can be spread over regions, and each shard can keep read replicas in other regions. Routers
   read from a replica in or next to their region, and a connection still reads its own writes.
 - A local live view (`ui/`) shows each shard and replica, where traffic enters, and response times.
@@ -21,6 +24,7 @@ flowchart LR
   client["Stock client"] -- "RESP: TCP Worker,<br/>WebSocket or service binding" --> router["Router<br/>(one per connection)"]
   router -- "by hash slot" --> shards["ValkeyShard objects<br/>valkey.wasm + AOF in SQLite"]
   shards -- "AOF appends" --> replicas["Read replicas<br/>(optional, memory only)"]
+  shards -- "AOF rewrites" --> rewriters["Rewriters<br/>(one per shard)"]
   router -- "nearby reads" --> replicas
   router -- "database → shard count" --> catalog["Catalog"]
 ```
@@ -57,8 +61,10 @@ From another Worker, use a service binding and `env.VALKEY.connect("mydb:6379")`
 - One password for every database, and no ACLs. Set `VALKEY_PASSWORD` before exposing a TCP Worker, and turn on TLS.
   [Security](docs/security.md).
 - 64 MB of data per shard, about 8 MB per request, and a database's shard count, regions and replicas are fixed
-  when it is created.
+  when it is created. A shard's wasm memory never shrinks after deletes.
   [Shards and limits](docs/scaling.md).
+- `CONFIG SET` takes only settings that change how data behaves; `SAVE`, `BGREWRITEAOF` and `ACL` are refused.
+  [Security](docs/security.md#what-clients-can-change).
 - A command in flight when its shard resets gets `ERR shard connection lost; the command may or may not have run`.
   Only read-only commands retry. [Durability and failures](docs/durability.md).
 - Multi-key commands across slots, other than MGET, MSET, DEL, UNLINK, EXISTS and TOUCH, get `CROSSSLOT`, as in Valkey
