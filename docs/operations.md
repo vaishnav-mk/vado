@@ -138,6 +138,7 @@ Test traffic needs the `SENDER` binding.
 | `rpcbatch` | One RPC batch of `k` SETs straight to shard 0 (`par` at once); checks every reply came back |
 | `frag` | Memory fragmentation on shard 0; run it with `via=shard`. Starts with FLUSHALL, writes `n` keys (default 150,000) with value sizes from `min` to `max` bytes (16-512), then `rounds` times (6) deletes a random half and writes it again with sizes from `min2` to `max2`. `seed` seeds the sizes, `type=hash` stores the values as fields of small hashes, `rand=1` makes them incompressible. Reports Valkey's `used_memory` and the wasm linear memory after each round |
 | `rewrite` | BGREWRITEAOF on shard 0 while another connection PINGs it (`via=shard` PINGs the shard directly): the reply and total time, PING p50, p99 and max, the PINGs over 150 ms, the base file's size, and the shard's `lastRewrite` |
+| `churn` | Connection churn from inside Cloudflare, through the router's own connect handler with no TCP ingress in between: `n` connections (default 2,000), `par` at a time (50), each AUTH, SET, GET and close. Reports failures with their errors |
 | `vfs` | Writes two `mb` MB files (default 32) to shard 0's storage, then deletes the first, now in the middle of the database, and then the second, at its end, with each step's storage commit time |
 
 `replicate` is a test hook. Routers still read from the replicas the catalog lists, and a replica its primary no
