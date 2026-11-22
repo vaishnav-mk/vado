@@ -3,18 +3,24 @@
 import Redis from "ioredis";
 import assert from "node:assert/strict";
 
-const { BASE = "http://localhost:5173", TOKEN = "local", PORT = "6379" } = process.env;
+const {
+  BASE = "http://localhost:5173",
+  TOKEN = "local",
+  HOST = "127.0.0.1",
+  PORT = "6379",
+  DB = "watchreset",
+  PW = "any", // without VALKEY_PASSWORD on the Worker, any password selects the database
+} = process.env;
+
 const H = { authorization: `Bearer ${TOKEN}` };
 const api = (p) => fetch(BASE + p, { headers: H }).then((r) => r.json());
 
-await api("/db?db=watchreset&shards=1");
-
-const PW = process.env.VALKEY_PASSWORD || "any"; // without VALKEY_PASSWORD any password selects the database
+await api(`/db?db=${DB}&shards=1${process.env.FLAVOUR ? `&flavour=${process.env.FLAVOUR}` : ""}`);
 
 const a = new Redis({
   port: Number(PORT),
-  host: "127.0.0.1",
-  username: "watchreset",
+  host: HOST,
+  username: DB,
   password: PW,
   maxRetriesPerRequest: 0,
 });
@@ -26,7 +32,7 @@ await a.watch("k");
 
 assert.equal(await a.get("k"), "1");
 
-await api("/abort?db=watchreset&shard=0");
+await api(`/abort?db=${DB}&shard=0`);
 
 await new Promise((r) => setTimeout(r, 300));
 
@@ -44,7 +50,7 @@ assert.equal(await a.get("k"), "2");
 // 3. UNWATCH after a lost WATCH clears it
 await a.watch("k");
 
-await api("/abort?db=watchreset&shard=0");
+await api(`/abort?db=${DB}&shard=0`);
 
 await new Promise((r) => setTimeout(r, 300));
 

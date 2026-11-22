@@ -1,0 +1,64 @@
+# Deploys this commit to a throwaway Worker on your Cloudflare account and runs test/e2e.sh against it, on both
+# servers, through the WebSocket ingress. To turn it on, add the repository secrets CLOUDFLARE_API_TOKEN (Workers
+# Scripts: Edit) and CLOUDFLARE_ACCOUNT_ID, and the repository variable E2E=on. The Worker, vado-e2e, keeps its
+# databases between runs; each run makes new ones. Delete it with `npx wrangler delete --name vado-e2e`.
+name: e2e
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: e2e
+  cancel-in-progress: false
+
+jobs:
+  e2e:
+    if: vars.E2E == 'on'
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 24
+          cache: npm
+
+      - run: npm ci
+      - run: npx vp build
+        env:
+          VADO_REDIS: "1"
+
+      - name: Deploy
+        run: |
+          PW=$(openssl rand -hex 24) TOKEN=$(openssl rand -hex 24)
+          echo "::add-mask::$PW"
+          echo "::add-mask::$TOKEN"
+          printf '{"VALKEY_PASSWORD":"%s","BENCH_TOKEN":"%s"}' "$PW" "$TOKEN" > "$RUNNER_TEMP/secrets.json"
+          # Nobody signs in to this copy, so Access is set to values no token can match.
+          npx wrangler deploy --name vado-e2e --secrets-file "$RUNNER_TEMP/secrets.json" \
+            --var ACCESS_TEAM_DOMAIN:https://none.cloudflareaccess.com --var ACCESS_AUD:none | tee "$RUNNER_TEMP/deploy.log"
+          rm "$RUNNER_TEMP/secrets.json"
+          url=$(grep -o 'https://vado-e2e\.[a-z0-9.-]*\.workers\.dev' "$RUNNER_TEMP/deploy.log" | head -1)
+          { echo "BASE=$url"; echo "PW=$PW"; echo "TOKEN=$TOKEN"; } >> "$GITHUB_ENV"
+
+      - name: Shim
+        run: nohup node packages/client/ws-shim.mjs "${BASE/https/wss}/ws" 6379 > "$RUNNER_TEMP/shim.log" 2>&1 &
+
+      - name: e2e on Valkey
+        run: test/e2e.sh
+
+      - name: e2e on Redis
+        run: test/e2e.sh
+        env:
+          FLAVOUR: redis
