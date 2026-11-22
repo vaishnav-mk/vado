@@ -108,8 +108,9 @@ export class Watcher extends DurableObject {
     return regions.flatMap((region) => Array.from({ length: TEST_SENDERS[level] }, (_, k) => ({ region, k })));
   }
 
+  // Per database, so a test on one database never takes over another's senders.
   #sender(region, k) {
-    return this.env.SENDER.getByName(`${region}/${k}`, { locationHint: region });
+    return this.env.SENDER.getByName(`${this.#name}/${region}/${k}`, { locationHint: region });
   }
 
   #testView() {

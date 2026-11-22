@@ -16,7 +16,7 @@ export class Sender extends DurableObject {
   /** Test traffic on database `db` until `until`: write the same 20,000 keys, then read them back three
    *  times, like a cache. The keys never change, so test traffic never fills the database. */
   async loop(db, prefix, until) {
-    await this.ctx.storage.put("loop", { db, prefix, until, round: 0 });
+    await this.ctx.storage.put("loop", { id: crypto.randomUUID(), db, prefix, until, round: 0 });
     await this.ctx.storage.setAlarm(Date.now());
   }
 
@@ -34,7 +34,7 @@ export class Sender extends DurableObject {
     try {
       await runTest("throughput", this.env, new URLSearchParams({ ...ROUND, db: loop.db, prefix: loop.prefix, ...(loop.round % 4 ? { op: "get" } : {}) }));
     } catch { next += RETRY_MS; } // a shard restarting, say
-    if (!(await this.ctx.storage.get("loop"))) return; // stop() ran meanwhile
+    if ((await this.ctx.storage.get("loop"))?.id !== loop.id) return; // stop(), or a new loop(), ran meanwhile
     await this.ctx.storage.put("loop", { ...loop, round: loop.round + 1 });
     await this.ctx.storage.setAlarm(next);
   }
