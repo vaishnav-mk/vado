@@ -141,7 +141,10 @@ placement, the password, and what happens to clients when a shard resets.
 - **Why needed:** a Worker's public URL takes HTTP, not raw TCP.
 - **How it helps:** any stock client works through the shim, and the path is the same router.
 - **Trade-off:** WebSockets can't push back on the sender, so a client that outruns its router by `WS_MAX_QUEUED` is
-  disconnected. Served only when `VALKEY_PASSWORD` is set.
+  disconnected. Nor can a Worker see what its client has read: on the `vado-acks` subprotocol, which the shim speaks,
+  the client says how many bytes it has taken, and the router stops sending past 8 MB unacknowledged
+  (`WS_UNACKED`). Other WebSocket clients get replies as fast as they're made. Served only when `VALKEY_PASSWORD`
+  is set.
 
 ## What the design buys, and costs
 

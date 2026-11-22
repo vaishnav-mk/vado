@@ -110,6 +110,7 @@ Every hop stops reading its source at a high mark and resumes below a low mark (
 | All of a shard's unacknowledged replies and replication bytes | 16 MB / 8 MB | Every client of the shard |
 | A primary's bytes not yet sent to, or acknowledged by, one replica | 8 MB (`REPL_BACKLOG`) | Nothing: the replica is dropped and copied again |
 | WebSocket ingress | 16 MB queued | Can't push back, so it disconnects the client |
+| A router's replies a `vado-acks` WebSocket client hasn't acknowledged | 8 MB / 4 MB (`WS_UNACKED`) | That client |
 
 So memory stays bounded, and overload shows up as slower clients rather than errors. Replicas that all lag slow
 the primary's writes down; one stuck replica is dropped before it can stall them.

@@ -127,6 +127,9 @@ export const PULSE_MS = 2_000;
 
 /** WebSockets can't push back on the sender, so a client that outruns its router by this much is disconnected. */
 export const WS_MAX_QUEUED = 16 << 20;
+/** Nor can a Worker see what a client has read, so a client on the "vado-acks" subprotocol says how much it has,
+ *  and its router stops sending (and so reading its requests) while this much is unacknowledged. */
+export const WS_UNACKED = 8 << 20;
 
 // ---- the dashboard's live numbers (src/admin/watcher.js) and test traffic (src/bench/sender.js) ----
 

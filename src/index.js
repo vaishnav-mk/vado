@@ -3,7 +3,7 @@
 // requests with a bearer token are the bench API; anything else is the dashboard itself (the DASHBOARD
 // service binding), when there is one. The dashboard calls back through the Admin entrypoint.
 import { serve, live } from "./router/serve.js";
-import { wsSocket } from "./router/websocket.js";
+import { ACKS, wsSocket } from "./router/websocket.js";
 import { bench } from "./bench/bench.js";
 import { current } from "./catalog/databases.js";
 import { DB_NAME } from "./catalog/catalog.js";
@@ -63,9 +63,10 @@ function websocket(req, env, ctx) {
   if (!env.VALKEY_PASSWORD) return new Response("WebSocket ingress needs VALKEY_PASSWORD set", { status: 403 });
   const [client, server] = Object.values(new WebSocketPair());
   server.accept();
+  const acks = (req.headers.get("sec-websocket-protocol") ?? "").split(",").some((p) => p.trim() === ACKS);
   const cf = req.cf ?? {};
   live.colo ??= cf.colo ?? null;
   const where = { addr: req.headers.get("cf-connecting-ip"), colo: cf.colo, city: cf.city, country: cf.country, lat: Number(cf.latitude), lon: Number(cf.longitude) };
-  ctx.waitUntil(serve(wsSocket(server), env, "default", "ws", where));
-  return new Response(null, { status: 101, webSocket: client });
+  ctx.waitUntil(serve(wsSocket(server, acks), env, "default", "ws", where));
+  return new Response(null, { status: 101, webSocket: client, headers: acks ? { "sec-websocket-protocol": ACKS } : {} });
 }
