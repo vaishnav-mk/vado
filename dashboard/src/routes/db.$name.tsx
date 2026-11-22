@@ -39,7 +39,7 @@ function LivePage({ db, databases, regions }: { db: Database; databases: Databas
   return (
     <>
       <Header name={db.name} databases={databases} regions={regions} state={live.state} connection={live.connection} />
-      <Dashboard name={db.name} live={live} regions={regions} dark={dark} />
+      <Dashboard key={db.name} name={db.name} live={live} regions={regions} dark={dark} />
     </>
   );
 }

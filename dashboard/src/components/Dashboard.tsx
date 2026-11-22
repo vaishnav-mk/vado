@@ -1,5 +1,5 @@
 // One database, live.
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { Banner, Grid } from "@cloudflare/kumo";
 import { Activity } from "./Activity";
 import { ResponseTime, Throughput } from "./Charts";
@@ -17,7 +17,6 @@ export function Dashboard({ name, live, regions, dark }: { name: string; live: L
   const { state, history, events } = live;
   const [selected, setSelected] = useState<number | null>(null);
   const [last, setLast] = useState<LastCommand | null>(null);
-  useEffect(() => { setSelected(null); setLast(null); }, [name]);
   const shards = state?.shards ?? [], t = state?.totals;
   const reads = (t?.reads ?? 0) + (t?.replicaReads ?? 0), now = state?.at ?? 0;
   return (
