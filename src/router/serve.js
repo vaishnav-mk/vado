@@ -4,7 +4,7 @@ import { Router, setSocketBudget } from "./router.js";
 import { commandTable } from "../protocol/commands.js";
 import { database, forget, lookup, objectOptions, replicaRegion, replicaStub, shardStub } from "../catalog/databases.js";
 import { coloOf } from "../replication/regions.js";
-import { IDLE_MS, PULSE_MS } from "../constants.js";
+import { deployedAt, IDLE_MS, PULSE_MS } from "../constants.js";
 
 const tables = new Map(); // flavour -> Promise<command table>, per isolate
 
@@ -104,6 +104,7 @@ async function serveRouter(socket, env, name, conn) {
     onDropped: forget,
     signIns: conn.via === "binding" ? null : signIns(env, conn.where),
     idleMs: Number(env.ROUTER_IDLE_MS || IDLE_MS),
+    dial: `router-${deployedAt(env)}:6379`,
   });
   conn.router = router;
   report(env);

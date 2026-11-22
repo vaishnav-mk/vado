@@ -39,6 +39,13 @@ export const WATCHDOG_MS = 1_000;
  * so a long blocking command isn't checked every second.
  */
 export const PROBE_AFTER_MS = 1_000;
+/**
+ * A shard that closes a router's socket without running what is pending on it (restarting onto new code, or
+ * closing before its greeting) gets it again on a new socket, after this, doubling per try, up to REDIALS tries
+ * (about 5 s in all). An RPC batch the shard refused while restarting is retried the same way.
+ */
+export const REDIAL_MS = 10;
+export const REDIALS = 9;
 /** How long a shard may take to send its greeting; a cold shard boots for seconds first. */
 export const GREETING_MS = 20_000;
 
@@ -121,6 +128,12 @@ export const REPL_COPY_MS = 5 * 60_000;
 // A primary with no client activity or writes for this long, whose replicas haven't been read for this long
 // either, retires its replicas and stops its alarm, so an idle replicated database sleeps. Activity wakes it.
 export const REPL_IDLE_MS = 10 * 60_000;
+/** When this code was deployed (its Worker version's timestamp), or 0 if unknown. Routers put theirs in the address
+ *  they dial ("router-<ms>:6379"), which also says they understand the restart marker (Upstream in router.js), and
+ *  primaries in their replication dial ("repl-<ms>:6379"). */
+export const deployedAt = (env) => Date.parse(env.VERSION?.timestamp ?? "") || 0;
+/** What a restarting shard's RPCs throw, before running anything: the router tries again. */
+export const RESTARTING = "shard restarting onto newer code";
 /** After a connection writes to a shard, its reads of that shard go to the primary for this long, so it reads its own writes. */
 export const READ_YOUR_WRITES_MS = 2_000;
 

@@ -6,7 +6,7 @@ import { keyIndexes } from "../protocol/commands.js";
 import { shardOfSlot, slotOf } from "../protocol/slots.js";
 import { DB_NAME, DB_NAME_RULE } from "../catalog/catalog.js";
 import { sameSecret, secretMatches } from "./secrets.js";
-import { FAN_OUT, GREETING_MS, IDLE_MS, ISOLATE_HIGH, ISOLATE_LOW, MAX_REQUEST, MAX_UNAUTHED, PROBE_AFTER_MS, READ_YOUR_WRITES_MS, REPL_RETRY_MS, ROUTER_HIGH_WATER, ROUTER_LOW_WATER, RPC_BATCH_BYTES, SOCKET_BUDGET, WATCHDOG_MS } from "../constants.js";
+import { FAN_OUT, GREETING_MS, IDLE_MS, ISOLATE_HIGH, ISOLATE_LOW, MAX_REQUEST, MAX_UNAUTHED, PROBE_AFTER_MS, READ_YOUR_WRITES_MS, REDIAL_MS, REDIALS, REPL_RETRY_MS, RESTARTING, ROUTER_HIGH_WATER, ROUTER_LOW_WATER, RPC_BATCH_BYTES, SOCKET_BUDGET, WATCHDOG_MS } from "../constants.js";
 
 const enc = new TextEncoder();
 const OK = simple("OK");
@@ -87,6 +87,7 @@ class Upstream {
     this.index = index;
     this.stub = stub;
     this.sent = []; // send times of pending requests, parallel to `pending`
+    this.again = []; // their bytes, parallel to `pending`, to send again on a new socket (#redial)
     this.probing = false;
     this.probes = 0; // watchdog checks since the last reply, each waiting twice as long
     this.pending = [];
@@ -96,30 +97,41 @@ class Upstream {
     this.passthrough = null;
     this.inflight = 0;
     this.lastUsed = router.now;
+    this.redials = 0; // tries since the last greeting
+    this.inTx = false; // the shard has run a MULTI sent here and not yet its EXEC
+    this.gen = 0; // which socket: callbacks from an older one are ignored
     // The shard greets a "router" dial with the id of the instance that accepted the socket. If
     // the object is later reset or moved, the runtime may leave this socket open but dead; the
     // watchdog compares that id with the current one to notice. (Asking stub.instance() separately
     // could reach a newer instance than the one holding this socket, and the stall went unseen.)
     this.instanceId = null;
-    this.socket = stub.connect("router:6379");
+    this.greeting = null;
     socketsOpen++;
+    this.#dial();
+  }
+
+  #dial() {
+    const gen = this.gen;
+    this.socket = this.stub.connect(this.router.dial);
     this.writer = this.socket.writable.getWriter();
-    this.#read();
+    this.#read(this.socket, gen);
   }
 
   // Called by the router's watchdog.
   async check(now) {
-    if (this.dead || this.probing || !this.sent.length || now - this.sent[0] < PROBE_AFTER_MS * 2 ** Math.min(this.probes, 4)) return;
+    if (this.dead || this.probing || !this.writer || !this.sent.length || now - this.sent[0] < PROBE_AFTER_MS * 2 ** Math.min(this.probes, 4)) return;
     this.probing = true;
+    const gen = this.gen;
     try {
       const current = await this.stub.instance();
+      if (gen !== this.gen) return;
       // No greeting long after sending means no instance ever served this socket.
       if (this.instanceId === null ? now - this.sent[0] > GREETING_MS : current !== this.instanceId) this.#fail();
       else this.probes++;
     } catch {
       // Unreachable right now, or a stub of an instance that reset (it stays broken): the next check
       // retries with a fresh one.
-      if (!this.dead) this.stub = this.router.stubOf(this.index) ?? this.stub;
+      if (gen === this.gen) this.stub = this.router.stubOf(this.index) ?? this.stub;
     } finally { this.probing = false; }
   }
 
@@ -127,12 +139,13 @@ class Upstream {
     if (this.dead) return cb(LOST);
     this.pending.push(cb);
     this.sent.push(this.router.now);
+    this.again.push(bytes); // views of the client's buffer never change (append), so no copy
     this.raw(bytes);
   }
 
   // Nothing outstanding and unused for `ms`: the router may close it so the shard can sleep.
   idle(now, ms) {
-    return !this.dead && !this.pending.length && !this.out.length && !this.inflight && !this.passthrough && now - this.lastUsed > ms;
+    return !this.dead && this.writer && !this.pending.length && !this.out.length && !this.inflight && !this.passthrough && now - this.lastUsed > ms;
   }
 
   // Bytes whose replies are not matched to callbacks (RESP3 subscribes, passthrough).
@@ -142,54 +155,116 @@ class Upstream {
     this.out.push(bytes);
     if (!this.scheduled) {
       this.scheduled = true;
-      queueMicrotask(() => {
-        this.scheduled = false;
-        if (!this.out.length || this.dead) return;
-        const b = concat(this.out); // copy: request bytes may alias the client's read buffer
-        this.out = [];
-        this.inflight += b.length;
-        isolateAdd(b.length);
-        this.writer.write(b).then(() => { this.inflight -= b.length; isolateAdd(-b.length); this.router.wake(); }, () => { isolateAdd(-b.length); this.#fail(); });
-      });
+      queueMicrotask(() => this.#flush());
     }
   }
 
-  async #read() {
+  #flush() {
+    this.scheduled = false;
+    if (!this.out.length || this.dead || !this.writer) return; // no writer: dialing again, and #redial resends
+    const b = concat(this.out); // copy: request bytes may alias the client's read buffer
+    const gen = this.gen;
+    this.out = [];
+    this.inflight += b.length;
+    isolateAdd(b.length);
+    this.writer.write(b).then(() => {
+      isolateAdd(-b.length);
+      if (gen === this.gen) { this.inflight -= b.length; this.router.wake(); }
+    }, () => {
+      // The shard closed the socket. Whether what was pending ran is for the read side to say: it may still
+      // have the shard's restart marker to read. It ends soon after; if it doesn't, the socket is dead.
+      isolateAdd(-b.length);
+      setTimeout(() => { if (gen === this.gen) this.#fail(); }, 2000);
+    });
+  }
+
+  async #read(socket, gen) {
     let buf = new Uint8Array(0), start = 0;
     const part = {}; // how far frameEnd() got into a reply that is still arriving
     try {
-      for await (const chunk of this.socket.readable) {
+      for await (const chunk of socket.readable) {
+        if (gen !== this.gen) return;
         buf = start < buf.length ? append(buf.subarray(start), chunk) : chunk;
         start = 0;
-        for (let e; (e = frameEnd(buf, start, buf.length, part)) >= 0; start = e) this.#frame(buf.slice(start, e));
+        for (let e; gen === this.gen && (e = frameEnd(buf, start, buf.length, part)) >= 0; start = e) this.#frame(buf.slice(start, e));
       }
     } catch { /* reset or protocol error: fail below */ }
-    this.#fail();
+    if (gen !== this.gen) return;
+    // Closed before its greeting, an instance never served the socket: nothing here ran.
+    if (this.instanceId === null && !this.refused && this.#canRedial()) this.#redial();
+    else this.#fail();
   }
+
+  // Only a primary's socket carries nothing the next one can't be given: a replica that closes before its greeting
+  // isn't ready (the router reads from the primary instead), and pub/sub subscriptions live on their socket.
+  #canRedial() { return typeof this.index === "number" && !this.passthrough; }
 
   #frame(f) {
     this.lastUsed = this.router.now;
     if (this.instanceId === null) {
       if (f[0] === 45) { this.refused = true; return; } // a dropped shard's "-ERR database dropped" instead of a greeting
       this.instanceId = str(f.subarray(1, f.length - 2)); // the greeting
+      this.greeting = f;
+      this.redials = 0;
       return;
     }
+    // The greeting again: the shard is restarting (new code), and ran nothing still pending here.
+    if (f.length === this.greeting.length && f.every((x, i) => x === this.greeting[i]) && this.#canRedial()) return this.#redial();
     // Replies owed to commands sent before the subscribe (CLIENT SETNAME, PUBLISH) come first, in order.
     if (this.passthrough && !this.pending.length) return this.passthrough(f);
     if (f[0] === 62) return this.router.push(f); // RESP3 push
     const cb = this.pending.shift();
     this.sent.shift();
+    const bytes = this.again.shift();
     this.probes = 0;
+    if (bytes === MULTI) this.inTx = true;
+    else if (bytes === EXEC) this.inTx = false;
     if (cb) cb(f);
     else this.router.push(f);
+  }
+
+  // The shard closed this socket and ran nothing pending on it: send all of it again, in order, on a new
+  // socket, after a backoff (it may still be restarting). Commands sent meanwhile queue behind.
+  #redial() {
+    if (++this.redials > REDIALS) return this.#fail();
+    this.gen++;
+    this.socket.close().catch(() => {});
+    this.writer = null;
+    this.inflight = 0;
+    this.instanceId = null;
+    this.probes = 0;
+    this.router.lostConnection(this); // a WATCH there is gone
+    // A transaction whose MULTI ran there went with it, EXEC unrun: the rest of it gets LOST, not resent.
+    if (this.inTx) {
+      const n = this.again.indexOf(EXEC) + 1 || this.again.length;
+      const cbs = this.pending.splice(0, n);
+      this.sent.splice(0, n);
+      this.again.splice(0, n);
+      this.inTx = false;
+      for (const cb of cbs) cb(LOST);
+    }
+    setTimeout(() => {
+      if (this.dead) return;
+      this.stub = this.router.stubOf(this.index); // a stub of the instance that restarted stays broken
+      this.#dial();
+      // The new connection gets this connection's settings (RESP3, client name) first, then everything owed.
+      const setup = this.router.setup();
+      this.pending.unshift(...setup.map(() => noop));
+      this.again.unshift(...setup);
+      this.sent = this.pending.map(() => this.router.now);
+      this.out = [...this.again];
+      this.#flush();
+    }, REDIAL_MS * 2 ** (this.redials - 1));
   }
 
   #fail() {
     if (this.dead) return;
     this.dead = true;
+    this.gen++;
     const pending = this.pending, reply = this.refused ? this.router.dropped() : LOST;
     this.pending = [];
     this.sent = [];
+    this.again = [];
     for (const cb of pending) cb(reply);
     this.socket.close().catch(() => {});
     socketsOpen--;
@@ -203,10 +278,12 @@ class Upstream {
     if (this.dead) return;
     socketsOpen--;
     this.dead = true;
+    this.gen++;
     // Callers wait for earlier replies first (#afterAll); anything still owed gets LOST rather than never.
     const pending = this.pending;
     this.pending = [];
     this.sent = [];
+    this.again = [];
     for (const cb of pending) cb(LOST);
     this.socket.close().catch(() => {});
   }
@@ -229,6 +306,7 @@ class RpcUpstream {
     this.inflight = 0;
     this.passthrough = null;
     this.sent = [];
+    this.retries = 0;
   }
   // Queued bytes count as in flight from the moment they are queued: with one batch at a time, a
   // slow or cold shard would otherwise let the router keep reading clients and queue here without
@@ -258,6 +336,7 @@ class RpcUpstream {
     this.busy = true;
     const done = () => { this.busy = false; this.inflight -= bytes; isolateAdd(-bytes); this.router.wake(); this.#schedule(); };
     this.stub.execRaw(body, cbs.length, this.router.proto).then((reply) => {
+      this.retries = 0;
       let i = 0;
       for (const cb of cbs) {
         const e = i < 0 ? -1 : frameEnd(reply, i, reply.length);
@@ -267,6 +346,14 @@ class RpcUpstream {
       }
       done();
     }, (e) => {
+      // Refused, unrun, by a shard restarting onto new code: again, in order, on its next instance.
+      if (e?.message?.includes(RESTARTING) && ++this.retries <= REDIALS) {
+        this.pending.unshift(...cbs);
+        this.out.unshift(...parts);
+        this.outBytes += bytes;
+        this.stub = this.router.stubOf(this.index); // the old one breaks when the object resets
+        return setTimeout(() => { this.busy = false; this.#flush(); }, REDIAL_MS * 2 ** (this.retries - 1));
+      }
       // A stub whose object was reset stays broken: drop this upstream so the next command gets a
       // fresh stub (socket upstreams already do this when their socket fails).
       this.dead = true;
@@ -321,8 +408,9 @@ export class Router {
   #trusted; // a service binding (our own Workers): the shared password opens any database
   #lookup; // (name) => the database's record, or null; never creates one
 
-  constructor(socket, { db, table, shard, pubsub, replica, password, trusted = false, lookup = null, open, onDropped = null, signIns = null, idleMs = IDLE_MS }) {
+  constructor(socket, { db, table, shard, pubsub, replica, password, trusted = false, lookup = null, open, onDropped = null, signIns = null, idleMs = IDLE_MS, dial = "router:6379" }) {
     this.socket = socket;
+    this.dial = dial; // the address shard sockets dial: "router-<deploy ms>:6379" (see deployedAt in shard.js)
     this.db = db; // { name, created, shards, regions, replicas }
     this.table = table;
     this.shardStub = shard; // (i) => stub
@@ -431,17 +519,23 @@ export class Router {
     const socket = needsSocket || i === "pubsub" || socketsOpen < socketBudget;
     up = socket ? new Upstream(this, i, this.stubOf(i)) : new RpcUpstream(this, i, this.stubOf(i));
     this.#ups.set(i, up);
-    if (socket && this.proto === 3) up.send(HELLO3, noop);
-    if (socket && this.#name) up.send(command(["CLIENT", "SETNAME", this.#name]), noop);
+    if (socket) for (const c of this.setup()) up.send(c, noop);
     return up;
   }
   stubOf(i) {
     return i === "pubsub" ? this.pubsubStub() : typeof i === "string" ? this.replicaStub(Number(i.slice(1))) : this.shardStub(i);
   }
+  // What a new shard socket is sent first, so it serves this connection as the last one did.
+  setup() {
+    return [...(this.proto === 3 ? [HELLO3] : []), ...(this.#name ? [command(["CLIENT", "SETNAME", this.#name])] : [])];
+  }
   dropUpstream(up) {
     if (this.#ups.get(up.index) === up) this.#ups.delete(up.index);
-    // A reset shard forgot the WATCH. Keep #watch set so the next EXEC knows it was watched and
-    // aborts (null reply, as on a conflict) instead of running unconditionally on a new instance.
+    this.lostConnection(up);
+  }
+  // A shard connection's state is gone. Keep #watch set so the next EXEC knows it was watched and
+  // aborts (null reply, as on a conflict) instead of running unconditionally on a new instance.
+  lostConnection(up) {
     if (up === this.#watchUp) this.#watchBroken = true;
   }
   #forward(i, raw, retryable = false, s = this.#slot()) {
