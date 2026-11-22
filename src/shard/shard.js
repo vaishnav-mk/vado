@@ -21,7 +21,11 @@ export const valkeyArgs = (env, replica) => [
   "--auto-aof-rewrite-percentage", "0",
   // Latency tracking times each command, but the Workers clock doesn't move during one.
   "--latency-tracking", "no",
-  "--maxmemory", env.VALKEY_MAXMEMORY || "64mb", "--maxmemory-policy", env.VALKEY_MAXMEMORY_POLICY || "noeviction",
+  // A replica follows its primary, as a Valkey replica does: it neither expires nor evicts keys of its own (the
+  // primary's stream deletes them; reads still hide expired keys), and has no memory limit to fail a streamed
+  // write on, which with replies off nobody would see.
+  ...(replica ? ["--import-mode", "yes", "--maxmemory", "0"] : ["--maxmemory", env.VALKEY_MAXMEMORY || "64mb"]),
+  "--maxmemory-policy", env.VALKEY_MAXMEMORY_POLICY || "noeviction",
   // Every RPC batch and router socket is a new Valkey connection. The default accepts 10 per event
   // loop cycle, which queued hundreds of RPC batches until callers gave up (seen at 96 x 4 load).
   "--max-new-connections-per-cycle", "1000",

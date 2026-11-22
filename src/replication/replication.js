@@ -8,7 +8,8 @@ import { command, concat } from "../protocol/resp.js";
 const REPLY_OFF = command(["CLIENT", "REPLY", "OFF"]);
 // With replies off, only this comes back: "+OK" then "+PONG", once the replica has run everything before it.
 const MARK = concat([command(["CLIENT", "REPLY", "ON"]), command(["PING"]), command(["CLIENT", "REPLY", "OFF"])]);
-const START = concat([REPLY_OFF, command(["FLUSHALL"])]);
+// The stream's connection is the import source (replicas run with import-mode): to it no key is ever expired.
+const START = concat([REPLY_OFF, command(["CLIENT", "IMPORT-SOURCE", "ON"]), command(["FLUSHALL"])]);
 export const MANIFEST = "aof/appendonly.aof.manifest";
 const COPY_CHUNK = 1 << 20;
 
