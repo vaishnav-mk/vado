@@ -684,7 +684,8 @@ export class Router {
     if (!SUBSCRIBE.has(name) && !name.endsWith("unsubscribe")) return this.#forward("pubsub", raw);
     const up = this.#up("pubsub");
     if (this.proto === 3) return up.raw(raw.slice()); // confirmations and messages arrive as pushes
-    if (name.endsWith("unsubscribe")) return this.#reply(arrayOf([bulk(name), bulk(null), integer(0)]));
+    // Not subscribed: Valkey answers once per channel named, or once if none is.
+    if (name.endsWith("unsubscribe")) return this.#reply(concat((argv.length > 1 ? argv.slice(1) : [null]).map((c) => arrayOf([bulk(name), bulk(c), integer(0)]))));
     // RESP2: the connection becomes a pipe to the pubsub object until it unsubscribes from everything.
     this.#pass = up;
     up.passthrough = (f) => {
