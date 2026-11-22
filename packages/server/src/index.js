@@ -7,10 +7,11 @@ import { ACKS, wsSocket } from "./router/websocket.js";
 import { bench } from "./bench/bench.js";
 import { current } from "./catalog/databases.js";
 import { DB_NAME } from "./catalog/catalog.js";
-import { signedIn } from "./admin/admin.js";
+import { accessUser } from "./admin/access.js";
 import { SIGNED_IN } from "./admin/watcher.js";
 
 export { Admin } from "./admin/admin.js";
+export { accessUser } from "./admin/access.js";
 export { FLAVOURS } from "./shard/servers.js";
 
 /** The Worker's handlers: the database's, and `app.fetch` for every other request. */
@@ -44,8 +45,7 @@ async function watch(req, env) {
   // The Watcher writes its probe key only while someone signed in watches; only this says who is.
   const headers = new Headers(req.headers);
   headers.delete(SIGNED_IN);
-  const session = /(?:^|;\s*)vado_session=([^;]+)/.exec(req.headers.get("cookie") ?? "")?.[1];
-  if (session && (await signedIn(env, session))) headers.set(SIGNED_IN, "1");
+  if (await accessUser(req, env)) headers.set(SIGNED_IN, "1");
   return env.WATCHER.getByName(name).fetch(new Request(req, { headers }));
 }
 

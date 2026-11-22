@@ -1,41 +1,26 @@
 // What the dashboard does besides watching (live numbers come from /live, a Watcher per database): the database
-// list, creating one, running a command, restarting a shard, test traffic, and signing in. Its server functions call
-// this in the same Worker. It never returns a password hash or a client's address. Signing in is by BENCH_TOKEN:
-// session() trades it for a signed, expiring session string, so the dashboard never stores the token, and
-// authorized() checks one.
+// list, creating one, running a command, restarting a shard and test traffic. Its server functions call this in the
+// same Worker and check who is signed in first (Cloudflare Access, admin/access.js). It never returns a password
+// hash or a client's address.
 import { configureReplicas, current, database, replicaRegion, shardStub } from "../catalog/databases.js";
 import { DB_NAME, DB_NAME_RULE } from "../catalog/catalog.js";
 import { RespClient } from "../protocol/resp-client.js";
 import { keyIndexes } from "../protocol/commands.js";
 import { shardOfSlot, slotOf } from "../protocol/slots.js";
 import { commands } from "../router/serve.js";
-import { sameSecret } from "../router/secrets.js";
 import { coloOf, HINTS, REGION_NAMES, WORLD } from "../replication/regions.js";
 import { dbView } from "./views.js";
 
 const enc = new TextEncoder();
 const SHARD_COUNTS = new Set([1, 4, 16, 64]);
-const SESSION_MS = 7 * 24 * 3600_000;
 const WAIT_MS = 3_000; // how long a write from the dashboard waits to hear from its replicas
 // One-shot calls can't use these: they need a connection that stays open.
 const NEEDS_A_CONNECTION = new Set(["subscribe", "psubscribe", "ssubscribe", "monitor", "multi", "watch", "reset", "quit"]);
 // Not from a button: KEYS returns every key at once (SCAN pages through them), and a flush wipes the database.
 const REFUSED = { keys: "KEYS returns every key at once; use SCAN", flushall: "FLUSHALL wipes the database; run it from a client", flushdb: "FLUSHDB wipes the database; run it from a client" };
 
-/** Whether `session` is a live session string from session(): also how /live tells signed-in watchers apart. */
-export async function signedIn(env, session) {
-  if (!env.BENCH_TOKEN || typeof session !== "string") return false;
-  const [until, mac] = session.split(".");
-  return Number(until) > Date.now() && sameSecret(mac ?? "", await hmac(env.BENCH_TOKEN, `dashboard:${until}`));
-}
-
 let myColo = null; // this isolate's colo, once known
 const colo = async () => (myColo ??= await coloOf().catch(() => null));
-
-async function hmac(key, text) {
-  const k = await crypto.subtle.importKey("raw", enc.encode(key), { name: "HMAC", hash: "SHA-256" }, false, ["sign"]);
-  return [...new Uint8Array(await crypto.subtle.sign("HMAC", k, enc.encode(text)))].map((b) => b.toString(16).padStart(2, "0")).join("");
-}
 
 export class Admin {
   constructor(env) {
@@ -120,18 +105,6 @@ export class Admin {
       }
       return { reply, ms, write, read, key, slot, shard: slot === null ? null : shardOfSlot(slot, db.shards), colo: here, replica: read ? replicaRegion(db, here) : null, replication };
     } finally { c.close(); }
-  }
-
-  /** A session string for `token` if it is BENCH_TOKEN, else null. */
-  async session(token) {
-    if (!this.env.BENCH_TOKEN || typeof token !== "string" || !sameSecret(token, this.env.BENCH_TOKEN)) return null;
-    const until = Date.now() + SESSION_MS;
-    return `${until}.${await hmac(this.env.BENCH_TOKEN, `dashboard:${until}`)}`;
-  }
-
-  /** Whether a session string from session() is still good. */
-  async authorized(session) {
-    return await signedIn(this.env, session);
   }
 
   async #find(name, required = false) {

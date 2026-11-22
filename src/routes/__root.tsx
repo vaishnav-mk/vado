@@ -2,7 +2,7 @@ import type { ReactNode } from "react";
 import { createRootRoute, HeadContent, Outlet, Scripts } from "@tanstack/react-router";
 import { TooltipProvider } from "@cloudflare/kumo";
 import { SignedIn } from "../components/Guard";
-import { me } from "../server/session";
+import { me } from "../server/access";
 import css from "../styles.css?url";
 
 // Kumo reads light or dark from data-mode; set it before the first paint, and follow the system after.
@@ -13,7 +13,7 @@ export const Route = createRootRoute({
     meta: [{ charSet: "utf-8" }, { name: "viewport", content: "width=device-width, initial-scale=1" }, { title: "vado" }],
     links: [{ rel: "stylesheet", href: css }],
   }),
-  loader: async () => ({ signedIn: await me() }),
+  loader: async () => ({ user: await me() }),
   shellComponent: Shell,
   component: Root,
 });
@@ -34,9 +34,9 @@ function Shell({ children }: { children: ReactNode }) {
 }
 
 function Root() {
-  const { signedIn } = Route.useLoaderData();
+  const { user } = Route.useLoaderData();
   return (
-    <SignedIn.Provider value={signedIn}>
+    <SignedIn.Provider value={user}>
       <TooltipProvider>
         <div className="min-h-screen bg-kumo-canvas text-kumo-default">
           <Outlet />

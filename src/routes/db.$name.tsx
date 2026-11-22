@@ -36,7 +36,7 @@ function Page() {
 }
 
 function LivePage({ db, databases, regions }: { db: Database; databases: Database[]; regions: Record<string, string> }) {
-  const live = useLive(db.name, useSignedIn()), dark = useDark();
+  const live = useLive(db.name, !!useSignedIn()), dark = useDark();
   return (
     <>
       <Header name={db.name} databases={databases} regions={regions} state={live.state} connection={live.connection} />

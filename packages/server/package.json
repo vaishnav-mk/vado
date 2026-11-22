@@ -15,6 +15,7 @@
   "dependencies": {
     "@vado/client": "*",
     "@vado/wasm": "*",
-    "ioredis": "^5.4.1"
+    "ioredis": "^5.4.1",
+    "jose": "^6.2.18"
   }
 }

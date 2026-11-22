@@ -22,7 +22,7 @@ const RESTARTING_MS = 10_000; // a shard counts as restarting for this long afte
 const MEMORY_HIGH = 0.9, MEMORY_OK = 0.8; // warn once above the first, again only after dropping below the second
 const TEST_SENDERS = { light: 1, medium: 3, heavy: 6 }; // per region
 const PROBE_KEY = "dashboard:probe";
-/** Set by the Worker on /live for a watcher with a dashboard session (index.js). */
+/** Set by the Worker on /live for a watcher signed in with Cloudflare Access (index.js). */
 export const SIGNED_IN = "x-vado-signed-in";
 
 const median = (xs) => (xs.length ? [...xs].sort((a, b) => a - b)[xs.length >> 1] : null);
