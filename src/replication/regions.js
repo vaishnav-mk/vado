@@ -6,6 +6,10 @@ export const HINTS = new Set(["wnam", "enam", "sam", "weur", "eeur", "apac", "ap
 /** One shard per region in turn, for a database spread around the world. */
 export const WORLD = ["wnam", "enam", "sam", "weur", "eeur", "me", "afr", "apac", "oc"];
 
+/** Hints Cloudflare accepts but has no Durable Objects in yet: objects hinted there run in a nearby region instead
+ *  (South America in eastern North America, say). https://developers.cloudflare.com/durable-objects/reference/data-location/ */
+export const HOSTED_ELSEWHERE = new Set(["sam", "afr", "me"]);
+
 /** What each region is called, for people. */
 export const REGION_NAMES = { wnam: "Western North America", enam: "Eastern North America", sam: "South America", weur: "Western Europe", eeur: "Eastern Europe", me: "Middle East", afr: "Africa", apac: "Asia Pacific", oc: "Oceania" };
 

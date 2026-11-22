@@ -4,11 +4,11 @@
 // a bright cap means it is serving reads. Hover a bar for the details; click it to select that shard (as the
 // dial and the table do).
 import { useState } from "react";
-import { Badge, LayerCard, Text } from "@cloudflare/kumo";
+import { Badge, LayerCard, Text, Tooltip } from "@cloudflare/kumo";
 import { Legend } from "./Legend";
 import { REPLICA, replicaColor, replicaWords } from "../lib/colors";
 import { ms, num, plural } from "../lib/format";
-import { REGION_NAMES, WORLD } from "../lib/places";
+import { HOSTED_ELSEWHERE, REGION_NAMES, WORLD } from "../lib/places";
 import { replicaCounts, replicaLine, SLEEP_NOTE } from "../lib/replicas";
 import type { LiveState, Replica } from "../lib/types";
 
@@ -139,7 +139,11 @@ function RowView({ row, maxLag, gap, focus, onHover, onPick }: {
     <div className={ROW}>
       <div className="min-w-0">
         <div className="truncate text-sm font-medium text-kumo-default">{row.name}</div>
-        <div className="truncate text-xs text-kumo-subtle">{row.city ?? "\u00a0"}</div>
+        {HOSTED_ELSEWHERE.has(row.region) ? (
+          <Tooltip content={`Cloudflare doesn't run Durable Objects in ${row.name} yet, so these copies run in the nearest region that has them.`}>
+            <div className="cursor-help truncate text-xs text-kumo-subtle underline decoration-dotted underline-offset-2">{row.city ? `runs in ${row.city}` : "runs nearby"}</div>
+          </Tooltip>
+        ) : <div className="truncate text-xs text-kumo-subtle">{row.city ?? "\u00a0"}</div>}
       </div>
       <div className={`${STRIP} flex h-9 items-end ${gap}`} role="img"
         aria-label={`${row.name}: ${serving} of ${row.cells.length} serving${row.lag !== null ? `, up to ${ms(row.lag)} behind` : ""}`}>

@@ -8,6 +8,8 @@ import type { Place } from "./types";
 export const REGION_NAMES: Record<string, string> = regions.REGION_NAMES;
 /** The regions a database spreads over, in order. */
 export const WORLD: string[] = regions.WORLD;
+/** Regions whose Durable Objects Cloudflare runs in a nearby region instead. */
+export const HOSTED_ELSEWHERE: Set<string> = regions.HOSTED_ELSEWHERE;
 /** Hash slots a key can fall in. */
 export const SLOTS: number = slots.SLOTS;
 
