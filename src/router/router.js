@@ -423,8 +423,7 @@ export class Router {
     // aborts (null reply, as on a conflict) instead of running unconditionally on a new instance.
     if (up === this.#watchUp) this.#watchBroken = true;
   }
-  #forward(i, raw, retryable = false) {
-    const s = this.#slot();
+  #forward(i, raw, retryable = false, s = this.#slot()) {
     // Read-only, non-blocking commands are retried once on a fresh upstream if the shard was
     // reset under them; anything else gets LOST (it may have run). Reads may go to a nearby replica,
     // and are retried on the primary if it fails.
@@ -558,7 +557,7 @@ export class Router {
       const ks = (keys ?? []).map((k) => enc.encode(k));
       const shard = !ks.length || this.db.shards === 1 ? 0 : this.#shardsOf(ks);
       if (shard < 0) return this.#resolve(s, CROSSSLOT);
-      this.#up(shard).send(copy, (f) => this.#resolve(s, f));
+      this.#forward(shard, copy, this.#retryable(name), s);
     }, this.#lost(s)));
   }
 
@@ -852,14 +851,20 @@ export class Router {
       .then((counts) => this.#resolve(s, integer(Math.min(...counts))), this.#lost(s)));
   }
 
+  // A fan-out that may write (FLUSHALL, FUNCTION LOAD) counts as a write to every shard: read-your-writes and WAIT.
+  #wroteAll(argv) {
+    if (this.table.get(lower(argv[0]))?.flags.has("readonly")) return;
+    for (let i = 0; i < this.db.shards; i++) this.#wrote.set(i, Date.now());
+  }
   #fanout(argv, merge) {
     const s = this.#slot();
     this.#hold(this.#afterEarlierReplies(s).then(() => this.#all([argv.map(str)], false))
-      .then((rs) => this.#resolve(s, merge(rs.map((r) => r[0]))), this.#lost(s)));
+      .then((rs) => { this.#wroteAll(argv); this.#resolve(s, merge(rs.map((r) => r[0]))); }, this.#lost(s)));
   }
   #fanoutRaw(argv, merge) {
     const s = this.#slot();
     this.#hold(this.#afterEarlierReplies(s).then(() => this.#all([argv.map(str)], true)).then((rs) => {
+      this.#wroteAll(argv);
       const bad = rs.find((r) => r[0] === 45);
       this.#resolve(s, bad ?? merge(rs));
     }, this.#lost(s)));
