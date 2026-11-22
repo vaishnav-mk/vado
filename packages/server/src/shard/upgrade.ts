@@ -105,7 +105,8 @@ export class Upgrader {
 
   // Its replicas keep serving meanwhile; the next instance copies to them, and they move to its code then.
   async #restart(primary: PrimaryUpgrades, at: number): Promise<void> {
-    await primary.retryAt(at + VERSION_CHECK_MS);
+    // A retry that can't be scheduled mustn't stop this restart: `restarting` refuses all work until the reset.
+    await primary.retryAt(at + VERSION_CHECK_MS).catch((e: Error) => console.error(`upgrade retry: ${e.message}`));
     const t0 = Date.now();
     const drained = await this.#host.drain();
     const report: UpgradeReport = { from: this.#env.VERSION.id, ...drained, drainMs: Date.now() - t0 };
