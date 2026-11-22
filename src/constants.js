@@ -31,8 +31,14 @@ export const IDLE_MS = 30_000;
 export const FAN_OUT = 32;
 /** Bytes per RPC batch, well under the 32 MiB RPC message cap. */
 export const RPC_BATCH_BYTES = 4 << 20;
-/** A shard reply this late makes the router check whether the shard instance changed under it. */
-export const PROBE_AFTER_MS = 5_000;
+/** How often each router checks its shard sockets (stalls, idle ones). */
+export const WATCHDOG_MS = 1_000;
+/**
+ * A shard reply this late makes the router check whether the shard instance changed under it: a reset can leave
+ * the socket open but dead. Each check that finds the same instance doubles the wait for the next (up to 16x),
+ * so a long blocking command isn't checked every second.
+ */
+export const PROBE_AFTER_MS = 1_000;
 /** How long a shard may take to send its greeting; a cold shard boots for seconds first. */
 export const GREETING_MS = 20_000;
 

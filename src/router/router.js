@@ -6,7 +6,7 @@ import { keyIndexes } from "../protocol/commands.js";
 import { shardOfSlot, slotOf } from "../protocol/slots.js";
 import { DB_NAME, DB_NAME_RULE } from "../catalog/catalog.js";
 import { sameSecret, secretMatches } from "./secrets.js";
-import { FAN_OUT, GREETING_MS, IDLE_MS, ISOLATE_HIGH, ISOLATE_LOW, MAX_REQUEST, MAX_UNAUTHED, PROBE_AFTER_MS, READ_YOUR_WRITES_MS, REPL_RETRY_MS, ROUTER_HIGH_WATER, ROUTER_LOW_WATER, RPC_BATCH_BYTES, SOCKET_BUDGET } from "../constants.js";
+import { FAN_OUT, GREETING_MS, IDLE_MS, ISOLATE_HIGH, ISOLATE_LOW, MAX_REQUEST, MAX_UNAUTHED, PROBE_AFTER_MS, READ_YOUR_WRITES_MS, REPL_RETRY_MS, ROUTER_HIGH_WATER, ROUTER_LOW_WATER, RPC_BATCH_BYTES, SOCKET_BUDGET, WATCHDOG_MS } from "../constants.js";
 
 const enc = new TextEncoder();
 const OK = simple("OK");
@@ -88,6 +88,7 @@ class Upstream {
     this.stub = stub;
     this.sent = []; // send times of pending requests, parallel to `pending`
     this.probing = false;
+    this.probes = 0; // watchdog checks since the last reply, each waiting twice as long
     this.pending = [];
     this.out = [];
     this.scheduled = false;
@@ -108,14 +109,18 @@ class Upstream {
 
   // Called by the router's watchdog.
   async check(now) {
-    if (this.dead || this.probing || !this.sent.length || now - this.sent[0] < PROBE_AFTER_MS) return;
+    if (this.dead || this.probing || !this.sent.length || now - this.sent[0] < PROBE_AFTER_MS * 2 ** Math.min(this.probes, 4)) return;
     this.probing = true;
     try {
       const current = await this.stub.instance();
       // No greeting long after sending means no instance ever served this socket.
       if (this.instanceId === null ? now - this.sent[0] > GREETING_MS : current !== this.instanceId) this.#fail();
-    } catch { /* shard unreachable right now: the next check retries */ }
-    this.probing = false;
+      else this.probes++;
+    } catch {
+      // Unreachable right now, or a stub of an instance that reset (it stays broken): the next check
+      // retries with a fresh one.
+      if (!this.dead) this.stub = this.router.stubOf(this.index) ?? this.stub;
+    } finally { this.probing = false; }
   }
 
   send(bytes, cb) {
@@ -174,6 +179,7 @@ class Upstream {
     if (f[0] === 62) return this.router.push(f); // RESP3 push
     const cb = this.pending.shift();
     this.sent.shift();
+    this.probes = 0;
     if (cb) cb(f);
     else this.router.push(f);
   }
@@ -359,7 +365,7 @@ export class Router {
         // Close shard sockets nobody is using, so idle shards stop being billed and can sleep.
         if (i !== "pubsub" && i !== this.#watch && !this.#multi && up.idle(this.now, this.#idleMs)) { up.close(); this.#ups.delete(i); }
       }
-    }, 2000);
+    }, WATCHDOG_MS);
     try {
       for (;;) {
         while (this.#blocked() && !this.#closed) await new Promise((r) => { this.#waiter = r; });
@@ -422,13 +428,15 @@ export class Router {
   #up(i, needsSocket = false) {
     let up = this.#ups.get(i);
     if (up && !up.dead && (!needsSocket || up instanceof Upstream)) return up;
-    const stub = i === "pubsub" ? this.pubsubStub() : typeof i === "string" ? this.replicaStub(Number(i.slice(1))) : this.shardStub(i);
     const socket = needsSocket || i === "pubsub" || socketsOpen < socketBudget;
-    up = socket ? new Upstream(this, i, stub) : new RpcUpstream(this, i, stub);
+    up = socket ? new Upstream(this, i, this.stubOf(i)) : new RpcUpstream(this, i, this.stubOf(i));
     this.#ups.set(i, up);
     if (socket && this.proto === 3) up.send(HELLO3, noop);
     if (socket && this.#name) up.send(command(["CLIENT", "SETNAME", this.#name]), noop);
     return up;
+  }
+  stubOf(i) {
+    return i === "pubsub" ? this.pubsubStub() : typeof i === "string" ? this.replicaStub(Number(i.slice(1))) : this.shardStub(i);
   }
   dropUpstream(up) {
     if (this.#ups.get(up.index) === up) this.#ups.delete(up.index);
