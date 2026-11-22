@@ -46,8 +46,10 @@
     { "tag": "v8", "new_sqlite_classes": ["ValkeyShard8", "ValkeyShard9", "ValkeyShard10", "ValkeyShard11", "ValkeyShard12", "ValkeyShard13", "ValkeyShard14", "ValkeyShard15"] },
     { "tag": "v9", "new_sqlite_classes": ["Watcher"] }
   ],
-  // Self-binding: bench requests reach the TCP connect() handler the way a client Worker would.
-  "services": [{ "binding": "SELF", "service": "valkey-do" }],
+  // SELF: bench requests and the Admin API reach the TCP connect() handler the way a client Worker would.
+  // DASHBOARD: the dashboard (dashboard/, Worker vado-dashboard) serves every request that isn't /ws, /live or the
+  // bench API. It binds back to this Worker's Admin entrypoint, so deploy it once before the first deploy here.
+  "services": [{ "binding": "SELF", "service": "valkey-do" }, { "binding": "DASHBOARD", "service": "vado-dashboard" }],
   "vars": {
     // Shard epochs: a database's creation time picks its shard count for life.
     // Databases created from this epoch on start at 1 shard (64 MB); create bigger ones explicitly.
