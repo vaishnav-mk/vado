@@ -1,12 +1,11 @@
-// One database, live.
 import { useState } from "react";
 import { Banner, Grid } from "@cloudflare/kumo";
 import { Activity } from "./Activity";
 import { ResponseTime, Throughput } from "./Charts";
-import { Globe } from "./Globe";
-import { Replicas } from "./Replicas";
+import { Globe } from "./globe/Globe";
+import { Replicas } from "./replicas/Replicas";
 import { RunCommand } from "./RunCommand";
-import { ShardDial } from "./ShardDial";
+import { ShardDial } from "./dial/ShardDial";
 import { ShardTable } from "./ShardTable";
 import { Stats } from "./Stats";
 import { TestTraffic } from "./TestTraffic";

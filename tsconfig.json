@@ -1,14 +1,14 @@
 {
-  "include": ["src/**/*.ts", "src/**/*.tsx", "vite.config.ts"],
-  "exclude": ["src/**/*.test.ts"],
+  "include": ["src", "packages/*/src", "packages/*/*.ts", "test", "vite.config.ts", "worker-configuration.d.ts"],
   "compilerOptions": {
-    "target": "ES2022",
-    "lib": ["ES2023", "DOM", "DOM.Iterable"],
+    "target": "ES2024",
+    "lib": ["ES2024", "ESNext.Iterator", "DOM", "DOM.Iterable"],
     "module": "ESNext",
     "moduleResolution": "Bundler",
     "jsx": "react-jsx",
     "strict": true,
     "noUncheckedIndexedAccess": false,
+    "noImplicitOverride": true,
     "noEmit": true,
     "allowImportingTsExtensions": true,
     "skipLibCheck": true,
@@ -16,7 +16,7 @@
     "allowJs": true,
     "checkJs": false,
     "isolatedModules": true,
-    "verbatimModuleSyntax": false,
+    "verbatimModuleSyntax": true,
     "types": ["vite/client"]
   }
 }

@@ -1,7 +1,6 @@
-// "Run a command": the common commands with their arguments, turning what was typed into argv, and showing
-// a reply the way valkey-cli does. Pure functions, tested by lib.test.ts.
-import { ms, plural } from "./format.ts";
-import type { ReplicaState, Reply } from "./types";
+// "Run a command": the common commands' arguments, typed fields to argv, and replies shown as valkey-cli does.
+import { ms, plural } from "./format";
+import type { ReplicaState, TypedReply } from "./types";
 
 export interface Arg {
   name: string;
@@ -157,7 +156,7 @@ export const showArgv = (argv: string[]) =>
   argv.map((a) => (a === "" || /[\s"'\\]/.test(a) ? JSON.stringify(a) : a)).join(" ");
 
 /** A reply as valkey-cli prints it. */
-export function showReply(r: Reply, depth = 0): string {
+export function showReply(r: TypedReply, depth = 0): string {
   switch (r.type) {
     case "status":
       return r.value;

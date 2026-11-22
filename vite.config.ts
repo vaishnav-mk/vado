@@ -9,7 +9,7 @@ import tailwindcss from "@tailwindcss/vite";
 // databases run Valkey.
 const redis = process.env.VADO_REDIS === "1";
 
-const GENERATED = ["src/routeTree.gen.ts", "packages/server/src/replication/colos.js"];
+const GENERATED = ["src/routeTree.gen.ts", "worker-configuration.d.ts", "packages/server/src/replication/colos.json"];
 
 // Vendored code, and agent tooling that isn't the project's source.
 const NOT_OURS = ["tools/oxlint/anti-slop/**", ".agents/**", ".claude/**", ".pi/**"];
@@ -26,13 +26,25 @@ export default defineConfig({
       ? {}
       : { "@vado/wasm/redis.wasm": fileURLToPath(new URL("packages/wasm/no-redis.js", import.meta.url)) },
   },
-  test: { include: ["src/**/*.test.ts", "packages/*/src/**/*.test.js"] },
+  test: { include: ["src/**/*.test.ts", "packages/*/src/**/*.test.ts"] },
   lint: {
     ignorePatterns: [...GENERATED, ...NOT_OURS],
     options: { typeAware: true, typeCheck: true },
     // anti-slop (tools/oxlint/anti-slop, vendored from github.com/dmmulroy/anti-slop): every generic rule.
-    jsPlugins: [{ name: "anti-slop", specifier: "./tools/oxlint/anti-slop/index.ts" }],
+    jsPlugins: [
+      { name: "anti-slop", specifier: "./tools/oxlint/anti-slop/index.ts" },
+      { name: "durability", specifier: "@durability/lint" },
+    ],
     rules: {
+      "max-lines": ["error", { max: 250 }],
+      "durability/abort-after-sync": "error",
+      "durability/alarm-runner-only": "error",
+      "durability/durability-migrations-only": "error",
+      "durability/no-alarm-changes-in-alarm-handler": "error",
+      "durability/no-delete-all-in-transaction": "error",
+      "durability/no-deferred-storage-writes": "error",
+      "durability/transaction-sync-callback": "error",
+      "durability/transform-next-once": "error",
       "oxc/no-accumulating-spread": "error",
       "anti-slop/no-array-filter-map": "error",
       "anti-slop/no-reduce-accumulator-copy": "error",

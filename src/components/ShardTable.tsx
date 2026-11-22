@@ -4,9 +4,8 @@ import { Guard } from "./Guard";
 import { restartShard } from "../server/admin";
 import { bytes, bytesOf, duration, ms, num } from "../lib/format";
 import { replicaWords } from "../lib/colors";
+import { RESTARTING_MS } from "../lib/config";
 import type { Replica, Shard } from "../lib/types";
-
-const RESTARTING_MS = 10_000;
 
 function Status({ s, now }: { s: Shard; now: number }) {
   if (!s.ok)

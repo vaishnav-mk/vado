@@ -1,8 +1,7 @@
-// The pure parts of the page (command parsing, reply display, chart axes).
 import { test } from "vite-plus/test";
 import assert from "node:assert/strict";
-import { replicationLine, showArgv, showReply, splitArgs, toArgv } from "./command.ts";
-import { axisLabel, niceAxis } from "./format.ts";
+import { replicationLine, showArgv, showReply, splitArgs, toArgv } from "./command";
+import { axisLabel, niceAxis } from "./format";
 
 test("splitArgs", () => {
   assert.deepEqual(splitArgs(`SET "my key" 'it is' x`), ["SET", "my key", "it is", "x"]);

@@ -3,7 +3,7 @@
 // valkey-benchmark) can reach it: npx vado-shim wss://<your-worker>.workers.dev/ws 6379
 // One TCP connection = one WebSocket. Clients then AUTH <db> <password>. It speaks the "vado-acks" subprotocol:
 // it tells the server how many bytes it has handed to the local client, so a client that stops reading
-// stops the server sending too (packages/server/src/router/websocket.js).
+// stops the server sending too (packages/server/src/router/websocket.ts).
 import net from "node:net";
 
 const [url = "ws://localhost:5173/ws", port = "6379"] = process.argv.slice(2);

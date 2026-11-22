@@ -1,5 +1,4 @@
-// Who is signed in: Cloudflare Access, whose JWT @vado/server's accessUser checks. Every server function that changes
-// something calls requireUser first.
+// Who is signed in, from the Cloudflare Access JWT. Every server function that changes something calls requireUser.
 import { createServerFn, createServerOnlyFn } from "@tanstack/react-start";
 import { getRequest } from "@tanstack/react-start/server";
 import { env } from "cloudflare:workers";

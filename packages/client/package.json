@@ -9,6 +9,6 @@
   },
   "type": "module",
   "exports": {
-    ".": "./src/ioredis.js"
+    ".": "./src/ioredis.ts"
   }
 }

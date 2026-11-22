@@ -1,8 +1,5 @@
-// A line chart that updates in place once a second. Kumo's TimeseriesChart can't turn off ECharts'
-// update animation, so every new point re-tweened every line and re-laid out the axes (the flicker), and
-// its y labels were rounded from fractional ticks (2, 2, 1, 1, 0). This uses Kumo's lower-level Chart with
-// animation off, stable series ids (so setOption merges data instead of rebuilding series), a fixed
-// five-minute time window, and a y axis from niceAxis whose steps never round to the same label.
+// Kumo's lower-level Chart, not TimeseriesChart: that can't turn off ECharts' update animation (every point made
+// the lines flicker) and rounds fractional y ticks into repeated labels. Stable series ids let setOption merge.
 import { useMemo } from "react";
 import * as echarts from "echarts/core";
 import { LineChart } from "echarts/charts";
@@ -10,11 +7,10 @@ import { GridComponent, TooltipComponent } from "echarts/components";
 import { CanvasRenderer } from "echarts/renderers";
 import type { DefaultLabelFormatterCallbackParams, TooltipComponentFormatterCallbackParams } from "echarts";
 import { Chart, ChartPalette, Text } from "@cloudflare/kumo";
+import { CHART_HEIGHT, CHART_WINDOW_MS } from "../lib/config";
 import { axisLabel, clock, niceAxis } from "../lib/format";
 
 echarts.use([LineChart, GridComponent, TooltipComponent, CanvasRenderer]);
-
-const WINDOW_MS = 5 * 60_000;
 
 export interface Series {
   id: string;
@@ -31,7 +27,7 @@ export function LiveChart({
   unit = "",
   minStep = 1,
   format,
-  height = 220,
+  height = CHART_HEIGHT,
   empty,
 }: {
   series: Series[];
@@ -55,7 +51,7 @@ export function LiveChart({
       grid: { left: 56, right: 16, top: 12, bottom: 28 },
       xAxis: {
         type: "time" as const,
-        min: end - WINDOW_MS,
+        min: end - CHART_WINDOW_MS,
         max: end,
         splitNumber: 5,
         axisLine: { show: false },

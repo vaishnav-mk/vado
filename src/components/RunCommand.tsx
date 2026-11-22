@@ -5,7 +5,8 @@ import { Guard } from "./Guard";
 import { runCommand } from "../server/admin";
 import { COMMANDS, OTHER, replicationLine, showArgv, showReply, toArgv, type Arg } from "../lib/command";
 import { ms } from "../lib/format";
-import { place, REGION_NAMES } from "../lib/places";
+import { place } from "@vado/server/admin/views.ts";
+import { REGION_NAMES } from "@vado/server/replication/regions.ts";
 import type { LastCommand, Shard } from "../lib/types";
 
 const ITEMS = Object.fromEntries(Object.keys(COMMANDS).map((c) => [c, c === OTHER ? "Other command" : c]));

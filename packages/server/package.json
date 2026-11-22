@@ -6,16 +6,21 @@
   "license": "Apache-2.0",
   "type": "module",
   "exports": {
-    ".": "./src/index.js",
+    ".": "./src/index.ts",
     "./*": "./src/*"
   },
   "scripts": {
     "colos": "node scripts/colos.mjs"
   },
   "dependencies": {
+    "@durability/storage": "0.1.1",
     "@vado/client": "*",
     "@vado/wasm": "*",
+    "drizzle-orm": "0.45.4",
+    "durability": "5.4.0",
     "ioredis": "^5.4.1",
-    "jose": "^6.2.18"
+    "jose": "^6.2.18",
+    "valibot": "1.5.0",
+    "workers-qb": "1.16.0"
   }
 }

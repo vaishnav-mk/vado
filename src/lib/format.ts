@@ -1,5 +1,3 @@
-// Numbers, sizes and times as people read them.
-
 const compact = (digits: number) => new Intl.NumberFormat("en", { notation: "compact", maximumFractionDigits: digits });
 
 const C0 = compact(0),

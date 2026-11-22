@@ -1,5 +1,4 @@
-// Replica counts and how to talk about them. Asleep is normal (no traffic to that shard for 10 minutes; its
-// next read or write wakes them), copying is a few seconds, and only a lost stream is worth a warning.
+// Asleep is normal and copying takes seconds, so only a lost stream is worth a warning.
 import { plural } from "./format";
 import type { Shard } from "./types";
 
