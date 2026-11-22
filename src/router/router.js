@@ -40,6 +40,7 @@ const unsupported = (name) => error(`ERR '${name}' is not supported by the shard
 const NOAUTH = error("NOAUTH Authentication required.");
 const NULL_ARRAY = new TextEncoder().encode("*-1\r\n"), NULL3 = new TextEncoder().encode("_\r\n"); // EXEC aborted
 const WRONGPASS = error("WRONGPASS invalid username-password pair or user is disabled.");
+const TOO_MANY = error("ERR too many failed AUTH attempts from this address; try again in a minute");
 const SUBSCRIBE = new Set(["subscribe", "psubscribe", "ssubscribe"]);
 const PUBSUB = new Set(["publish", "spublish", "pubsub", "unsubscribe", "punsubscribe", "sunsubscribe", ...SUBSCRIBE]);
 // save/bgrewriteaof: the shards schedule their own AOF rewrites (src/shard/shard.js).
@@ -308,10 +309,11 @@ export class Router {
   #writeDone(i) { this.#writing.set(i, this.#writing.get(i) - 1); this.#wrote.set(i, Date.now()); }
 
   #onDropped; // (name) => void: forget the cached record of a database found dropped
+  #signIns; // { blocked(), failed() } for this client's address, or null (src/router/serve.js)
   #trusted; // a service binding (our own Workers): the shared password opens any database
   #lookup; // (name) => the database's record, or null; never creates one
 
-  constructor(socket, { db, table, shard, pubsub, replica, password, trusted = false, lookup = null, open, onDropped = null, idleMs = IDLE_MS }) {
+  constructor(socket, { db, table, shard, pubsub, replica, password, trusted = false, lookup = null, open, onDropped = null, signIns = null, idleMs = IDLE_MS }) {
     this.socket = socket;
     this.db = db; // { name, created, shards, regions, replicas }
     this.table = table;
@@ -323,6 +325,7 @@ export class Router {
     this.#lookup = lookup;
     this.#open = open;
     this.#onDropped = onDropped;
+    this.#signIns = signIns;
     this.#authed = !this.#password;
     this.#idleMs = idleMs;
     this.#writer = socket.writable.getWriter();
@@ -755,17 +758,19 @@ export class Router {
   #login(user, pass, then) {
     const name = !user || user === "default" ? this.db.name : user;
     if (!DB_NAME.test(name)) return this.#reply(error(`ERR ${DB_NAME_RULE}`));
+    if (this.#signIns?.blocked()) return this.#reply(TOO_MANY);
     const shared = () => this.#password === undefined || sameSecret(pass, this.#password);
+    const wrong = () => { this.#signIns?.failed(); return this.#reply(WRONGPASS); };
     if (name === this.db.name && !(this.db.secret && !this.#trusted)) {
-      if (!shared()) return this.#reply(WRONGPASS);
+      if (!shared()) return wrong();
       this.#authed = true;
       return then();
     }
     this.#pending = (async () => {
       const known = name === this.db.name ? this.db : await this.#lookup?.(name);
-      if (known?.dropped) return this.#reply(shared() ? error(`ERR database ${name} was dropped`) : WRONGPASS); // no names to guessers
+      if (known?.dropped) return shared() ? this.#reply(error(`ERR database ${name} was dropped`)) : wrong(); // no names to guessers
       const ok = known?.secret && !this.#trusted ? await secretMatches(known.secret, pass) : shared();
-      if (!ok) return this.#reply(WRONGPASS);
+      if (!ok) return wrong();
       if (name !== this.db.name) {
         const next = await this.#open(name);
         await this.#afterAll(); // earlier requests went to the old database's upstreams

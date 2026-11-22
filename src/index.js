@@ -58,6 +58,7 @@ function websocket(req, env, ctx) {
   server.accept();
   const cf = req.cf ?? {};
   live.colo ??= cf.colo ?? null;
-  ctx.waitUntil(serve(wsSocket(server), env, "default", "ws", { colo: cf.colo, city: cf.city, country: cf.country, lat: Number(cf.latitude), lon: Number(cf.longitude) }));
+  const where = { addr: req.headers.get("cf-connecting-ip"), colo: cf.colo, city: cf.city, country: cf.country, lat: Number(cf.latitude), lon: Number(cf.longitude) };
+  ctx.waitUntil(serve(wsSocket(server), env, "default", "ws", where));
   return new Response(null, { status: 101, webSocket: client });
 }

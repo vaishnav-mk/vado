@@ -16,6 +16,11 @@
 - **Without a password, anything that reaches `connect()` is in.** That is fine behind a service binding, which only
   your own Workers can call. Set the password before you put a TCP Worker in front. `/ws` refuses to serve without one.
 - **Passwords are compared in constant time.**
+- **Failed AUTHs are rate limited.** Each failure counts against the client's address, per Cloudflare location
+  (the `AUTH_LIMIT` rate limiting binding, 30 a minute). Past that, the address may not AUTH for a minute and gets
+  `ERR too many failed AUTH attempts from this address`, so passwords and database names (an unknown name costs a
+  catalog lookup) can't be guessed at speed. Clients behind one address share its limit. Service bindings aren't
+  limited.
 - **Before AUTH,** only AUTH, HELLO and QUIT run, and requests are capped at 64 KB, so an unauthenticated client can't
   make the router buffer much. An unauthenticated connection runs no command on any database. (A new isolate's
   first connection does look up the `default` database and Valkey's command table, once.)

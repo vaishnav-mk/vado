@@ -67,7 +67,9 @@ over minutes. Wait at least 5 minutes after a deploy before you measure anything
 Durable Object bindings, in `wrangler.jsonc`: `SHARD` to `SHARD7` (the eight shard classes, with pub/sub and
 `__meta` in `SHARD`), `SHARD8` to `SHARD15` (read replicas: `SHARD{8 + k}` holds the replicas of class `k`), `REWRITER` to `REWRITER7` (a shard class without its
 rewriter binding rewrites its AOF inline, blocking), `CATALOG`, `PULSE` (optional: without it, routers don't report
-activity and bench `pulse` returns nothing) and `SENDER` (needed only by bench `send`).
+activity and bench `pulse` returns nothing) and `SENDER` (needed only by bench `send`). `AUTH_LIMIT` is a rate
+limiting binding for failed AUTHs per client address ([security](security.md#authentication)); without it, AUTH
+isn't rate limited.
 
 AOF rewrite thresholds (`AOF_REWRITE_MIN`, `AOF_REWRITE_IDLE_MS`, `AOF_REWRITE_CAP`), rewriter timeout and fallback
 (`AOF_HELPER_TIMEOUT_MS`, `AOF_HELPER_RETRY_MS`), group commit (`SHARD_COMMITS`), shard classes (`SHARD_CLASSES`),

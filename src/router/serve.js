@@ -18,6 +18,26 @@ export function commands(env) {
   return table;
 }
 
+// Failed AUTHs per client address, counted in each Cloudflare location by the AUTH_LIMIT rate limiting binding.
+// Past its limit an address may not AUTH for a minute, so nobody can guess passwords, or database names (each
+// unknown name asks the catalog), at speed. The block is also kept per isolate, so a blocked client costs nothing.
+const blockedUntil = new Map(); // client IP -> ms
+const BLOCK_MS = 60_000;
+const ipOf = (addr) => (!addr ? null : addr.startsWith("[") ? addr.slice(1, addr.indexOf("]")) : /^[\d.]+:\d+$/.test(addr) ? addr.slice(0, addr.lastIndexOf(":")) : addr);
+function signIns(env, where) {
+  const ip = ipOf(where?.addr);
+  if (!env.AUTH_LIMIT || !ip) return null;
+  return {
+    blocked: () => (blockedUntil.get(ip) ?? 0) > Date.now(),
+    failed: () => env.AUTH_LIMIT.limit({ key: ip }).then(({ success }) => {
+      if (success) return;
+      const now = Date.now();
+      if (blockedUntil.size > 10_000) for (const [k, t] of blockedUntil) if (t <= now) blockedUntil.delete(k);
+      blockedUntil.set(ip, now + BLOCK_MS);
+    }, () => {}),
+  };
+}
+
 const handles = (env, db) => ({
   db, shard: (i) => shardStub(env, db, i), pubsub: () => shardStub(env, db, "pubsub"),
   replica: (i) => { const r = replicaRegion(db, live.colo); return r && replicaStub(env, db, i, r); },
@@ -79,6 +99,7 @@ async function serveRouter(socket, env, name, conn) {
     lookup: (n) => lookup(env, n),
     open: async (n) => handles(env, await database(env, n)),
     onDropped: forget,
+    signIns: conn.via === "binding" ? null : signIns(env, conn.where),
     idleMs: Number(env.ROUTER_IDLE_MS || IDLE_MS),
   });
   conn.router = router;

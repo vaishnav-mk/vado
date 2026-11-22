@@ -59,5 +59,8 @@
   },
   // Each deploy's version id: a shard reports it, so the dashboard can tell a deploy from a crash.
   "version_metadata": { "binding": "VERSION" },
+  // Failed AUTHs per client address and Cloudflare location (src/router/serve.js). namespace_id: any integer unique
+  // to the account.
+  "ratelimits": [{ "name": "AUTH_LIMIT", "namespace_id": "6379", "simple": { "limit": 30, "period": 60 } }],
   "observability": { "enabled": true }
 }
