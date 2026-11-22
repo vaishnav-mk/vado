@@ -18,6 +18,7 @@ export interface Database {
   regions: string[] | null;
   replicas: string[] | null;
   password: boolean;
+  flavour?: "valkey" | "redis"; // missing from a database Worker older than flavours: Valkey
 }
 
 /** One poll, for the charts. `reads` includes what replicas served. */

@@ -5,7 +5,7 @@
 // session string, so the dashboard never stores the token, and authorized() checks one.
 import { WorkerEntrypoint } from "cloudflare:workers";
 import { configureReplicas, current, database, replicaRegion, shardStub } from "../catalog/databases.js";
-import { DB_NAME, DB_NAME_RULE } from "../catalog/catalog.js";
+import { DB_NAME, DB_NAME_RULE, FLAVOURS } from "../catalog/catalog.js";
 import { RespClient } from "../client/resp-client.js";
 import { keyIndexes } from "../protocol/commands.js";
 import { shardOfSlot, slotOf } from "../protocol/slots.js";
@@ -57,14 +57,15 @@ export class Admin extends WorkerEntrypoint {
 
   /** A new database: `shards` of 1, 4, 16 or 64, placed in one region or spread over the world (`place`
    *  "world"), with read replicas in every region or none. Refuses a name that is taken. */
-  async create({ name, shards, place, replicas }) {
+  async create({ name, shards, place, replicas, flavour = "valkey" }) {
     if (typeof name !== "string" || !DB_NAME.test(name)) throw new Error(DB_NAME_RULE);
+    if (!FLAVOURS.includes(flavour)) throw new Error(`flavour is ${FLAVOURS.join(" or ")}`);
     if (!SHARD_COUNTS.has(shards)) throw new Error("shards is 1, 4, 16 or 64");
     if (place !== "world" && !HINTS.has(place)) throw new Error("place is world or a region");
     if (await current(this.env, name)) throw new Error(`${name} already exists`);
-    const db = await database(this.env, name, shards, place === "world" ? WORLD : [place], replicas ? WORLD : undefined);
+    const db = await database(this.env, name, shards, place === "world" ? WORLD : [place], replicas ? WORLD : undefined, undefined, null, flavour);
     if (db.replicas) await configureReplicas(this.env, db);
-    await this.#watcher(name).note("action", `Created ${name}: ${shards} shard${shards === 1 ? "" : "s"}, ${place === "world" ? "spread around the world" : `in ${REGION_NAMES[place] ?? place}`}${replicas ? ", with read replicas in every region" : ""}`);
+    await this.#watcher(name).note("action", `Created ${name}, on ${flavour === "redis" ? "Redis" : "Valkey"}: ${shards} shard${shards === 1 ? "" : "s"}, ${place === "world" ? "spread around the world" : `in ${REGION_NAMES[place] ?? place}`}${replicas ? ", with read replicas in every region" : ""}`);
     return dbView(db);
   }
 

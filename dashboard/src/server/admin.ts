@@ -18,7 +18,7 @@ export const getDatabase = createServerFn({ method: "GET" })
 export const listRegions = createServerFn({ method: "GET" }).handler(() => env.ADMIN.regions());
 
 export const createDatabase = createServerFn({ method: "POST" })
-  .validator(z.object({ name, shards: z.number().int().min(1).max(64), place: z.string().min(1).max(16), replicas: z.boolean() }))
+  .validator(z.object({ name, shards: z.number().int().min(1).max(64), place: z.string().min(1).max(16), replicas: z.boolean(), flavour: z.enum(["valkey", "redis"]) }))
   .handler(async ({ data }) => {
     await requireSession();
     return env.ADMIN.create(data);
