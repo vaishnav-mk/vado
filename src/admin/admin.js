@@ -91,6 +91,11 @@ export class Admin extends WorkerEntrypoint {
     const write = !!entry?.flags.has("write"), read = !!entry?.flags.has("readonly");
     const [c, here] = await Promise.all([RespClient.open(this.env, name, 15_000), colo()]);
     try {
+      // The connection is new, so its router hasn't reached this key's shard (or replica) yet. Warm that path
+      // with a command that changes nothing and goes where this one will, so the time shown is the command's,
+      // not a connection setup's: a read of the key, or for a write that a read would send elsewhere (to a
+      // replica), a delete of a dashboard-only key in the same slot (`{key}` is a hash tag for key's slot).
+      if (key !== null) await c.call(write && db.replicas && !/[{}]/.test(key) ? ["DEL", `dashboard:warm:{${key}}`] : ["EXISTS", key]);
       const t0 = performance.now();
       const [reply] = await c.call(argv);
       const ms = performance.now() - t0;
