@@ -5,7 +5,7 @@ import { SignIn } from "./SignIn";
 import { plural } from "../lib/format";
 import type { Connection } from "../lib/live";
 import { replicaCounts, replicaLine } from "../lib/replicas";
-import type { Database, LiveState } from "../lib/types";
+import type { Database, LiveState, Options } from "../lib/types";
 
 function describe(d: Database) {
   const spread = (d.regions?.length ?? 0) > 1 ? " around the world" : "";
@@ -32,10 +32,10 @@ function Health({ state, connection }: { state: LiveState | null; connection: Co
   );
 }
 
-export function Header({ name, databases, regions, state, connection }: {
+export function Header({ name, databases, options, state, connection }: {
   name: string | null;
   databases: Database[];
-  regions: Record<string, string>;
+  options: Options;
   state: LiveState | null;
   connection: Connection;
 }) {
@@ -50,7 +50,7 @@ export function Header({ name, databases, regions, state, connection }: {
           <Select aria-label="Database" placeholder="Pick a database" value={name ?? null} items={items} className="min-w-72"
             onValueChange={(v) => v && navigate({ to: "/db/$name", params: { name: v as string } })} />
         )}
-        <NewDatabase regions={regions} />
+        <NewDatabase options={options} />
         <div className="ml-auto flex flex-wrap items-center gap-3">
           {name && <Health state={state} connection={connection} />}
           <SignIn />

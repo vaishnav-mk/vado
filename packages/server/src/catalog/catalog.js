@@ -48,7 +48,7 @@ export class Catalog extends DurableObject {
     if (!Number.isSafeInteger(count) || count < 1 || count > 16384) throw new Error("shards must be 1..16384");
     for (const list of [regions, replicas]) if (list !== undefined && (!Array.isArray(list) || !list.length || !list.every((r) => HINTS.has(r)))) throw new Error(`regions and replicas must be lists of ${[...HINTS].join(", ")}`);
     if (!Number.isSafeInteger(classes) || classes < 1 || classes > SHARD_CLASSES) throw new Error(`classes must be 1..${SHARD_CLASSES}`);
-    if (!FLAVOURS.includes(flavour)) throw new Error(`flavour is ${FLAVOURS.join(" or ")}`);
+    if (!FLAVOURS.includes(flavour)) throw new Error(`this build runs ${FLAVOURS.join(" or ")}, not ${flavour}`);
     const r = { name, created, shards: count, regions: regions ? JSON.stringify(regions) : null, replicas: replicas ? JSON.stringify(replicas) : null, classes, secret, flavour: flavour === "valkey" ? null : flavour };
     this.#sql.exec(`INSERT INTO dbs (name, created, shards, regions, replicas, classes, secret, flavour) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`, r.name, r.created, r.shards, r.regions, r.replicas, r.classes, r.secret, r.flavour);
     return record(r);

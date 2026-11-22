@@ -4,7 +4,7 @@
 import { createServerFn } from "@tanstack/react-start";
 import { env } from "cloudflare:workers";
 import { z } from "zod";
-import { Admin } from "@vado/server";
+import { Admin, FLAVOURS } from "@vado/server";
 import type { CommandResult, Database, TestView } from "../lib/types";
 import { requireUser } from "./access";
 
@@ -19,10 +19,11 @@ export const getDatabase = createServerFn({ method: "GET" })
   .validator(z.object({ name: z.string().max(200) }))
   .handler(({ data }): Promise<Database | null> => admin().database(data.name).catch(() => null));
 
-export const listRegions = createServerFn({ method: "GET" }).handler((): Record<string, string> => admin().regions());
+/** The regions a database can use, and the servers this build runs. */
+export const listOptions = createServerFn({ method: "GET" }).handler(() => ({ regions: admin().regions() as Record<string, string>, flavours: FLAVOURS as string[] }));
 
 export const createDatabase = createServerFn({ method: "POST" })
-  .validator(z.object({ name, shards: z.number().int().min(1).max(64), place: z.string().min(1).max(16), replicas: z.boolean(), flavour: z.enum(["valkey", "redis"]) }))
+  .validator(z.object({ name, shards: z.number().int().min(1).max(64), place: z.string().min(1).max(16), replicas: z.boolean(), flavour: z.string().max(16) }))
   .handler(async ({ data }) => {
     await requireUser();
     return (await admin().create(data)) as Database;

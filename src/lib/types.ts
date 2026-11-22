@@ -10,6 +10,12 @@ export interface Place {
   lon: number | null;
 }
 
+/** What a new database can be: the regions it can use, and the servers this build runs. */
+export interface Options {
+  regions: Record<string, string>;
+  flavours: string[];
+}
+
 /** A catalog record without secrets (dbView). */
 export interface Database {
   name: string;

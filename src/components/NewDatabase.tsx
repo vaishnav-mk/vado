@@ -4,12 +4,13 @@ import { PlusIcon } from "@phosphor-icons/react";
 import { useNavigate, useRouter } from "@tanstack/react-router";
 import { Guard } from "./Guard";
 import { createDatabase } from "../server/admin";
+import type { Options } from "../lib/types";
 
 const SHARDS = { 1: "1 shard (64 MB)", 4: "4 shards (256 MB)", 16: "16 shards (1 GB)", 64: "64 shards (4 GB)" };
-const FLAVOURS = { valkey: "Valkey 9.1", redis: "Redis 8.12" };
+const SERVERS: Record<string, string> = { valkey: "Valkey 9.1", redis: "Redis 8.12" };
 
-export function NewDatabase({ regions }: { regions: Record<string, string> }) {
-  const [open, setOpen] = useState(false), [name, setName] = useState(""), [shards, setShards] = useState("4"), [flavour, setFlavour] = useState<"valkey" | "redis">("valkey");
+export function NewDatabase({ options: { regions, flavours } }: { options: Options }) {
+  const [open, setOpen] = useState(false), [name, setName] = useState(""), [shards, setShards] = useState("4"), [flavour, setFlavour] = useState("valkey");
   const [place, setPlace] = useState(() => (regions.weur ? "weur" : Object.keys(regions)[0] ?? "world")), [copies, setCopies] = useState("yes");
   const [error, setError] = useState<string | null>(null), [busy, setBusy] = useState(false);
   const navigate = useNavigate(), router = useRouter();
@@ -35,8 +36,10 @@ export function NewDatabase({ regions }: { regions: Record<string, string> }) {
         <form onSubmit={create} className="flex flex-col gap-4">
           <Input label="Name" placeholder="sessions" value={name} onChange={(e) => setName(e.target.value)} autoComplete="off" spellCheck={false}
             description="Lowercase letters, digits, - and _" error={error ?? undefined} variant={error ? "error" : "default"} />
-          <Select label="Runs" value={flavour} onValueChange={(v) => v && setFlavour(v as "valkey" | "redis")} items={FLAVOURS}
-            description="Each shard runs the real server, compiled to WebAssembly. Clients can't tell it from one server." />
+          {flavours.length > 1 && (
+            <Select label="Runs" value={flavour} onValueChange={(v) => v && setFlavour(v as string)} items={Object.fromEntries(flavours.map((f) => [f, SERVERS[f]]))}
+              description="Each shard runs the real server, compiled to WebAssembly. Clients can't tell it from one server." />
+          )}
           <Select label="Shards" value={shards} onValueChange={(v) => v && setShards(v as string)} items={SHARDS} />
           <Select label="Where the shards live" value={place} onValueChange={(v) => v && setPlace(v as string)} items={{ world: "Spread around the world", ...regions }} />
           <Select label="Read replicas" value={copies} onValueChange={(v) => v && setCopies(v as string)} items={{ yes: "In every region", no: "None" }}
