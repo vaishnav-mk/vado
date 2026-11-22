@@ -1,92 +1,120 @@
 # vado
 
-Valkey on Cloudflare Durable Objects. Each shard is a Durable Object running real Valkey 9.1, compiled to
-WebAssembly, with its append-only file in the object's SQLite. A router in the Worker spreads keys over the shards by
-hash slot, so stock clients (valkey-cli, ioredis, valkey-benchmark) see one ordinary Valkey server.
+Valkey on Cloudflare Durable Objects.
 
-Experimental. Independent project, not an official Cloudflare or Valkey product.
+Each shard is a Durable Object running real Valkey 9.1, compiled to WebAssembly, with its append-only file in the
+object's SQLite. A router in the Worker spreads keys over the shards by hash slot, so `valkey-cli`, ioredis and
+`valkey-benchmark` see one ordinary Valkey server.
 
-## What it does
+Experimental. An independent project, not an official Cloudflare or Valkey product.
 
-- Real Valkey 9.1 per shard, so replies and errors are Valkey's own, behind one address for stock clients.
-- Acknowledged writes survive resets and deploys. Under load, many writes share one storage commit.
-- AOF rewrites run in a separate rewriter object, so a shard keeps serving while Valkey compacts its log.
-- A database's shards rotate over eight Durable Object classes, so its first eight shards never share an isolate's
-  memory or thread.
-- A database's shards can be spread over regions, and each shard can keep read replicas in other regions. Routers
-  read from a replica in or next to their region, a connection still reads its own writes, and `WAIT` reports how
-  many replicas have them. An idle replicated database stops its replicas and sleeps until it is used again.
-- A database can have its own password, and can be dropped for good.
-- A live dashboard (`dashboard/`, at the Worker's own URL) shows each shard and replica on a spinning globe, where
-  traffic enters, response times and what just happened. Anyone can watch; signing in lets you create databases,
-  run commands, restart shards and start test traffic.
+![The dashboard watching a 64-shard database with a read replica of every shard in every region](docs/images/dashboard.jpg)
+
+## What you get
+
+- Real Valkey: commands, replies and errors are Valkey's own. Clients connect over TCP, a WebSocket or a service
+  binding.
+- Durable writes. A reply leaves only after its AOF entry is committed to SQLite, and under load many writes share
+  one commit.
+- Shards in the regions you pick, each with read replicas in other regions if you want them. Routers read from the
+  nearest copy, a connection always reads its own writes, and `WAIT` counts the replicas that have them.
+- AOF rewrites in a helper object, so a shard keeps serving while Valkey compacts its log.
+- A password per database, and databases that can be dropped for good.
+- A live dashboard at the Worker's URL: shards, replicas on a spinning globe, where traffic enters, response times
+  and a timeline. Anyone can watch. Signing in lets you create databases, run commands, restart shards and send
+  test traffic.
 
 ## How it works
 
 ```mermaid
 flowchart LR
-  client["Stock client"] -- "RESP: TCP Worker,<br/>WebSocket or service binding" --> router["Router<br/>(one per connection)"]
-  router -- "by hash slot" --> shards["ValkeyShard objects<br/>valkey.wasm + AOF in SQLite"]
-  shards -- "AOF appends" --> replicas["Read replicas<br/>(optional, memory only)"]
-  shards -- "AOF rewrites" --> rewriters["Rewriters<br/>(one per shard)"]
+  client["Client"] -- "RESP over TCP,<br/>WebSocket or binding" --> router["Router<br/>(one per connection)"]
+  router -- "by hash slot" --> shards["Shards<br/>valkey.wasm, AOF in SQLite"]
+  shards -- "AOF appends" --> replicas["Read replicas<br/>(memory only)"]
+  shards -- "AOF rewrites" --> rewriters["Rewriters"]
   router -- "nearby reads" --> replicas
-  router -- "database → shard count" --> catalog["Catalog"]
+  router -- "which database, how many shards" --> catalog["Catalog"]
 ```
 
-A write is acknowledged only after its AOF entry is committed to SQLite, so acknowledged writes survive resets and
-deploys. See [the architecture](docs/architecture.md) and [life of a command](docs/lifecycle.md).
+Each client connection gets a router. It parses RESP, finds the hash slot of each key, and sends the command to
+the shard that owns it, or to a nearby replica for a read that can go there. A shard runs Valkey with
+`appendfsync always`. Its files live in SQLite, so the Durable Object's output gate holds each reply until the write
+under it is stored. Replicas are sent the shard's AOF as a starting copy, then every append, and keep it all in
+memory. More in [architecture](docs/architecture.md) and [life of a command](docs/lifecycle.md).
 
 ## Quick start
 
-Requires Node and `wrangler`.
+Requires Node and `wrangler`. Run it locally on `workerd`:
 
 ```sh
 npm install
-scripts/local.sh fresh                  # workerd: TCP 127.0.0.1:6380, HTTP 127.0.0.1:8787
+scripts/local.sh fresh                  # TCP 127.0.0.1:6380, HTTP 127.0.0.1:8787
 valkey-cli -p 6380 SET hello world
-scripts/test-local.sh                   # the whole local suite
+scripts/test-local.sh                   # the local suite
 ```
 
-To deploy:
+Deploy it:
 
 ```sh
+npm --prefix dashboard install
 wrangler secret put VALKEY_PASSWORD
-wrangler deploy
-node scripts/ws-shim.mjs wss://<your-worker>.workers.dev/ws 6379
-valkey-cli -p 6379 --user mydb --pass "$VALKEY_PASSWORD"     # AUTH <database> <password>
+wrangler secret put BENCH_TOKEN         # optional: the bench API and dashboard sign-in
+npm run deploy                          # this Worker, then the dashboard
 ```
 
-From another Worker, use a service binding and `env.VALKEY.connect("mydb:6379")`, or ioredis with
-`bindingConnector` from `src/client/ioredis.js`. For raw TCP, put a TCP Worker (Spectrum, Workers (tcp)) in front. Details:
+On a new account the two Workers bind to each other, so the first deploy goes in three steps
+([operations](docs/operations.md#watch-it-live)). Then connect a stock client:
+
+```sh
+node scripts/ws-shim.mjs wss://<your-worker>.workers.dev/ws 6379
+valkey-cli -p 6379 --user mydb --pass "$VALKEY_PASSWORD"     # the username picks the database
+```
+
+For raw TCP, put a TCP Worker or Spectrum in front. From another Worker, use a service binding and
+`env.VALKEY.connect("mydb:6379")`, or ioredis with `bindingConnector` from `src/client/ioredis.js`. Details in
 [build, deploy and operate](docs/operations.md).
 
-## Caveats
+## Limits
 
-- One shared password (`VALKEY_PASSWORD`), plus an optional password of its own for a database created with one, and
-  no ACLs ([security](docs/security.md#authentication)). Set `VALKEY_PASSWORD` before exposing a TCP Worker, and turn
-  on TLS.
-  [Security](docs/security.md).
-- 64 MB of data per shard, about 8 MB per request, and a database's shard count, regions and replicas are fixed
-  when it is created. A shard's wasm memory never shrinks after deletes.
-  [Shards and limits](docs/scaling.md).
-- `CONFIG SET` takes only settings that change how data behaves; `SAVE`, `BGREWRITEAOF` and `ACL` are refused.
-  [Security](docs/security.md#what-clients-can-change).
-- A command in flight when its shard resets gets `ERR shard connection lost; the command may or may not have run`.
-  Only read-only commands retry. [Durability and failures](docs/durability.md).
-- Multi-key commands across slots, other than MGET, MSET, DEL, UNLINK, EXISTS and TOUCH, get `CROSSSLOT`, as in Valkey
-  Cluster. Use `{hashtags}`, or a 1-shard database.
-- A read from a replica can miss a write acknowledged on another connection, for up to one replication lag (the
-  writer can `WAIT` for its replicas first). Each replica also costs its primary write throughput: about 50k SET/s
-  per shard with 9 replicas, against about 130k with none. [Durability and failures](docs/durability.md#read-replicas).
-- Latency is the client's hop to the Worker plus the Worker's hop to the shards, plus a storage commit for writes.
-  Set `LOCATION_HINT` or a database's regions near your clients. [Measurements](docs/measurements.md).
+- **Size.** 64 MB of data per shard and about 8 MB per request. A database's shard count, regions and replicas are
+  fixed when it is created, and a shard's wasm memory never shrinks after deletes. See
+  [shards and limits](docs/scaling.md).
+- **Auth.** There is one shared password (`VALKEY_PASSWORD`), plus an optional password per database, and no ACLs.
+  Set the password before exposing a TCP Worker, and use TLS. `CONFIG SET` takes only settings that change how data
+  behaves; `SAVE`, `BGREWRITEAOF` and `ACL` are refused. See [security](docs/security.md).
+- **Failures.** A command in flight when its shard resets gets `ERR shard connection lost; the command may or may
+  not have run`. Only read-only commands retry. See [durability and failures](docs/durability.md).
+- **Cluster rules.** Multi-key commands across slots get `CROSSSLOT`, as in Valkey Cluster, except MGET, MSET, DEL,
+  UNLINK, EXISTS and TOUCH, which the router splits. Use `{hashtags}`, or a 1-shard database.
+- **Replicas.** A read from a replica can miss another connection's write for up to one replication lag, unless the
+  writer `WAIT`s. Each replica also costs its primary write throughput: about 50k SET/s per shard with 9 replicas,
+  against about 130k with none. See [read replicas](docs/durability.md#read-replicas).
+- **Latency.** It is the client's hop to the Worker, plus the Worker's hop to the shard, plus a storage commit for a
+  write. Put shards near your clients with `LOCATION_HINT` or a database's regions. See
+  [measurements](docs/measurements.md).
+
+## Repository
+
+| Path | What |
+| --- | --- |
+| [`src/`](src) | The Worker: router, shards, replication, catalog, the dashboard's backend, and the bench API |
+| [`dashboard/`](dashboard) | The dashboard Worker (TanStack Start, React, Kumo) |
+| [`wasm/`](wasm) | The Valkey build: patches, the WASI shim and the committed `valkey.wasm`, which CI rebuilds and checks |
+| [`test/`](test) | Client-level tests: ioredis, RESP3, 1 vs N shards, `kill -9` durability and a concurrency hammer |
+| [`scripts/`](scripts) | Local runs, the WebSocket-to-TCP shim and the colo table generator |
+| [`docs/`](docs) | How it works, how to run it, and what it measured |
+
+Rules for changing the code are in [AGENTS.md](AGENTS.md).
 
 ## Docs
 
-[Architecture](docs/architecture.md), [life of a command](docs/lifecycle.md), [durability and failures](docs/durability.md),
-[shards and limits](docs/scaling.md), [security](docs/security.md), [build, deploy and operate](docs/operations.md) and
-[measurements](docs/measurements.md). For the dashboard, see [watch it live](docs/operations.md#watch-it-live).
-Rules for changing the code: [AGENTS.md](AGENTS.md).
+- [Architecture](docs/architecture.md)
+- [Life of a command](docs/lifecycle.md)
+- [Durability and failures](docs/durability.md)
+- [Shards, placement and limits](docs/scaling.md)
+- [Security](docs/security.md)
+- [Build, deploy and operate](docs/operations.md)
+- [Measurements](docs/measurements.md)
 
 ## License
 
