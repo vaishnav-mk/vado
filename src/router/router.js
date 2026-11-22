@@ -151,11 +151,12 @@ class Upstream {
 
   async #read() {
     let buf = new Uint8Array(0), start = 0;
+    const part = {}; // how far frameEnd() got into a reply that is still arriving
     try {
       for await (const chunk of this.socket.readable) {
         buf = start < buf.length ? append(buf.subarray(start), chunk) : chunk;
         start = 0;
-        for (let e; (e = frameEnd(buf, start, buf.length)) >= 0; start = e) this.#frame(buf.slice(start, e));
+        for (let e; (e = frameEnd(buf, start, buf.length, part)) >= 0; start = e) this.#frame(buf.slice(start, e));
       }
     } catch { /* reset or protocol error: fail below */ }
     this.#fail();
@@ -300,6 +301,7 @@ export class Router {
   #pending = null; // later requests wait for this (an AUTH switching databases, an RPC-path command)
   #onHead = new Map(); // reply slot -> wake, for RPC-path commands waiting on every earlier reply
   #idleMs;
+  #parsing = {}; // how far request() got into a request that is still arriving
 
   // Read-your-writes: while a write to a shard is in flight, and for READ_YOUR_WRITES_MS after its
   // reply, this connection reads that shard from its primary, not a replica that may not have it yet.
@@ -367,7 +369,7 @@ export class Router {
         start = 0;
         for (let r; !this.#closed; start = r.end) {
           if (this.#pending) await this.#pending; // before parsing: an AUTH in flight changes the limit
-          if (!(r = request(buf, start, buf.length, this.#authed ? MAX_REQUEST : MAX_UNAUTHED))) break;
+          if (!(r = request(buf, start, buf.length, this.#authed ? MAX_REQUEST : MAX_UNAUTHED, this.#parsing))) break;
           if (r.argv.length) this.#handle(r.argv, buf.subarray(start, r.end));
         }
         if (this.#closed) break;

@@ -22,6 +22,7 @@ a deployment.
 
 | Test | What must hold |
 | --- | --- |
+| `test/resp.mjs` | The RESP parser alone: requests and replies in pieces parse as whole ones, and 200k arguments in 1 KB pieces stay linear |
 | `test/ioredis.mjs` | Stock ioredis: MULTI, Lua, BLPOP, streams, pub/sub, pipelining, expiry |
 | `test/resp3.mjs` | HELLO 3, maps and pushes |
 | `test/chunked.mjs` | Requests split into 1-byte to 4 KB writes reassemble exactly; an 8 MB value in 4 KB pieces parses in linear time |

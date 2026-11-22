@@ -16,8 +16,10 @@ function num(b, from, to) {
   return neg ? -n : n;
 }
 
-/** End offset of the RESP frame that starts at `i`, or -1 if `b[i..end)` holds only part of it. */
-export function frameEnd(b, i, end) {
+/** End offset of the RESP frame that starts at `i`, or -1 if `b[i..end)` holds only part of it. Pass the same
+ *  `resume` object while the frame at `i` arrives in pieces: an aggregate's elements already found complete
+ *  aren't scanned again (offsets are kept relative to `i`, so the caller may move the frame). */
+export function frameEnd(b, i, end, resume = null) {
   if (i >= end) return -1;
   const t = b[i];
   const le = lineEnd(b, i + 1, end);
@@ -35,9 +37,16 @@ export function frameEnd(b, i, end) {
       let n = num(b, i + 1, le);
       if (n < 0) return le + 2;
       if (t === 37 || t === 124) n *= 2;
-      let j = le + 2;
-      for (let k = 0; k < n; k++) { j = frameEnd(b, j, end); if (j < 0) return -1; }
-      return t === 124 ? frameEnd(b, j, end) : j; // an attribute is followed by the reply it annotates
+      if (t === 124) resume = null; // an attribute is followed by the reply it annotates: rare, so no resuming
+      let k = 0, j = le + 2;
+      if (resume?.k) { k = resume.k; j = i + resume.rel; }
+      for (; k < n; k++) {
+        const e = frameEnd(b, j, end);
+        if (e < 0) { if (resume) { resume.k = k; resume.rel = j - i; } return -1; }
+        j = e;
+      }
+      if (resume) resume.k = 0;
+      return t === 124 ? frameEnd(b, j, end) : j;
     }
     default:
       throw new Error(`RESP protocol error: unexpected byte ${t} at ${i}`);
@@ -137,8 +146,10 @@ const INLINE_MAX = 64 << 10; // Valkey's PROTO_INLINE_MAX_SIZE
  * Parses one client request at `i`: a RESP array of bulk strings, or an inline command.
  * Returns { argv: Uint8Array[], end } or null when incomplete. Throws Valkey's protocol errors for a
  * request over `max` bytes or an over-long line, so a client can't make the caller buffer unboundedly.
+ * Pass the same `resume` object while the request at `i` arrives in pieces, so the arguments already parsed
+ * aren't parsed again (a pipeline of 500k small ones arrives in hundreds of chunks).
  */
-export function request(b, i, end, max = Infinity) {
+export function request(b, i, end, max = Infinity, resume = null) {
   if (i >= end) return null;
   if (b[i] !== 42) {
     const le = lineEnd(b, i, end);
@@ -149,19 +160,21 @@ export function request(b, i, end, max = Infinity) {
   const le = lineEnd(b, i + 1, end);
   if (le < 0) { if (end - i > INLINE_MAX) throw new Error("Protocol error: too big mbulk count string"); return null; }
   const n = num(b, i + 1, le);
-  const argv = [];
-  let j = le + 2;
-  for (let k = 0; k < n; k++) {
-    if (j >= end) return null;
+  let argv = [], k = 0, j = le + 2;
+  if (resume?.argv) { ({ argv, k } = resume); j = i + resume.rel; }
+  const wait = () => { if (resume) Object.assign(resume, { argv, k, rel: j - i }); return null; };
+  for (; k < n; k++) {
+    if (j >= end) return wait();
     if (b[j] !== 36) throw new Error("RESP protocol error: expected bulk string in request");
     const l = lineEnd(b, j + 1, end);
-    if (l < 0) { if (end - j > INLINE_MAX) throw new Error("Protocol error: too big bulk count string"); return null; }
+    if (l < 0) { if (end - j > INLINE_MAX) throw new Error("Protocol error: too big bulk count string"); return wait(); }
     const len = num(b, j + 1, l);
     if (len < 0 || l + 2 + len + 2 - i > max) throw new Error("Protocol error: invalid bulk length");
-    if (l + 2 + len + 2 > end) return null;
+    if (l + 2 + len + 2 > end) return wait();
     argv.push(b.subarray(l + 2, l + 2 + len));
     j = l + 2 + len + 2;
   }
+  if (resume) resume.argv = null;
   return { argv, end: j };
 }
 

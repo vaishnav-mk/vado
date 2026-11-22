@@ -4,6 +4,7 @@
 set -e -o pipefail
 cd "$(dirname "$0")/.."
 t(){ perl -e "alarm $1; exec @ARGV" "${@:2}"; }
+t 60 node test/resp.mjs
 scripts/local.sh fresh || exit 1
 t 120 node test/ioredis.mjs
 t 60 node test/resp3.mjs
