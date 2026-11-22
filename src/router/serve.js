@@ -2,7 +2,7 @@
 // closes. Also what this isolate reports to the Pulse object: its colo and open connections.
 import { Router, setSocketBudget } from "./router.js";
 import { commandTable } from "../protocol/commands.js";
-import { database, lookup, objectOptions, replicaRegion, replicaStub, shardStub } from "../catalog/databases.js";
+import { database, forget, lookup, objectOptions, replicaRegion, replicaStub, shardStub } from "../catalog/databases.js";
 import { coloOf } from "../replication/regions.js";
 import { IDLE_MS, PULSE_MS } from "../constants.js";
 
@@ -78,6 +78,7 @@ async function serveRouter(socket, env, name, conn) {
     trusted: conn.via === "binding", // our own Workers: the shared password opens any database
     lookup: (n) => lookup(env, n),
     open: async (n) => handles(env, await database(env, n)),
+    onDropped: forget,
     idleMs: Number(env.ROUTER_IDLE_MS || IDLE_MS),
   });
   conn.router = router;

@@ -17,6 +17,7 @@ const MULTI = command(["MULTI"]);
 const EXEC = command(["EXEC"]);
 const UNWATCH = command(["UNWATCH"]);
 const noop = () => {};
+const DROPPED = /database dropped/; // what a dropped shard's methods throw (ValkeyShard #live)
 const HELLO3 = command(["HELLO", "3"]);
 // Sockets this isolate holds to shards. The runtime drops sockets past a few hundred per isolate,
 // so beyond the budget new upstreams carry stateless batches over RPC instead (RpcUpstream).
@@ -161,7 +162,11 @@ class Upstream {
 
   #frame(f) {
     this.lastUsed = this.router.now;
-    if (this.instanceId === null) { this.instanceId = str(f.subarray(1, f.length - 2)); return; } // the greeting
+    if (this.instanceId === null) {
+      if (f[0] === 45) { this.refused = true; return; } // a dropped shard's "-ERR database dropped" instead of a greeting
+      this.instanceId = str(f.subarray(1, f.length - 2)); // the greeting
+      return;
+    }
     // Replies owed to commands sent before the subscribe (CLIENT SETNAME, PUBLISH) come first, in order.
     if (this.passthrough && !this.pending.length) return this.passthrough(f);
     if (f[0] === 62) return this.router.push(f); // RESP3 push
@@ -174,10 +179,10 @@ class Upstream {
   #fail() {
     if (this.dead) return;
     this.dead = true;
-    const pending = this.pending;
+    const pending = this.pending, reply = this.refused ? this.router.dropped() : LOST;
     this.pending = [];
     this.sent = [];
-    for (const cb of pending) cb(LOST);
+    for (const cb of pending) cb(reply);
     this.socket.close().catch(() => {});
     socketsOpen--;
     this.inflight = 0;
@@ -253,11 +258,12 @@ class RpcUpstream {
         i = e;
       }
       done();
-    }, () => {
+    }, (e) => {
       // A stub whose object was reset stays broken: drop this upstream so the next command gets a
       // fresh stub (socket upstreams already do this when their socket fails).
       this.dead = true;
-      for (const cb of cbs) cb(LOST);
+      const reply = DROPPED.test(e?.message) ? this.router.dropped() : LOST;
+      for (const cb of cbs) cb(reply);
       done();
     });
   }
@@ -301,10 +307,11 @@ export class Router {
   #writeStart(i) { this.#writing.set(i, (this.#writing.get(i) ?? 0) + 1); }
   #writeDone(i) { this.#writing.set(i, this.#writing.get(i) - 1); this.#wrote.set(i, Date.now()); }
 
+  #onDropped; // (name) => void: forget the cached record of a database found dropped
   #trusted; // a service binding (our own Workers): the shared password opens any database
   #lookup; // (name) => the database's record, or null; never creates one
 
-  constructor(socket, { db, table, shard, pubsub, replica, password, trusted = false, lookup = null, open, idleMs = IDLE_MS }) {
+  constructor(socket, { db, table, shard, pubsub, replica, password, trusted = false, lookup = null, open, onDropped = null, idleMs = IDLE_MS }) {
     this.socket = socket;
     this.db = db; // { name, created, shards, regions, replicas }
     this.table = table;
@@ -315,6 +322,7 @@ export class Router {
     this.#trusted = trusted;
     this.#lookup = lookup;
     this.#open = open;
+    this.#onDropped = onDropped;
     this.#authed = !this.#password;
     this.#idleMs = idleMs;
     this.#writer = socket.writable.getWriter();
@@ -824,7 +832,13 @@ export class Router {
   }
   // An RPC rejects only when its shard can't answer (Valkey errors come back as values), so the
   // command may or may not have run: say so, as the socket path does.
-  #lost(s) { return () => this.#resolve(s, LOST); }
+  #lost(s) { return (e) => this.#resolve(s, DROPPED.test(e?.message) ? this.dropped() : LOST); }
+  /** A shard refused because the database was dropped after this isolate cached its record: forget the record,
+   *  so the next connection is refused at AUTH, and say so. */
+  dropped() {
+    this.#onDropped?.(this.db.name);
+    return error(`ERR database ${this.db.name} was dropped`);
+  }
   #hold(p) {
     const held = p.catch(() => {}).finally(() => { if (this.#pending === held) this.#pending = null; });
     this.#pending = held;
