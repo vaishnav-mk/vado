@@ -14,6 +14,7 @@ export { ValkeyRewriter, ValkeyRewriter1, ValkeyRewriter2, ValkeyRewriter3, Valk
 export { Catalog } from "./catalog/catalog.js";
 export { Pulse } from "./admin/pulse.js";
 export { Watcher } from "./admin/watcher.js";
+export { Admin } from "./admin/admin.js";
 export { Sender } from "./bench/sender.js";
 
 export default {
