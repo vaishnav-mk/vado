@@ -281,7 +281,8 @@ export class ValkeyHost {
   }
 
   // One TCP client = one Valkey client fd. Resolves when Valkey closes the fd. A quiet socket (a replica's
-  // stream from its primary) isn't client activity.
+  // stream from its primary) isn't client activity, and what it hasn't run when it ends is dropped: the
+  // primary copies the replica afresh, and old commands must not run after that copy's FLUSHALL.
   async serve(socket, greeting = null, quiet = false) {
     const writer = socket.writable.getWriter();
     if (greeting) writer.write(new TextEncoder().encode(greeting)).catch(() => {});
@@ -300,7 +301,7 @@ export class ValkeyHost {
         if (!quiet) this.lastActive = Date.now();
         this.#schedule();
       }
-    })().catch(() => {}).finally(() => { s.eof = true; this.#schedule(); });
+    })().catch(() => {}).finally(() => { if (quiet) { s.chunks = []; s.off = 0; } s.eof = true; this.#schedule(); });
     await closed;
     await s.writer.close().catch(() => {});
   }

@@ -38,7 +38,8 @@ export class ValkeyShard extends DurableObject {
   #colo; // where this object runs, learned on the first stats() (null until then, or offline)
 
   #replica; // true for a read replica (named <primary>.r.<region>)
-  #ready = false; // a replica serves reads only once its primary's copy has fully arrived
+  #ready = false; // a replica serves reads only once its primary's copy has fully arrived, while its stream lasts
+  #stream = null; // a replica's current stream from its primary
   #repl = null; // a primary's Replicator
   #checkArmed = false; // an alarm will look at the AOF size
   #inlineUntil = 0; // after a failed helper rewrite, rewrite inline until then
@@ -150,7 +151,7 @@ export class ValkeyShard extends DurableObject {
 
   /** Replica: its primary's copy has arrived; serve reads. Returns where this replica runs. */
   async replicaReady() {
-    this.#ready = true;
+    if (this.#stream) this.#ready = true; // not if the stream ended meanwhile
     return await coloOf().catch(() => null);
   }
 
@@ -171,8 +172,16 @@ export class ValkeyShard extends DurableObject {
       return await w.close().catch(() => {});
     }
     if (this.#replica) {
-      // The primary's stream starts a fresh copy, so stop serving reads until it has arrived.
-      if (localAddress?.startsWith("repl")) { this.#ready = false; return await this.#host.serve(socket, null, true); }
+      // The primary's stream starts a fresh copy, so stop serving reads until it has arrived. Once the stream
+      // ends the data only gets older: reset, which also closes routers' open sockets (their reads retry on
+      // the primary), and the primary copies a fresh instance.
+      if (localAddress?.startsWith("repl")) {
+        const stream = (this.#stream = {});
+        this.#ready = false;
+        try { return await this.#host.serve(socket, null, true); } finally {
+          if (this.#stream === stream) { this.#stream = null; this.#ready = false; setTimeout(() => this.ctx.abort(new Error("replica stream ended")), 0); }
+        }
+      }
       if (!this.#ready) return await socket.close(); // the router reads from the primary instead
     }
     this.#repl?.wake();
