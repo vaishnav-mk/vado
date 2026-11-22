@@ -461,7 +461,7 @@ export class Router {
       // Valkey's own wording (processCommand): original spelling, each arg as '%.*s' plus a space, up to 128 chars.
       let args = "";
       for (let i = 1; i < argv.length && args.length < 128; i++) args += `'${str(argv[i]).slice(0, 128 - args.length)}' `;
-      return error(`ERR unknown command '${str(argv[0]).slice(0, 128)}', with args beginning with: ${args}`.replace(/[\r\n]/g, " "));
+      return error(`ERR unknown command '${str(argv[0]).slice(0, 128)}', with args beginning with: ${args}`);
     }
     if ((e.arity > 0 && argv.length !== e.arity) || (e.arity < 0 && argv.length < -e.arity)) {
       return error(`ERR wrong number of arguments for '${name}' command`);
