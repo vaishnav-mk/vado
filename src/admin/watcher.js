@@ -171,7 +171,8 @@ export class Watcher extends DurableObject {
   // Point: one poll, for the charts. reads includes what replicas served.
   #point(t) {
     const s = this.#state;
-    return { t, reads: Math.round(s.totals.reads + s.totals.replicaReads), writes: Math.round(s.totals.writes), replicaReads: Math.round(s.totals.replicaReads), readMs: s.probe.readMs, writeMs: s.probe.writeMs };
+    const r1 = (x) => Math.round(x * 10) / 10; // a tenth is enough, and keeps small rates from rounding to zero
+    return { t, reads: r1(s.totals.reads + s.totals.replicaReads), writes: r1(s.totals.writes), replicaReads: r1(s.totals.replicaReads), readMs: s.probe.readMs, writeMs: s.probe.writeMs };
   }
 
   // One shard as the page shows it, with rates over the last few polls, and what changed since the last.
