@@ -99,7 +99,8 @@ The dashboard is public to watch and needs signing in to change anything.
   `SameSite=Strict` cookie. The token itself is never stored, and changing it signs everyone out.
 - **Changing things** (creating a database, running a command, restarting a shard, test traffic) checks the session
   with `Admin.authorized()` on every call. A signed-in person can do what the bench token allows through these
-  paths, including FLUSHALL on any database; the router's own checks still apply to commands.
+  paths, and the router's own checks still apply to commands. The dashboard refuses KEYS (it returns every key at
+  once), FLUSHALL and FLUSHDB, which belong in a client.
 - **`Admin`** is an RPC entrypoint, so only Workers on the account with a service binding to it can call it. It
   returns no password hashes. Test traffic it starts stops by itself after ten minutes (`TEST_TRAFFIC_MS`), or when
   nobody is watching that database any more.

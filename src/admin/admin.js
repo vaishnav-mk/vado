@@ -20,6 +20,8 @@ const SESSION_MS = 7 * 24 * 3600_000;
 const WAIT_MS = 3_000; // how long a write from the dashboard waits to hear from its replicas
 // One-shot calls can't use these: they need a connection that stays open.
 const NEEDS_A_CONNECTION = new Set(["subscribe", "psubscribe", "ssubscribe", "monitor", "multi", "watch", "reset", "quit"]);
+// Not from a button: KEYS returns every key at once (SCAN pages through them), and a flush wipes the database.
+const REFUSED = { keys: "KEYS returns every key at once; use SCAN", flushall: "FLUSHALL wipes the database; run it from a client", flushdb: "FLUSHDB wipes the database; run it from a client" };
 
 let myColo = null; // this isolate's colo, once known
 const colo = async () => (myColo ??= await coloOf().catch(() => null));
@@ -84,6 +86,7 @@ export class Admin extends WorkerEntrypoint {
     if (!Array.isArray(argv) || !argv.length || argv.some((a) => typeof a !== "string")) throw new Error("expected the command as a list of strings");
     const cmd = argv[0].toLowerCase();
     if (NEEDS_A_CONNECTION.has(cmd)) throw new Error(`${argv[0].toUpperCase()} needs a client that keeps its connection open, such as valkey-cli`);
+    if (Object.hasOwn(REFUSED, cmd)) throw new Error(REFUSED[cmd]);
     const db = await this.#find(name, true);
     const table = await commands(this.env), entry = table.get(cmd);
     const idx = keyIndexes(table, cmd, argv.map((a) => enc.encode(a)));
