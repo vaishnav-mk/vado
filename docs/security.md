@@ -80,12 +80,24 @@ The Worker's HTTP API (`src/bench/bench.js`) needs `Authorization: Bearer <BENCH
 
 Treat the token like the password, or leave `BENCH_TOKEN` unset in a deployment you care about.
 
-## The live view
+## The dashboard
 
-`ui/server.mjs` holds the bench token and the password in its own process, so neither reaches the browser. It
-listens on 127.0.0.1 only, and its page has no login: anyone who can reach that port on your machine can run
-commands, create databases, restart shards and start paid test traffic. Don't forward the port or bind it
-elsewhere.
+The dashboard is public to watch and needs signing in to change anything.
+
+- **Watching** is `/live?db=<name>`, a WebSocket from the database's Watcher. It carries counts, sizes, rates,
+  response times and places (city names), never keys, values or client addresses. Anyone who knows a database's
+  name can watch it, and the dashboard lists every database's name. Each watched database costs a poll of every
+  shard and ready replica a second, and the Watcher's response-time probe is client traffic, so a watched database
+  doesn't go to sleep.
+- **Signing in** takes `BENCH_TOKEN`. The dashboard sends it to `Admin.session()` and keeps only what comes back: an
+  expiring session string signed with the token (HMAC-SHA256, seven days), in an `HttpOnly`, `Secure`,
+  `SameSite=Strict` cookie. The token itself is never stored, and changing it signs everyone out.
+- **Changing things** (creating a database, running a command, restarting a shard, test traffic) checks the session
+  with `Admin.authorized()` on every call. A signed-in person can do what the bench token allows through these
+  paths, including FLUSHALL on any database; the router's own checks still apply to commands.
+- **`Admin`** is an RPC entrypoint, so only Workers on the account with a service binding to it can call it. It
+  returns no password hashes. Test traffic it starts stops by itself after ten minutes (`TEST_TRAFFIC_MS`), or when
+  nobody is watching that database any more.
 
 ## Data at rest
 

@@ -28,7 +28,7 @@ is a call path, not a statement about which machine or data center runs it.
 
 | Component | Where | Holds |
 | --- | --- | --- |
-| Worker (`src/index.js`) | Wherever the client's connection lands | Nothing durable. A `connect()` handler, `/ws`, and a token-protected bench API |
+| Worker (`src/index.js`) | Wherever the client's connection lands | Nothing durable. A `connect()` handler, `/ws`, `/live`, a token-protected bench API, and the `Admin` RPC entrypoint the dashboard calls. Other requests go to the dashboard |
 | Router (`src/router/router.js`) | In the Worker, one per client connection | Per-connection state: the database, AUTH, MULTI/WATCH, recent writes per shard, its upstreams |
 | Shards (`ValkeyShard` to `ValkeyShard7`, bindings `SHARD` to `SHARD7`) | Durable Objects named `<db>.<created>.<i>`, in class `i % 8`, placed by the database's `regions` or `LOCATION_HINT` | One Valkey process each, owning a contiguous range of the 16,384 slots. Its AOF lives in the object's SQLite |
 | Read replicas (`src/replication/replication.js`) | Class `8 + k` for a primary of class `k` (`ValkeyShard8` to `ValkeyShard15`), named `<db>.<created>.<i>.r.<region>`, one per shard per replica region | A copy of one shard's data, in memory only, kept current from the shard's AOF |
@@ -37,7 +37,9 @@ is a call path, not a statement about which machine or data center runs it.
 | `__meta` shard | `ValkeyShard` named `__meta` | Nothing. It answers `COMMAND`, which gives the router every command's key positions |
 | Catalog (`Catalog`, `CATALOG` binding) | One Durable Object named `catalog` | Each database's name, creation time, shard count, its `regions` and `replicas` lists, and how many shard classes its shards rotate over |
 | Pulse (`src/admin/pulse.js`, `PULSE` binding) | One Durable Object named `pulse` | In memory only: each isolate's latest report of its open connections |
-| Senders (`src/bench/sender.js`, `SENDER` binding) | Durable Objects named `<region>` or `<region>/<k>`, placed in that region | Nothing. They run bench tests, so test traffic starts in a chosen region |
+| Senders (`src/bench/sender.js`, `SENDER` binding) | Durable Objects named `<region>` or `<region>/<k>`, placed in that region | Only while the dashboard's test traffic runs: its database and deadline, one round per alarm. They run bench tests, so test traffic starts in a chosen region |
+| Watchers (`src/admin/watcher.js`, `WATCHER` binding) | One Durable Object per database being watched, named after it, placed near its first viewer | In memory only: five minutes of history, recent events, and two probe connections. Polls the database's shards and ready replicas once a second while anyone has `/live` open, and stops when nobody does |
+| Dashboard (`dashboard/`, Worker `vado-dashboard`) | Its own Worker, reached only through this one (`DASHBOARD` binding) | Nothing. A TanStack Start app: pages, and server functions that call `Admin` |
 
 You don't run a server or a cluster manager. Cloudflare runs the objects; you still own the shard counts, the
 placement, the password, and what happens to clients when a shard resets.
