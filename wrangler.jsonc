@@ -52,5 +52,7 @@
     "SHARD_EPOCHS": "[{\"from\":0,\"shards\":16},{\"from\":1795002173433,\"shards\":1}]",
     "LOCATION_HINT": "apac"
   },
+  // Each deploy's version id: a shard reports it, so the dashboard can tell a deploy from a crash.
+  "version_metadata": { "binding": "VERSION" },
   "observability": { "enabled": true }
 }
