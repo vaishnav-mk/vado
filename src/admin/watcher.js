@@ -137,7 +137,7 @@ export class Watcher extends DurableObject {
         here?.colo ?? coloOf().catch(() => null), this.#probe(),
       ]);
       here = place(colo);
-      const seen = { restarts: [], replicas: [] };
+      const seen = { restarts: [], replicas: [], rewrites: [] };
       shards = snaps.map((s, i) => this.#shard(shardView(s, i, table), at, seen));
       this.#summarize(seen);
       entries = this.#entries(pulse.isolates);
@@ -198,10 +198,7 @@ export class Watcher extends DurableObject {
     if (used >= MEMORY_HIGH) k.memoryHigh = true; else if (used < MEMORY_OK) k.memoryHigh = false;
     const lr = v.log.lastRewrite;
     if (lr?.ms !== undefined && k.rewriteAt !== lr.at) {
-      if (k.rewriteAt !== undefined) {
-        if (lr.error) this.#event("warning", "rewrite", `Shard ${v.i} couldn't compact its log in a helper, so it did it itself`, { shard: v.i });
-        else this.#event("success", "rewrite", `Shard ${v.i} compacted its log in ${(lr.ms / 1000).toFixed(1)} s${lr.baseBytes ? `, to ${(lr.baseBytes / 2 ** 20).toFixed(1)} MB` : ""}`, { shard: v.i });
-      }
+      if (k.rewriteAt !== undefined) seen.rewrites.push({ i: v.i, ms: lr.ms, bytes: lr.baseBytes ?? null, error: lr.error ?? null });
       k.rewriteAt = lr.at;
     }
     const replicas = v.replicas.map((r) => {
@@ -219,11 +216,17 @@ export class Watcher extends DurableObject {
     return { ...shown, ok: true, reads, writes, restartedAt: k.restartedAt ?? 0, replicas };
   }
 
-  // Restarts and replica changes seen in one poll, as a few readable events rather than one per shard.
-  #summarize({ restarts, replicas }) {
+  // Restarts, log compactions and replica changes seen in one poll, as a few readable events rather than one
+  // per shard (a new database's 64 shards all compact at once, say).
+  #summarize({ restarts, replicas, rewrites }) {
     const deploys = restarts.filter((r) => r.deploy), others = restarts.filter((r) => !r.deploy);
     if (deploys.length) this.#event("info", "deploy", deploys.length === this.#shards.size && deploys.length > 1 ? `All ${deploys.length} shards restarted for a new deploy` : `${deploys.length === 1 ? `Shard ${deploys[0].i}` : plural(deploys.length, "shard")} restarted for a new deploy`);
     for (const r of others) this.#event("warning", "restart", r.backMs === null ? `Shard ${r.i} restarted` : `Shard ${r.i} restarted and was back in ${(r.backMs / 1000).toFixed(1)} s`, { shard: r.i });
+    const failed = rewrites.filter((r) => r.error), done = rewrites.filter((r) => !r.error);
+    for (const r of failed) this.#event("warning", "rewrite", `Shard ${r.i} couldn't compact its log in a helper, so it did it itself`, { shard: r.i });
+    const mb = (b) => `${(b / 2 ** 20).toFixed(1)} MB`, sec = (ms) => `${(ms / 1000).toFixed(1)} s`;
+    if (done.length === 1) this.#event("success", "rewrite", `Shard ${done[0].i} compacted its log in ${sec(done[0].ms)}${done[0].bytes ? `, to ${mb(done[0].bytes)}` : ""}`, { shard: done[0].i });
+    else if (done.length) this.#event("success", "rewrite", `${plural(done.length, "shard")} compacted their logs, the slowest in ${sec(Math.max(...done.map((r) => r.ms)))}`);
     const by = (to) => replicas.filter((r) => r.to === to);
     const one = (r) => `The replica of shard ${r.i} in ${REGION_NAMES[r.region] ?? r.region}`;
     const group = (xs, many, single, level) => { if (xs.length > 1) this.#event(level, "replica", many(xs.length)); else if (xs.length) this.#event(level, "replica", single(xs[0]), { shard: xs[0].i, region: xs[0].region }); };
