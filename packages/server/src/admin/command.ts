@@ -73,8 +73,11 @@ export async function command(env: Env, db: DatabaseRecord, argv: string[]): Pro
 
     if (write && db.replicas && reply.type !== "error") {
       const t1 = performance.now();
-      const [acked] = await c.call(["WAIT", String(db.replicas.length), String(WAIT_MS)]);
-      replication = { acked: Number(acked), of: db.replicas.length, ms: performance.now() - t1 };
+      await c.send(["WAIT", String(db.replicas.length), String(WAIT_MS)]);
+      const [acked] = await c.read(1, decodeTyped);
+      // A WAIT that errors says nothing about the replicas.
+      replication =
+        acked.type === "integer" ? { acked: acked.value, of: db.replicas.length, ms: performance.now() - t1 } : null;
     }
 
     return {
