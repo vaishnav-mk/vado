@@ -1,7 +1,8 @@
 # Architecture
 
 vado runs real Valkey, compiled to WebAssembly, inside Durable Objects. A database is a fixed number of shard
-objects, optionally spread over regions, and each shard can keep read replicas in other regions. A router in the
+objects, optionally spread over regions, and each shard can keep read replicas in other regions. A database can run
+Redis instead ([flavours](#flavours)); this page says Valkey for either. A router in the
 Worker speaks RESP to the client and routes each command by hash slot, so the client sees one ordinary Valkey server.
 
 ```mermaid
@@ -114,6 +115,17 @@ placement, the password, and what happens to clients when a shard resets.
   Each isolate caches the record, since it never changes.
 - **Trade-off:** no online resharding, and no moving a database. More capacity, or a different placement, means a
   new database.
+
+### Flavours
+
+A database's flavour, `valkey` or `redis`, is fixed when it is created and kept in the catalog (`flavour`; empty
+means Valkey, so older databases need nothing). A Redis database's object names carry a `redis` segment
+(`<name>.<created>.redis.<i>`, its pub/sub shard and its replicas likewise), so every object knows which wasm to
+boot from its own name, with no catalog lookup. Its rewriters are named after its shards, and Redis's COMMAND table
+comes from a `__meta.redis` object. The two builds have the same exports and almost the same imports, and Redis
+gets Valkey's `import-mode` from a patch, so the host, router and replication code is the same for both. A
+connection can switch between a Valkey and a Redis database with AUTH; the router takes the new database's command
+table with it.
 
 ### Pub/sub shard
 

@@ -120,7 +120,8 @@ have (`src/replication/replication.js`).
   Its `+PONG` means the replica has run everything before it, and only then does the replica serve reads. A marker
   every 2 s (`REPL_TICK_MS`) measures each replica's lag. A replica that receives a new copy stops serving reads
   until it has all of it.
-- **A replica only follows.** Replicas run with Valkey's `import-mode` and no memory limit, so they never expire or
+- **A replica only follows.** Replicas run with `import-mode` (Redis gets it from `wasm/redis/patches/0005`) and no
+  memory limit, so they never expire or
   evict keys of their own; reads still hide expired keys, and the primary's stream deletes them, as with Valkey's own
   replicas. A replica can't lose a key its primary still has, and a streamed write can't fail on the replica's
   memory limit, where with replies off nobody would see it.

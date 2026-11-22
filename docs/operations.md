@@ -88,6 +88,8 @@ curl -H "authorization: Bearer $TOKEN" \
 ```
 
 `regions` and `replicas` take `world` or a comma-separated list of location hints ([placement](scaling.md#placement)).
+`flavour=redis` runs Redis 8.12 instead of Valkey ([flavours](architecture.md#flavours)); the dashboard's New
+database dialog has the same choice.
 `classes=<1..8>` (default 8) sets how many shard classes the shards rotate over
 ([shard classes](scaling.md#shard-classes-and-isolates)); it is there for experiments. These apply only to a new
 database; for an existing one, `/db` returns its record unchanged. `/db` on a database with replicas also

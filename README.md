@@ -1,10 +1,10 @@
 # vado
 
-Valkey on Cloudflare Durable Objects.
+Valkey, or Redis, on Cloudflare Durable Objects.
 
 Each shard is a Durable Object running real Valkey 9.1, compiled to WebAssembly, with its append-only file in the
 object's SQLite. A router in the Worker spreads keys over the shards by hash slot, so `valkey-cli`, ioredis and
-`valkey-benchmark` see one ordinary Valkey server.
+`valkey-benchmark` see one ordinary Valkey server. A database can run Redis 8.12 instead, built the same way.
 
 Experimental. An independent project, not an official Cloudflare or Valkey product.
 
@@ -13,7 +13,7 @@ Experimental. An independent project, not an official Cloudflare or Valkey produ
 ## What you get
 
 - Real Valkey: commands, replies and errors are Valkey's own. Clients connect over TCP, a WebSocket or a service
-  binding.
+  binding. Or real Redis: each database is created with one or the other, and everything below works on both.
 - Durable writes. A reply leaves only after its AOF entry is committed to SQLite, and under load many writes share
   one commit.
 - Shards in the regions you pick, each with read replicas in other regions if you want them. Routers read from the
@@ -99,7 +99,7 @@ For raw TCP, put a TCP Worker or Spectrum in front. From another Worker, use a s
 | --- | --- |
 | [`src/`](src) | The Worker: router, shards, replication, catalog, the dashboard's backend, and the bench API |
 | [`dashboard/`](dashboard) | The dashboard Worker (TanStack Start, React, Kumo) |
-| [`wasm/`](wasm) | The Valkey build: patches, the WASI shim and the committed `valkey.wasm`, which CI rebuilds and checks |
+| [`wasm/`](wasm) | The Valkey and Redis builds: patches, the shared WASI shim and the committed `valkey.wasm` and `redis/redis.wasm`, which CI rebuilds and checks |
 | [`test/`](test) | Client-level tests: ioredis, RESP3, 1 vs N shards, `kill -9` durability and a concurrency hammer |
 | [`scripts/`](scripts) | Local runs, the WebSocket-to-TCP shim and the colo table generator |
 | [`docs/`](docs) | How it works, how to run it, and what it measured |
@@ -119,4 +119,6 @@ Rules for changing the code are in [AGENTS.md](AGENTS.md).
 ## License
 
 [Apache-2.0](LICENSE). `wasm/valkey.wasm` is a build of Valkey and valkey-wasm, both BSD-3-Clause; see
-[NOTICE](NOTICE) and [wasm/](wasm/README.md).
+[NOTICE](NOTICE) and [wasm/](wasm/README.md). `wasm/redis/redis.wasm` is a build of Redis 8, which is not BSD: it is
+distributed under the AGPLv3, which applies to anyone who runs the Redis flavour for others
+([wasm/redis/](wasm/redis/README.md)).
