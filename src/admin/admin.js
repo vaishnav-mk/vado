@@ -23,6 +23,13 @@ const NEEDS_A_CONNECTION = new Set(["subscribe", "psubscribe", "ssubscribe", "mo
 // Not from a button: KEYS returns every key at once (SCAN pages through them), and a flush wipes the database.
 const REFUSED = { keys: "KEYS returns every key at once; use SCAN", flushall: "FLUSHALL wipes the database; run it from a client", flushdb: "FLUSHDB wipes the database; run it from a client" };
 
+/** Whether `session` is a live session string from session(): also how /live tells signed-in watchers apart. */
+export async function signedIn(env, session) {
+  if (!env.BENCH_TOKEN || typeof session !== "string") return false;
+  const [until, mac] = session.split(".");
+  return Number(until) > Date.now() && sameSecret(mac ?? "", await hmac(env.BENCH_TOKEN, `dashboard:${until}`));
+}
+
 let myColo = null; // this isolate's colo, once known
 const colo = async () => (myColo ??= await coloOf().catch(() => null));
 
@@ -121,9 +128,7 @@ export class Admin extends WorkerEntrypoint {
 
   /** Whether a session string from session() is still good. */
   async authorized(session) {
-    if (!this.env.BENCH_TOKEN || typeof session !== "string") return false;
-    const [until, mac] = session.split(".");
-    return Number(until) > Date.now() && sameSecret(mac ?? "", await hmac(this.env.BENCH_TOKEN, `dashboard:${until}`));
+    return await signedIn(this.env, session);
   }
 
   async #find(name, required = false) {

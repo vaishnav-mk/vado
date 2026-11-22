@@ -92,8 +92,9 @@ The dashboard is public to watch and needs signing in to change anything.
 - **Watching** is `/live?db=<name>`, a WebSocket from the database's Watcher. It carries counts, sizes, rates,
   response times and places (city names), never keys, values or client addresses. Anyone who knows a database's
   name can watch it, and the dashboard lists every database's name. Each watched database costs a poll of every
-  shard and ready replica a second, and the Watcher's response-time probe is client traffic, so a watched database
-  doesn't go to sleep.
+  shard and ready replica a second. The Watcher's response-time probe reads one key a second, which is client
+  traffic, so that key's shard stays awake while watched. It writes the key only while someone signed in watches:
+  anonymous viewers never write to a database.
 - **Signing in** takes `BENCH_TOKEN`. The dashboard sends it to `Admin.session()` and keeps only what comes back: an
   expiring session string signed with the token (HMAC-SHA256, seven days), in an `HttpOnly`, `Secure`,
   `SameSite=Strict` cookie. The token itself is never stored, and changing it signs everyone out.

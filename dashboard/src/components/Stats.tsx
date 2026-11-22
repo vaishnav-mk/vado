@@ -30,7 +30,7 @@ export function Stats({ state }: { state: LiveState | null }) {
       <Stat title="Commands/s" value={t ? num(reads + writes) : waiting}
         hint={t ? `${num(reads)} reads, ${num(writes)} writes${state?.test ? ", with test traffic" : ""}` : undefined} />
       <Stat title="Response time" value={ms(probe?.readMs)}
-        hint={probe ? `Reads${where ? ` from ${where}` : ""}. Writes ${ms(probe.writeMs)}.${probe.failed ? ` ${probe.failed} failed.` : ""}` : undefined} />
+        hint={probe ? `Reads${where ? ` from ${where}` : ""}. ${probe.writes === false ? "Sign in to time writes." : `Writes ${ms(probe.writeMs)}.`}${probe.failed ? ` ${probe.failed} failed.` : ""}` : undefined} />
       <Stat title="Keys" value={t ? (t.keys ?? 0).toLocaleString("en") : waiting} hint={shards ? `Over ${shards} shard${shards === 1 ? "" : "s"}` : undefined} />
       <Stat title="Memory" value={t ? bytes(t.memory) : waiting}>
         {t && <Meter label={`of ${bytes(t.maxMemory)}`} value={t.maxMemory ? Math.min(100, (100 * t.memory) / t.maxMemory) : 0} showValue={false} />}

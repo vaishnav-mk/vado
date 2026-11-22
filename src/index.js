@@ -7,6 +7,8 @@ import { wsSocket } from "./router/websocket.js";
 import { bench } from "./bench/bench.js";
 import { current } from "./catalog/databases.js";
 import { DB_NAME } from "./catalog/catalog.js";
+import { signedIn } from "./admin/admin.js";
+import { SIGNED_IN } from "./admin/watcher.js";
 
 export { ValkeyShard, ValkeyShard1, ValkeyShard2, ValkeyShard3, ValkeyShard4, ValkeyShard5, ValkeyShard6, ValkeyShard7 } from "./shard/shard.js";
 export { ValkeyShard8, ValkeyShard9, ValkeyShard10, ValkeyShard11, ValkeyShard12, ValkeyShard13, ValkeyShard14, ValkeyShard15 } from "./shard/shard.js";
@@ -45,7 +47,12 @@ async function watch(req, env) {
   if (!DB_NAME.test(name)) return new Response("no such database", { status: 404 });
   const db = await current(env, name).catch(() => null);
   if (!db || db.dropped) return new Response("no such database", { status: 404 });
-  return env.WATCHER.getByName(name).fetch(req);
+  // The Watcher writes its probe key only while someone signed in watches; only this says who is.
+  const headers = new Headers(req.headers);
+  headers.delete(SIGNED_IN);
+  const session = /(?:^|;\s*)vado_session=([^;]+)/.exec(req.headers.get("cookie") ?? "")?.[1];
+  if (session && (await signedIn(env, session))) headers.set(SIGNED_IN, "1");
+  return env.WATCHER.getByName(name).fetch(new Request(req, { headers }));
 }
 
 // GET /ws upgrades to a WebSocket carrying raw RESP (scripts/ws-shim.mjs turns it back into a local TCP

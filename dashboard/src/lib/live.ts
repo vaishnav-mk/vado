@@ -35,8 +35,9 @@ function apply(live: Live, msg: LiveMessage): Live {
   return { state: msg.state ?? live.state, history, events: mergeEvents(live.events, msg.events ?? []), connection: "open" };
 }
 
-/** The live picture of database `name`, or EMPTY until the first message. */
-export function useLive(name: string): Live {
+/** The live picture of database `name`, or EMPTY until the first message. Reconnects when `signedIn` changes:
+ *  the Watcher measures writes only for signed-in watchers, and learns who is when the socket opens. */
+export function useLive(name: string, signedIn = false): Live {
   const [live, setLive] = useState<Live>(EMPTY);
   useEffect(() => {
     let ws: WebSocket | null = null, timer: ReturnType<typeof setTimeout> | undefined, delay = RETRY_MIN, stopped = false;
@@ -60,6 +61,6 @@ export function useLive(name: string): Live {
     };
     connect();
     return () => { stopped = true; clearTimeout(timer); ws?.close(); };
-  }, [name]);
+  }, [name, signedIn]);
   return live;
 }

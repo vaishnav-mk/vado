@@ -6,6 +6,7 @@ import { Header } from "../components/Header";
 import { getDatabase, listDatabases, listRegions } from "../server/admin";
 import { useDark } from "../lib/hooks";
 import { useLive } from "../lib/live";
+import { useSignedIn } from "../components/Guard";
 import type { Database } from "../lib/types";
 
 export const Route = createFileRoute("/db/$name")({
@@ -35,7 +36,7 @@ function Page() {
 }
 
 function LivePage({ db, databases, regions }: { db: Database; databases: Database[]; regions: Record<string, string> }) {
-  const live = useLive(db.name), dark = useDark();
+  const live = useLive(db.name, useSignedIn()), dark = useDark();
   return (
     <>
       <Header name={db.name} databases={databases} regions={regions} state={live.state} connection={live.connection} />

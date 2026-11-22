@@ -22,6 +22,8 @@ const RESTARTING_MS = 10_000; // a shard counts as restarting for this long afte
 const MEMORY_HIGH = 0.9, MEMORY_OK = 0.8; // warn once above the first, again only after dropping below the second
 const TEST_SENDERS = { light: 1, medium: 3, heavy: 6 }; // per region
 const PROBE_KEY = "dashboard:probe";
+/** Set by the Worker on /live for a watcher with a dashboard session (src/index.js). */
+export const SIGNED_IN = "x-vado-signed-in";
 
 const median = (xs) => (xs.length ? [...xs].sort((a, b) => a - b)[xs.length >> 1] : null);
 const plural = (n, w) => `${n.toLocaleString()} ${w}${n === 1 ? "" : "s"}`;
@@ -47,7 +49,7 @@ export class Watcher extends DurableObject {
     if (req.headers.get("upgrade")?.toLowerCase() !== "websocket") return new Response("expected a WebSocket upgrade", { status: 426 });
     this.#name ??= new URL(req.url).searchParams.get("db");
     const [client, server] = Object.values(new WebSocketPair());
-    this.ctx.acceptWebSocket(server);
+    this.ctx.acceptWebSocket(server, req.headers.get(SIGNED_IN) === "1" ? ["signed-in"] : []);
     server.send(JSON.stringify({ type: "init", history: this.#history, events: this.#events, state: this.#state }));
     if ((await this.ctx.storage.getAlarm()) === null) await this.ctx.storage.setAlarm(Date.now());
     return new Response(null, { status: 101, webSocket: client });
@@ -183,7 +185,7 @@ export class Watcher extends DurableObject {
         replicaLagMs: Math.max(0, ...replicas.filter((r) => r.state === "ready").map((r) => r.lagMs ?? 0)),
       },
       // Response time measured by this Watcher, from `watcher` (its colo), over the last few polls.
-      probe: { readMs: median(probe.map((p) => p.readMs)), writeMs: median(probe.map((p) => p.writeMs)), failed: this.#probes.length - probe.length },
+      probe: { readMs: median(probe.map((p) => p.readMs)), writeMs: median(probe.filter((p) => p.writeMs !== null).map((p) => p.writeMs)), writes: !!this.#writer, failed: this.#probes.length - probe.length },
       shards,
       map: { entries }, // where clients connect: per colo, commands per second and open connections
       test: this.#testView(),
@@ -282,12 +284,15 @@ export class Watcher extends DurableObject {
 
   // Response time: a GET on a connection that only reads (so it reads from a replica when clients would)
   // and a SET on one that only writes. Kept open between polls, so it's a request, not a connection setup.
+  // The SET runs only while someone signed in watches: an anonymous viewer must not write to the database.
   async #probe() {
     const timed = async (c, cmd) => { const t = performance.now(); const [r] = await c.call(cmd); if (r?.err) throw new Error(r.err); return performance.now() - t; };
+    const writes = this.ctx.getWebSockets("signed-in").length > 0;
+    if (!writes && this.#writer) { this.#writer.close(); this.#writer = null; }
     try {
       if (!this.#reader) { this.#reader = await RespClient.open(this.env, this.#name, 5_000); await timed(this.#reader, ["GET", PROBE_KEY]); }
-      if (!this.#writer) { this.#writer = await RespClient.open(this.env, this.#name, 5_000); await timed(this.#writer, ["SET", PROBE_KEY, "0"]); }
-      const [readMs, writeMs] = await Promise.all([timed(this.#reader, ["GET", PROBE_KEY]), timed(this.#writer, ["SET", PROBE_KEY, String(Date.now())])]);
+      if (writes && !this.#writer) { this.#writer = await RespClient.open(this.env, this.#name, 5_000); await timed(this.#writer, ["SET", PROBE_KEY, "0"]); }
+      const [readMs, writeMs] = await Promise.all([timed(this.#reader, ["GET", PROBE_KEY]), writes ? timed(this.#writer, ["SET", PROBE_KEY, String(Date.now())]) : null]);
       keep(this.#probes, { readMs, writeMs }, WATCH_RATE_POLLS);
     } catch {
       this.#reader?.close(); this.#writer?.close();

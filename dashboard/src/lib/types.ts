@@ -117,7 +117,7 @@ export interface LiveState {
     replicasReady: number;
     replicaLagMs: number;
   };
-  probe: { readMs: number | null; writeMs: number | null; failed: number };
+  probe: { readMs: number | null; writeMs: number | null; writes?: boolean; failed: number }; // writes: measured (signed in)
   shards: Shard[];
   map: { entries: Entry[] };
   test: TestView | null;
