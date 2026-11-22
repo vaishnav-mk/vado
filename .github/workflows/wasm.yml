@@ -1,0 +1,64 @@
+# Rebuild wasm/valkey.wasm from the official Valkey release tarball and check
+# that the committed binary is exactly what the build produces, and that its
+# imports and exports match wasm/interface.txt (what the JS host provides).
+name: wasm
+
+on:
+  push:
+    paths:
+      - "wasm/**"
+      - ".github/workflows/wasm.yml"
+      - ".github/actions/wasm-toolchain/**"
+  pull_request:
+    paths:
+      - "wasm/**"
+      - ".github/workflows/wasm.yml"
+      - ".github/actions/wasm-toolchain/**"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: ./.github/actions/wasm-toolchain
+
+      # Only the downloaded tarballs: build.sh extracts a fresh tree every run.
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: wasm/.cache/*.tar.gz
+          key: wasm-cache-${{ hashFiles('wasm/build.sh') }}
+
+      - id: build
+        run: bash wasm/build.sh
+
+      - name: Interface matches wasm/interface.txt
+        if: ${{ !cancelled() && steps.build.outcome == 'success' }}
+        run: node wasm/interface.mjs wasm/build/valkey.wasm --check wasm/interface.txt
+
+      - name: Build is byte-identical to wasm/valkey.wasm
+        if: ${{ !cancelled() && steps.build.outcome == 'success' }}
+        run: |
+          sha256sum wasm/build/valkey.wasm wasm/valkey.wasm
+          stat -c '%s bytes  %n' wasm/build/valkey.wasm wasm/valkey.wasm
+          if ! cmp wasm/build/valkey.wasm wasm/valkey.wasm; then
+            echo "::error::wasm/build/valkey.wasm differs from the committed wasm/valkey.wasm." \
+              "If the change is intended, copy the build (the valkey-wasm artifact) over wasm/valkey.wasm" \
+              "and run: node wasm/interface.mjs > wasm/interface.txt"
+            exit 1
+          fi
+
+      - name: Upload the built wasm
+        if: ${{ failure() && steps.build.outcome == 'success' }}
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: valkey-wasm
+          path: wasm/build/valkey.wasm
+          if-no-files-found: error
