@@ -56,7 +56,9 @@ export class ValkeyShard extends DurableObject {
     this.#replica = /\.r\.[a-z-]+$/.test(ctx.id.name ?? "");
     this.#dropped = ctx.storage.sql.exec(`SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'dropped'`).toArray().length > 0;
     if (this.#dropped) return;
-    this.#host = new ValkeyHost(valkeyWasm, ctx.storage.sql, { args: valkeyArgs(env, this.#replica), sync: () => ctx.storage.sync() });
+    this.#host = new ValkeyHost(valkeyWasm, ctx.storage.sql, {
+      args: valkeyArgs(env, this.#replica), sync: () => ctx.storage.sync(), fatal: (e) => setTimeout(() => ctx.abort(e), 0),
+    });
     if (!this.#replica) {
       this.#repl = new Replicator(ctx, env, this.#host, ctx.id.name, env[replicaBinding(Number(this.constructor.binding.slice(5) || 0))]);
       this.#host.onAppend = (bytes) => { this.#repl.append(bytes); if (!this.#checkArmed) this.#armCheck(); };

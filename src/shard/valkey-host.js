@@ -38,10 +38,12 @@ export class ValkeyHost {
   lastActive = 0; // Date.now() of the last client input: on sockets (not quiet ones), or set by the shard for RPCs
 
   #sync; // () => Promise: resolves when every storage write so far is confirmed (group commit), or null
+  #fatal; // (error) => void: Valkey threw mid-command, or null
   #commits = 0; // AOF commits in flight; at SHARD_COMMITS, input waits for one, then runs in one pass
 
-  constructor(module, sql, { args = [], log = (l) => console.log("[valkey]", l), sync = null } = {}) {
+  constructor(module, sql, { args = [], log = (l) => console.log("[valkey]", l), sync = null, fatal = null } = {}) {
     this.#sync = sync;
+    this.#fatal = fatal;
     this.#log = log;
     const memory = () => this.#vk.exports.memory;
     this.#vfs = new Vfs(sql, memory);
@@ -223,7 +225,9 @@ export class ValkeyHost {
   // flushes replies. rk_step runs it before the pass, so a wake needs two.
   step() {
     const vk = this.#vk.exports;
-    try { vk.rk_tick ? vk.rk_tick() : vk.rk_step(); } catch (e) { this.#log(`rk_step threw: ${e?.stack ?? e}`); throw e; }
+    // A throw (a wasm trap, a storage error under fd_write) stops Valkey mid-command, so its memory can't be
+    // trusted after: `fatal` resets the object, which reloads from what was committed.
+    try { vk.rk_tick ? vk.rk_tick() : vk.rk_step(); } catch (e) { this.#log(`rk_step threw: ${e?.stack ?? e}`); this.#fatal?.(e); throw e; }
   }
 
   #schedule() {
