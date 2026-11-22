@@ -1,0 +1,104 @@
+--- a/src/config.c
++++ b/src/config.c
+@@ -4211,6 +4211,7 @@
+     createBoolConfig("lazyfree-lazy-server-del", NULL, DEBUG_CONFIG | MODIFIABLE_CONFIG, server.lazyfree_lazy_server_del, 0, NULL, NULL),
+     createBoolConfig("lazyfree-lazy-user-del", NULL, DEBUG_CONFIG | MODIFIABLE_CONFIG, server.lazyfree_lazy_user_del , 0, NULL, NULL),
+     createBoolConfig("lazyfree-lazy-user-flush", NULL, DEBUG_CONFIG | MODIFIABLE_CONFIG, server.lazyfree_lazy_user_flush , 0, NULL, NULL),
++    createBoolConfig("import-mode", NULL, DEBUG_CONFIG | MODIFIABLE_CONFIG, server.import_mode, 0, NULL, NULL),
+     createBoolConfig("repl-disable-tcp-nodelay", NULL, MODIFIABLE_CONFIG, server.repl_disable_tcp_nodelay, 0, NULL, NULL),
+     createBoolConfig("repl-diskless-sync", NULL, DEBUG_CONFIG | MODIFIABLE_CONFIG, server.repl_diskless_sync, 1, NULL, NULL),
+     createBoolConfig("repl-rdb-channel", NULL, MODIFIABLE_CONFIG | HIDDEN_CONFIG, server.repl_rdb_channel, 1, NULL, NULL),
+--- a/src/db.c
++++ b/src/db.c
+@@ -3087,6 +3087,12 @@
+     return now > when;
+ }
+ 
++/* In import-mode the only writer is the stream being imported, which saw every key it touches alive. */
++int importWriting(void) {
++    return server.executing_client && server.executing_client->cmd &&
++           (server.executing_client->cmd->flags & CMD_WRITE);
++}
++
+ /* Check if user configuration allows key to be deleted due to expiary */
+ int confAllowsExpireDel(void) {
+     if (server.lazyexpire_nested_arbitrary_keys)
+@@ -3177,6 +3183,9 @@
+         if (server.current_client && (server.current_client->flags & CLIENT_MASTER)) return KEY_VALID;
+         if (server.masterhost != NULL && !(flags & EXPIRE_FORCE_DELETE_EXPIRED)) return KEY_EXPIRED;
+     }
++
++    /* In import-mode, as on a replica: the stream deletes expired keys; to anyone else they're gone. */
++    if (server.import_mode) return importWriting() ? KEY_VALID : KEY_EXPIRED;
+ 
+     /* Check if user configuration disables lazy-expire deletions in current state.
+      * This will only apply if the server doesn't mandate key deletion to operate correctly (write commands). */
+--- a/src/expire.c
++++ b/src/expire.c
+@@ -673,7 +673,7 @@
+      * Instead we add the already expired key to the database with expire time
+      * (possibly in the past) and wait for an explicit DEL from the master. */
+     if (server.current_client && server.current_client->flags & CLIENT_MASTER) return 0;
+-    return (when <= commandTimeSnapshot() && !server.loading && !server.masterhost);
++    return (when <= commandTimeSnapshot() && !server.loading && !server.masterhost && !server.import_mode);
+ }
+ 
+ #define EXPIRE_NX (1<<0)
+--- a/src/server.c
++++ b/src/server.c
+@@ -1349,7 +1349,7 @@
+ void databasesCron(void) {
+     /* Expire keys by random sampling. Not required for slaves
+      * as master will synthesize DELs for us. */
+-    if (server.active_expire_enabled) {
++    if (server.active_expire_enabled && !server.import_mode) {
+         if (iAmMaster()) {
+             activeExpireCycle(ACTIVE_EXPIRE_CYCLE_SLOW);
+         } else {
+@@ -2048,7 +2048,7 @@
+ 
+     /* Run a fast expire cycle (the called function will return
+      * ASAP if a fast cycle is not needed). */
+-    if (server.active_expire_enabled && iAmMaster())
++    if (server.active_expire_enabled && !server.import_mode && iAmMaster())
+         activeExpireCycle(ACTIVE_EXPIRE_CYCLE_FAST);
+ 
+     if (moduleCount()) {
+--- a/src/server.h
++++ b/src/server.h
+@@ -2411,6 +2411,7 @@
+     int active_expire_effort;       /* From 1 (default) to 10, active effort. */
+     int allow_access_expired;       /* If > 0, allow access to logically expired keys */
+     int allow_access_trimmed;       /* If > 0, allow access to logically trimmed keys */
++    int import_mode;                /* Following another server's command stream: never expire or delete keys */
+     int active_defrag_enabled;
+     int active_defrag_paused;
+     int sanitize_dump_payload;      /* Enables deep sanitization for ziplist and listpack in RDB and RESTORE. */
+@@ -4522,6 +4523,7 @@
+ void propagateDeletion(redisDb *db, robj *key, int lazy);
+ int keyIsExpired(redisDb *db, sds key, kvobj *kv);
+ int confAllowsExpireDel(void);
++int importWriting(void);
+ long long getExpire(redisDb *db, sds key, kvobj *kv);
+ kvobj *setExpire(client *c, redisDb *db, robj *key, long long when);
+ kvobj *setExpireByLink(client *c, redisDb *db, sds key, long long when, dictEntryLink link);
+--- a/src/t_hash.c
++++ b/src/t_hash.c
+@@ -2162,6 +2162,9 @@
+         if (server.masterhost) return GETF_EXPIRED;
+     }
+ 
++    /* Same in import-mode (see expireIfNeeded) */
++    if (server.import_mode) return importWriting() ? GETF_OK : GETF_EXPIRED;
++
+     if ((server.loading) ||
+         (hfeFlags & HFE_LAZY_AVOID_FIELD_DEL) ||
+         (isPausedActionsWithUpdate(PAUSE_ACTION_EXPIRE)))
+@@ -4068,6 +4071,7 @@
+     if ( (server.loading) ||
+          (server.allow_access_expired) ||
+          (server.masterhost) ||  /* master-client or user-client, don't delete */
++         (server.import_mode) ||
+          (isPausedActionsWithUpdate(PAUSE_ACTION_EXPIRE)))
+         return 0;
+ 

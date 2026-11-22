@@ -1,6 +1,7 @@
 # wasm/
 
 Builds `valkey.wasm`, Valkey compiled to WebAssembly (WASI preview1, reactor model), from pristine upstream source.
+[`redis/`](redis/README.md) builds `redis.wasm` from Redis the same way, with the same shims.
 
 ```sh
 WASI_SDK=/path/to/wasi-sdk-34.0 wasm/build.sh                      # writes wasm/build/valkey.wasm
@@ -89,7 +90,8 @@ bytes, sha256 `55624fa36ae4f3e9fd8ec32f6757fe1360535f46e92a846d4428102f8756a78e`
 
 ## Pipeline
 
-`.github/workflows/wasm.yml` runs on pushes and pull requests that touch `wasm/` or the workflow. On ubuntu-latest it installs
+`.github/workflows/wasm.yml` runs on pushes and pull requests that touch `wasm/` or the workflow, once for Valkey and once
+for Redis (`wasm/redis/`, the same checks against its own files). On ubuntu-latest it installs
 wasi-sdk 34 and binaryen `version_133` (sha256-pinned, `.github/actions/wasm-toolchain`), runs `build.sh`, and fails
 unless:
 

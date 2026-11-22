@@ -1,0 +1,20 @@
+--- a/src/ae.c
++++ b/src/ae.c
+@@ -29,6 +29,9 @@
+ 
+ /* Include the best multiplexing layer supported by this system.
+  * The following should be ordered by performances, descending. */
++#ifdef HAVE_WASI_AE
++#include "ae_wasi.c" /* wasm: poll bridged to the host (wasm/wasi/) */
++#else
+ #ifdef HAVE_EVPORT
+ #include "ae_evport.c"
+ #else
+@@ -42,6 +45,7 @@
+         #endif
+     #endif
+ #endif
++#endif /* HAVE_WASI_AE */
+ 
+ #define INITIAL_EVENT 1024
+ aeEventLoop *aeCreateEventLoop(int setsize) {

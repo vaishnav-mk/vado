@@ -1,0 +1,15 @@
+--- a/src/slowlog.c
++++ b/src/slowlog.c
+@@ -154,8 +154,12 @@
+     s->wall = getMonotonicUs();
+     s->cpu_us = (ustime_t)ru.ru_utime.tv_sec*1000000 + ru.ru_utime.tv_usec +
+                 (ustime_t)ru.ru_stime.tv_sec*1000000 + ru.ru_stime.tv_usec;
++#ifdef VALKEY_WASM
++    s->nvcsw = s->nivcsw = 0; /* WASI's rusage has no context switch counts, and there are no other threads */
++#else
+     s->nvcsw = ru.ru_nvcsw;
+     s->nivcsw = ru.ru_nivcsw;
++#endif
+ }
+ 
+ /* Log an off-CPU warning, at most one line per second. The next line printed

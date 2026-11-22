@@ -11,5 +11,10 @@ The wasm/ directory, which builds that module from upstream Valkey, is derived
 from valkey-wasm: the WASI shims in wasm/wasi/, the build script and the
 patches. It is licensed under the BSD 3-Clause License; see wasm/LICENSE.
 
+It also includes wasm/redis/redis.wasm, a WebAssembly build of Redis 8.12.0
+(https://github.com/redis/redis), Copyright (c) Redis Ltd., distributed under the
+GNU Affero General Public License v3 (one of Redis 8's three licenses); see
+wasm/redis/LICENSE.txt and wasm/redis/README.md, which says where its source is.
+
 Builds with ALLOCATOR=mimalloc include mimalloc (https://github.com/microsoft/mimalloc),
 Copyright (c) 2018-2025 Microsoft Corporation, Daan Leijen, licensed under the MIT License.

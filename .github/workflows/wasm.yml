@@ -1,6 +1,7 @@
-# Rebuild wasm/valkey.wasm from the official Valkey release tarball and check
-# that the committed binary is exactly what the build produces, and that its
-# imports and exports match wasm/interface.txt (what the JS host provides).
+# Rebuild wasm/valkey.wasm and wasm/redis/redis.wasm from the official release
+# tarballs and check that each committed binary is exactly what its build
+# produces, and that its imports and exports match its interface.txt (what the
+# JS host provides).
 name: wasm
 
 on:
@@ -23,6 +24,16 @@ jobs:
   build:
     runs-on: ubuntu-latest
     timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { name: valkey, dir: wasm }
+          - { name: redis, dir: wasm/redis }
+    name: build (${{ matrix.name }})
+    env:
+      DIR: ${{ matrix.dir }}
+      WASM: ${{ matrix.name }}.wasm
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -34,24 +45,24 @@ jobs:
       - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: wasm/.cache/*.tar.gz
-          key: wasm-cache-${{ hashFiles('wasm/build.sh') }}
+          key: wasm-cache-${{ matrix.name }}-${{ hashFiles(format('{0}/build.sh', matrix.dir)) }}
 
       - id: build
-        run: bash wasm/build.sh
+        run: bash "$DIR/build.sh"
 
-      - name: Interface matches wasm/interface.txt
+      - name: Interface matches interface.txt
         if: ${{ !cancelled() && steps.build.outcome == 'success' }}
-        run: node wasm/interface.mjs wasm/build/valkey.wasm --check wasm/interface.txt
+        run: node wasm/interface.mjs "$DIR/build/$WASM" --check "$DIR/interface.txt"
 
-      - name: Build is byte-identical to wasm/valkey.wasm
+      - name: Build is byte-identical to the committed wasm
         if: ${{ !cancelled() && steps.build.outcome == 'success' }}
         run: |
-          sha256sum wasm/build/valkey.wasm wasm/valkey.wasm
-          stat -c '%s bytes  %n' wasm/build/valkey.wasm wasm/valkey.wasm
-          if ! cmp wasm/build/valkey.wasm wasm/valkey.wasm; then
-            echo "::error::wasm/build/valkey.wasm differs from the committed wasm/valkey.wasm." \
-              "If the change is intended, copy the build (the valkey-wasm artifact) over wasm/valkey.wasm" \
-              "and run: node wasm/interface.mjs > wasm/interface.txt"
+          sha256sum "$DIR/build/$WASM" "$DIR/$WASM"
+          stat -c '%s bytes  %n' "$DIR/build/$WASM" "$DIR/$WASM"
+          if ! cmp "$DIR/build/$WASM" "$DIR/$WASM"; then
+            echo "::error::$DIR/build/$WASM differs from the committed $DIR/$WASM." \
+              "If the change is intended, copy the build (the ${{ matrix.name }}-wasm artifact) over $DIR/$WASM" \
+              "and run: node wasm/interface.mjs $DIR/$WASM > $DIR/interface.txt"
             exit 1
           fi
 
@@ -59,6 +70,6 @@ jobs:
         if: ${{ failure() && steps.build.outcome == 'success' }}
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
-          name: valkey-wasm
-          path: wasm/build/valkey.wasm
+          name: ${{ matrix.name }}-wasm
+          path: ${{ matrix.dir }}/build/${{ matrix.name }}.wasm
           if-no-files-found: error
