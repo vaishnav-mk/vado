@@ -46,15 +46,15 @@ Rules for anyone, human or agent, changing this repo.
 
 ## Handling input
 
-- **Parse untrusted input once, where it enters.** Client bytes go through `request()` in `src/resp.js` with a size
-  limit. Database names have one rule, `DB_NAME` in `src/catalog.js`, checked at AUTH and again by the catalog at its
+- **Parse untrusted input once, where it enters.** Client bytes go through `request()` in `src/protocol/resp.js` with a size
+  limit. Database names have one rule, `DB_NAME` in `src/catalog/catalog.js`, checked at AUTH and again by the catalog at its
   RPC entry. They can't contain dots, which keeps them from forming a replica name (`<shard>.r.<region>`). Region
   lists are checked against `HINTS` by the catalog. Environment config is parsed and validated where it is read
   (`parseEpochs`), and a bad value throws instead of falling back.
 - **Compare secrets in constant time** (`sameSecret`). A database's own password is stored only as a salted hash
   (`hashSecret`), and AUTH checks the shared password before it looks up or creates a database.
 - **Clients don't change the service's settings.** `CONFIG SET` takes only the settings in `CONFIG_SET`
-  (`src/router.js`), which change how data behaves. Never add one for durability, memory, networking or auth.
+  (`src/router/router.js`), which change how data behaves. Never add one for durability, memory, networking or auth.
   SAVE, BGREWRITEAOF and ACL stay unsupported.
 
 ## Files
@@ -62,17 +62,17 @@ Rules for anyone, human or agent, changing this repo.
 | Path | What |
 | --- | --- |
 | `src/index.js` | Worker entry: `connect()`, `/ws`, shard and replica stubs, shard classes (`shardNs`: class `i % classes`), placement (`regions[i % n]`), which replica a router reads (`NEAR`), Pulse reports |
-| `src/router.js` | One per connection: parsing, routing, MULTI/WATCH, read-your-writes, replica fallback |
-| `src/shard.js` | `ValkeyShard` to `ValkeyShard15` (0-7 primaries, 8-15 read replicas): boots Valkey (primary or replica, from its name), schedules AOF rewrites and hands them to its rewriter |
-| `src/rewriter.js` | `ValkeyRewriter` to `ValkeyRewriter7`: rewrites a shard's AOF in a Valkey of its own; `rewriteByHelper` is the shard's side |
-| `src/valkey-host.js` | Runs valkey.wasm: sockets as fds (reused once closed), group commit, `rk_tick`, the `aof_rewrite` import, the delete sweep |
-| `src/vfs.js` | WASI filesystem on SQLite: chunk keys, `vfs_trash`; `onAppend` feeds replication |
-| `src/replication.js` | `Replicator`: copies, streams to and measures a primary's replicas |
-| `src/catalog.js` | Databases: shard count, `regions`, `replicas`, `classes` |
-| `src/pulse.js` | `Pulse`: each isolate's latest connection report, in memory |
-| `src/sender.js` | `Sender`: runs a bench test from a chosen region |
-| `src/regions.js` | Colo to location hint, generated from https://speed.cloudflare.com/locations |
-| `src/bench.js` | The token-protected bench API |
+| `src/router/router.js` | One per connection: parsing, routing, MULTI/WATCH, read-your-writes, replica fallback |
+| `src/shard/shard.js` | `ValkeyShard` to `ValkeyShard15` (0-7 primaries, 8-15 read replicas): boots Valkey (primary or replica, from its name), schedules AOF rewrites and hands them to its rewriter |
+| `src/shard/rewriter.js` | `ValkeyRewriter` to `ValkeyRewriter7`: rewrites a shard's AOF in a Valkey of its own; `rewriteByHelper` is the shard's side |
+| `src/shard/valkey-host.js` | Runs valkey.wasm: sockets as fds (reused once closed), group commit, `rk_tick`, the `aof_rewrite` import, the delete sweep |
+| `src/shard/vfs.js` | WASI filesystem on SQLite: chunk keys, `vfs_trash`; `onAppend` feeds replication |
+| `src/replication/replication.js` | `Replicator`: copies, streams to and measures a primary's replicas |
+| `src/catalog/catalog.js` | Databases: shard count, `regions`, `replicas`, `classes` |
+| `src/admin/pulse.js` | `Pulse`: each isolate's latest connection report, in memory |
+| `src/bench/sender.js` | `Sender`: runs a bench test from a chosen region |
+| `src/replication/regions.js` | Colo to location hint, generated from https://speed.cloudflare.com/locations |
+| `src/bench/bench.js` | The token-protected bench API |
 | `ui/` | The local live view: `server.mjs` (Node, holds the secrets) and a Vite + React + `@cloudflare/kumo` page |
 
 ## Structure
@@ -88,8 +88,8 @@ Rules for anyone, human or agent, changing this repo.
   `commitProbe`), `Catalog`, `Pulse` (`report`, `snapshot`) and `Sender` (`run`). The same goes for the rewriter's
   socket protocol (a JSON line, the files, then the base back), since old shards send rewrites to new rewriters.
   Use `#private` members so helpers aren't exposed over RPC.
-- Keep Durable Object classes thin. `ValkeyShard` boots Valkey and delegates to `ValkeyHost` (`src/valkey-host.js`),
-  `Vfs` (`src/vfs.js`), `Replicator` (`src/replication.js`) and `rewriteByHelper` (`src/rewriter.js`).
+- Keep Durable Object classes thin. `ValkeyShard` boots Valkey and delegates to `ValkeyHost` (`src/shard/valkey-host.js`),
+  `Vfs` (`src/shard/vfs.js`), `Replicator` (`src/replication/replication.js`) and `rewriteByHelper` (`src/shard/rewriter.js`).
 - A database's shard count, regions, replicas and classes are fixed when it is created. Change capacity for new
   databases by appending to `SHARD_EPOCHS`, never by editing an existing epoch. New catalog columns are added on
   startup when missing, as `regions`, `replicas` and `classes` are.
@@ -98,12 +98,12 @@ Rules for anyone, human or agent, changing this repo.
 - Keep shard classes and rewriter classes in step: `ValkeyShard<k>` (binding `SHARD<k>`) finds `ValkeyRewriter<k>`
   (`REWRITER<k>`) by binding name. Adding classes means bindings and a migration for both. Never remove a shard
   class: a database keeps shard `i` in class `i % classes`, as recorded in the catalog.
-- Changes to Valkey itself go in `wasm/patches/` or `wasm/wasi/`, with `vendor/valkey.wasm` rebuilt by `wasm/build.sh`.
+- Changes to Valkey itself go in `wasm/patches/` or `wasm/wasi/`, with `wasm/valkey.wasm` rebuilt by `wasm/build.sh`.
 - Comment the why the code can't show, not the what.
 
 ## Bench endpoints
 
-Tests are the `tests` object in `src/bench.js`; [operations](docs/operations.md#the-bench-api) lists them all. The
+Tests are the `tests` object in `src/bench/bench.js`; [operations](docs/operations.md#the-bench-api) lists them all. The
 live view reads `shards`, `dbs` and `pulse`. `send?region=<hint>&sender=<k>` runs any test from a Sender object in
 that region. `commit`, `staleness`, `ryw`, `replicate` and `rpcbatch` probe commits, replica lag, read-your-writes,
 replication cost and the RPC path; `frag`, `rewrite` and `vfs` probe memory against `used_memory`, a rewrite's cost

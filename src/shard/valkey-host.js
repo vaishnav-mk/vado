@@ -1,8 +1,8 @@
 // Runs one Valkey (valkey.wasm, patched: host-supplied argv, fork-free AOF rewrite) in a Durable
 // Object: sockets from connect(socket) become Valkey client fds; files live in DO SQLite (Vfs).
 import { Vfs } from "./vfs.js";
-import { frameEnd } from "./resp.js";
-import { CLIENT_HIGH_WATER, CLIENT_LOW_WATER, POOL_MAX, SHARD_COMMITS, SHARD_HIGH_WATER, SHARD_LOW_WATER, VFS_SWEEP_BYTES, VFS_SWEEP_MS } from "./constants.js";
+import { frameEnd } from "../protocol/resp.js";
+import { CLIENT_HIGH_WATER, CLIENT_LOW_WATER, POOL_MAX, SHARD_COMMITS, SHARD_HIGH_WATER, SHARD_LOW_WATER, VFS_SWEEP_BYTES, VFS_SWEEP_MS } from "../constants.js";
 
 const FD_BASE = 4096; // valkey-wasm sock_shim: fds >= this are host sockets
 const AE_READABLE = 1;

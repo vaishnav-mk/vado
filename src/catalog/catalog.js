@@ -2,13 +2,9 @@
 // count, or by the SHARD_EPOCHS entry in force at creation (a new epoch
 // sizes new databases and never moves an existing one).
 import { DurableObject } from "cloudflare:workers";
-import { epochAt, parseEpochs } from "./slots.js";
-import { SHARD_CLASSES } from "./constants.js";
-
-/** Durable Object location hints. A database may spread its shards over several (`regions`). */
-export const HINTS = new Set(["wnam", "enam", "sam", "weur", "eeur", "apac", "apac-ne", "apac-se", "oc", "afr", "me"]);
-/** One shard per region in turn, for a database spread around the world. */
-export const WORLD = ["wnam", "enam", "sam", "weur", "eeur", "me", "afr", "apac", "oc"];
+import { epochAt, parseEpochs } from "../protocol/slots.js";
+import { SHARD_CLASSES } from "../constants.js";
+import { HINTS } from "../replication/regions.js";
 
 /** Database names. They become part of shard object names, so the catalog is the one place that defines them. */
 export const DB_NAME = /^[a-z0-9][a-z0-9_-]{0,62}$/;

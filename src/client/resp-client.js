@@ -1,0 +1,39 @@
+// A small RESP client over a socket ({ readable, writable }): pipelined calls, replies decoded by
+// protocol/resp.js (bulk strings as strings, errors as { err }). Used by the bench and the Admin API.
+import { command, concat, decode, frameEnd } from "../protocol/resp.js";
+
+export class RespClient {
+  #w; #r; #buf = new Uint8Array(0); #stallMs;
+
+  constructor(socket, stallMs = 30_000) {
+    this.#w = socket.writable.getWriter();
+    this.#r = socket.readable.getReader();
+    this.#stallMs = stallMs;
+  }
+
+  /** Sends every command at once, then reads one reply for each. */
+  async call(...cmds) {
+    await this.#w.write(concat(cmds.map(command)));
+    return this.read(cmds.length);
+  }
+
+  /** Reads the next `n` replies. A connection that sends nothing for stallMs is an error, not a hang. */
+  async read(n) {
+    const out = [];
+    let pos = 0;
+    while (out.length < n) {
+      const end = frameEnd(this.#buf, pos, this.#buf.length);
+      if (end >= 0) { out.push(decode(this.#buf.subarray(pos, end))[0]); pos = end; continue; }
+      let timer;
+      const stall = new Promise((_, rej) => { timer = setTimeout(() => rej(new Error(`stalled ${this.#stallMs / 1000}s waiting for reply ${out.length + 1}/${n}`)), this.#stallMs); });
+      const { value, done } = await Promise.race([this.#r.read(), stall]).finally(() => clearTimeout(timer));
+      if (done) throw new Error(`connection closed after ${out.length}/${n} replies`);
+      this.#buf = concat([this.#buf.subarray(pos), value]);
+      pos = 0;
+    }
+    this.#buf = this.#buf.subarray(pos);
+    return out;
+  }
+
+  close() { this.#w.close().catch(() => {}); }
+}

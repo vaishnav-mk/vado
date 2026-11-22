@@ -40,12 +40,12 @@ compiles Valkey with the shims in `wasi/`, links, and runs `wasm-opt`. Every run
     `mi_realloc` and `mi_free`, sizes blocks with `mi_usable_size`, and INFO shows `mem_allocator:mimalloc-3.7.0`.
 - `wasi/` holds the shims: sockets over host imports (`sock_shim.c`, `host.h`), the reactor exports (`reactor.c`),
   synchronous bio and io-threads plus other missing libc pieces (`stubs.c`), setjmp/longjmp for Lua (`wasm_sjlj.c`),
-  and headers the WASI sysroot lacks. Their comments call the JS side "the bridge"; here that is `src/valkey-host.js`.
+  and headers the WASI sysroot lacks. Their comments call the JS side "the bridge"; here that is `src/shard/valkey-host.js`.
 
 ## Allocators
 
 `libc` uses wasi-libc's dlmalloc. zmalloc asks it for `malloc_usable_size` instead of keeping an 8-byte size prefix
-per allocation. `vendor/valkey.wasm` is this build.
+per allocation. `wasm/valkey.wasm` is this build.
 
 `mimalloc` links mimalloc 3.7.0 as one object (`src/static.c`) built with `MI_MALLOC_OVERRIDE`, so it also defines
 `malloc`, `free`, `calloc`, `realloc`, `posix_memalign`, `aligned_alloc`, `malloc_usable_size` and the `__libc_*`
@@ -75,13 +75,13 @@ What to watch when trying it:
 
 Measured in production with the bench `frag` probe ([measurements](../docs/measurements.md)), linear memory was
 1.08-1.29x Valkey's `used_memory` with dlmalloc, flat across rounds of deleting and rewriting half the keys, and
-1.6-4.3x with mimalloc. So `vendor/valkey.wasm` stays on dlmalloc.
+1.6-4.3x with mimalloc. So `wasm/valkey.wasm` stays on dlmalloc.
 
 ## Reproducibility
 
 The downloads are pinned by sha256, the link order uses the C collation, and assertion file names (`__FILE__`) are
 relative to the Valkey tree, so the same wasi-sdk and binaryen give the same bytes on any machine.
-`vendor/valkey.wasm` is this script's `ALLOCATOR=libc` output, and a fresh build reproduces it byte for byte.
+`wasm/valkey.wasm` is this script's `ALLOCATOR=libc` output, and a fresh build reproduces it byte for byte.
 
 ## License
 

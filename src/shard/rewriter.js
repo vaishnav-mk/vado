@@ -7,13 +7,13 @@
 // one never shares an isolate (or its memory limit) with a shard; a shard of class k uses rewriter class k,
 // so a database's shards rewriting at once don't all land in one rewriter isolate.
 import { DurableObject } from "cloudflare:workers";
-import valkeyWasm from "../vendor/valkey.wasm";
+import valkeyWasm from "../../wasm/valkey.wasm";
 import { ValkeyHost } from "./valkey-host.js";
 import { Vfs } from "./vfs.js";
-import { command, concat, decodeAll } from "./resp.js";
-import { aofFiles, MANIFEST } from "./replication.js";
+import { command, concat, decodeAll } from "../protocol/resp.js";
+import { aofFiles, MANIFEST } from "../replication/replication.js";
 import { valkeyArgs } from "./shard.js";
-import { AOF_HELPER_TIMEOUT_MS, VFS_CHUNK } from "./constants.js";
+import { AOF_HELPER_TIMEOUT_MS, VFS_CHUNK } from "../constants.js";
 
 const line = (o) => new TextEncoder().encode(JSON.stringify(o) + "\n");
 // FNV-1a of the base, sent after it: the shard installs only a base that arrived exactly as it was sent.

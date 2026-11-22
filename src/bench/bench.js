@@ -1,72 +1,21 @@
 // Tests and limit probes that run inside Cloudflare. Clients speak RESP over TCP sockets:
 //   via=router (default)  service binding connect("<db>:6379") -> TCP Worker -> Router -> shards
 //   via=shard             one shard's DO connect() directly (shard=<i>), no router
-import { configureReplicas, database, forget, lookup, replicaStub, shardStub } from "./index.js";
+import { configureReplicas, database, forget, lookup, replicaStub, shardStub } from "../catalog/databases.js";
 import Redis from "ioredis";
-import { bindingConnector } from "./client.js";
-import { hashSecret, sameSecret } from "./router.js";
-import { HINTS, WORLD } from "./catalog.js";
-
-const enc = new TextEncoder();
-const cmd = (...a) => `*${a.length}\r\n` + a.map((x) => ((x = String(x)), `$${enc.encode(x).length}\r\n${x}\r\n`)).join("");
-
-function parse(s, i) {
-  const e = s.indexOf("\r\n", i);
-  if (e < 0) return null;
-  const t = s[i], line = s.slice(i + 1, e);
-  if (t === "+") return [line, e + 2];
-  if (t === "-") return [{ err: line }, e + 2];
-  if (t === ":") return [Number(line), e + 2];
-  if (t === "$" || t === "*") {
-    const n = Number(line);
-    if (n < 0) return [null, e + 2];
-    if (t === "$") return s.length < e + 4 + n ? null : [s.slice(e + 2, e + 2 + n), e + 4 + n];
-    const arr = [];
-    let j = e + 2;
-    for (let k = 0; k < n; k++) { const r = parse(s, j); if (!r) return null; arr.push(r[0]); j = r[1]; }
-    return [arr, j];
-  }
-  throw new Error(`bad RESP type ${JSON.stringify(t)}`);
-}
-
-export class Resp {
-  constructor(socket, stallMs = 30000) {
-    this.w = socket.writable.getWriter();
-    this.r = socket.readable.getReader();
-    this.dec = new TextDecoder();
-    this.buf = "";
-    this.stallMs = stallMs;
-  }
-  async call(...cmds) {
-    await this.w.write(enc.encode(cmds.map((c) => cmd(...c)).join("")));
-    return this.read(cmds.length);
-  }
-  async read(n) {
-    const out = [];
-    let pos = 0;
-    while (out.length < n) {
-      const r = pos < this.buf.length ? parse(this.buf, pos) : null;
-      if (r) { out.push(r[0]); pos = r[1]; continue; }
-      let timer;
-      const stall = new Promise((_, rej) => { timer = setTimeout(() => rej(new Error(`stalled ${this.stallMs / 1000}s waiting for reply ${out.length + 1}/${n}`)), this.stallMs); });
-      const { value, done } = await Promise.race([this.r.read(), stall]).finally(() => clearTimeout(timer));
-      if (done) throw new Error(`connection closed after ${out.length}/${n} replies`);
-      this.buf = this.buf.slice(pos) + this.dec.decode(value, { stream: true });
-      pos = 0;
-    }
-    this.buf = this.buf.slice(pos);
-    return out;
-  }
-  close() { this.w.close().catch(() => {}); }
-}
+import { bindingConnector } from "../client/ioredis.js";
+import { hashSecret, sameSecret } from "../router/secrets.js";
+import { RespClient } from "../client/resp-client.js";
+import { command, concat } from "../protocol/resp.js";
+import { HINTS, WORLD } from "../replication/regions.js";
 
 async function open(env, q, stallMs) {
   const name = q.get("db");
   if (q.get("via") === "shard") {
     const db = await database(env, name);
-    return new Resp(shardStub(env, db, Number(q.get("shard") ?? 0)).connect("valkey:6379"), stallMs);
+    return new RespClient(shardStub(env, db, Number(q.get("shard") ?? 0)).connect("valkey:6379"), stallMs);
   }
-  const c = new Resp(env.SELF.connect(`${name}:6379`), stallMs);
+  const c = new RespClient(env.SELF.connect(`${name}:6379`), stallMs);
   if (env.VALKEY_PASSWORD) {
     const [r] = await c.call(["AUTH", env.VALKEY_PASSWORD]);
     if (r?.err) throw new Error(`AUTH: ${r.err}`);
@@ -184,7 +133,7 @@ const tests = {
   // One execRaw (the router's RPC mode) of k SETs straight to shard 0: are all k replies there?
   async rpcbatch(env, q) {
     const db = await database(env, q.get("db")), k = Number(q.get("k") ?? 1000), par = Number(q.get("par") ?? 1);
-    const body = new TextEncoder().encode(Array.from({ length: k }, (_, i) => cmd("SET", `rb:${i}`, "v")).join(""));
+    const body = concat(Array.from({ length: k }, (_, i) => command(["SET", `rb:${i}`, "v"])));
     const stub = shardStub(env, db, 0), t0 = Date.now();
     const rs = await Promise.allSettled(Array.from({ length: par }, () => stub.execRaw(body, k, 2)));
     const frames = (r) => { let n = 0; for (let i = 0; i < r.length; i += 5) n += r[i] === 43 ? 1 : 0; return n; }; // "+OK\r\n"
@@ -233,7 +182,7 @@ const tests = {
     return { db, shards };
   },
 
-  // What every isolate running routers last reported (src/pulse.js), for ui/.
+  // What every isolate running routers last reported (src/admin/pulse.js), for ui/.
   async pulse(env) {
     return env.PULSE ? await env.PULSE.getByName("pulse").snapshot() : { isolates: [], disabled: "no PULSE binding" };
   },
@@ -520,7 +469,7 @@ const tests = {
     };
   },
 
-  // Stock ioredis inside this Worker through the TCP binding (src/client.js).
+  // Stock ioredis inside this Worker through the TCP binding (src/client/ioredis.js).
   async ioredis(env, q) {
     const db = q.get("db"), k = `io:${Date.now()}`;
     const opts = { Connector: bindingConnector(env.SELF, db), maxRetriesPerRequest: 1, password: env.VALKEY_PASSWORD || undefined };

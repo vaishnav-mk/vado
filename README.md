@@ -55,7 +55,7 @@ valkey-cli -p 6379 --user mydb --pass "$VALKEY_PASSWORD"     # AUTH <database> <
 ```
 
 From another Worker, use a service binding and `env.VALKEY.connect("mydb:6379")`, or ioredis with
-`bindingConnector` from `src/client.js`. For raw TCP, put a TCP Worker (Spectrum, Workers (tcp)) in front. Details:
+`bindingConnector` from `src/client/ioredis.js`. For raw TCP, put a TCP Worker (Spectrum, Workers (tcp)) in front. Details:
 [build, deploy and operate](docs/operations.md).
 
 ## Caveats
@@ -88,5 +88,5 @@ Rules for changing the code: [AGENTS.md](AGENTS.md).
 
 ## License
 
-[Apache-2.0](LICENSE). `vendor/valkey.wasm` is a build of Valkey and valkey-wasm, both BSD-3-Clause; see
-[NOTICE](NOTICE) and [vendor/README.md](vendor/README.md).
+[Apache-2.0](LICENSE). `wasm/valkey.wasm` is a build of Valkey and valkey-wasm, both BSD-3-Clause; see
+[NOTICE](NOTICE) and [wasm/](wasm/README.md).

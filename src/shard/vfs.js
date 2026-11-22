@@ -7,7 +7,7 @@
 // the chunks, never stored separately. A file's chunks are stored under its key (vfs_node.chunks, or
 // its path for files made before keys existed), so a rename moves one row, not the whole file.
 
-import { VFS_CHUNK, VFS_TAIL } from "./constants.js";
+import { VFS_CHUNK, VFS_TAIL } from "../constants.js";
 
 const PREOPEN_FD = 3;
 const PREOPEN_NAME = "/data";

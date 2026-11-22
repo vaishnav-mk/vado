@@ -1,6 +1,6 @@
 // Tunables. Sizes are in bytes, times in milliseconds.
 
-// ---- router (src/router.js) ----
+// ---- router (src/router/router.js) ----
 
 /** Unacknowledged bytes on any hop, client or shard, before a router stops reading its client; it resumes below the low mark. */
 export const ROUTER_HIGH_WATER = 1 << 20;
@@ -36,7 +36,7 @@ export const PROBE_AFTER_MS = 5_000;
 /** How long a shard may take to send its greeting; a cold shard boots for seconds first. */
 export const GREETING_MS = 20_000;
 
-// ---- shard host (src/valkey-host.js) ----
+// ---- shard host (src/shard/valkey-host.js) ----
 
 /**
  * A client whose replies are unacknowledged past CLIENT_HIGH_WATER stops being read, and so does every
@@ -60,7 +60,7 @@ export const SHARD_CLASSES = 8;
 /** Idle internal Valkey clients kept per RESP protocol for RPC batches. */
 export const POOL_MAX = 64;
 
-// ---- storage (src/vfs.js) ----
+// ---- storage (src/shard/vfs.js) ----
 
 /** File bytes per SQLite row, under the 2 MB row cap. */
 export const VFS_CHUNK = 1 << 20;
@@ -75,11 +75,11 @@ export const VFS_TAIL = 16 << 10;
 export const VFS_SWEEP_BYTES = 2 << 20;
 export const VFS_SWEEP_MS = 50;
 
-// ---- AOF rewrites (src/shard.js) ----
+// ---- AOF rewrites (src/shard/shard.js) ----
 
 /** A rewrite is due once the incr file is this big and at least as big as the base, as Valkey's default rule. */
 export const AOF_REWRITE_MIN = 8 << 20;
-/** With no rewriter helper (src/rewriter.js), a due rewrite runs inline and blocks every client, so it waits
+/** With no rewriter helper (src/shard/rewriter.js), a due rewrite runs inline and blocks every client, so it waits
  *  for the shard to be quiet this long. A helper rewrite doesn't block the shard and doesn't wait. */
 export const AOF_REWRITE_IDLE_MS = 1_000;
 /**
@@ -89,12 +89,12 @@ export const AOF_REWRITE_IDLE_MS = 1_000;
 export const AOF_REWRITE_CAP = 64 << 20;
 /** How often a shard that is appending looks at its AOF size. */
 export const AOF_CHECK_MS = 2_000;
-// A rewrite by a ValkeyRewriter (src/rewriter.js) that takes longer than this fails; after a failure the
+// A rewrite by a ValkeyRewriter (src/shard/rewriter.js) that takes longer than this fails; after a failure the
 // shard rewrites inline (blocking, at quiet moments) for AOF_HELPER_RETRY_MS before trying a helper again.
 export const AOF_HELPER_TIMEOUT_MS = 120_000;
 export const AOF_HELPER_RETRY_MS = 600_000;
 
-// ---- read replicas (src/replication.js) ----
+// ---- read replicas (src/replication/replication.js) ----
 
 /**
  * Write bytes a replica may be behind (queued during its copy, or unacknowledged on its socket) before it is
@@ -115,12 +115,12 @@ export const REPL_IDLE_MS = 10 * 60_000;
 /** After a connection writes to a shard, its reads of that shard go to the primary for this long, so it reads its own writes. */
 export const READ_YOUR_WRITES_MS = 2_000;
 
-// ---- live view (src/index.js, src/pulse.js) ----
+// ---- live view (src/router/serve.js, src/admin/pulse.js) ----
 
 /** How often each isolate reports its open connections to the Pulse object, when a PULSE binding exists. */
 export const PULSE_MS = 2_000;
 
-// ---- WebSocket ingress (src/index.js) ----
+// ---- WebSocket ingress (src/router/websocket.js) ----
 
 /** WebSockets can't push back on the sender, so a client that outruns its router by this much is disconnected. */
 export const WS_MAX_QUEUED = 16 << 20;

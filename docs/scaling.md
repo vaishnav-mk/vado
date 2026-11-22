@@ -37,8 +37,8 @@ primary to start them, and each primary remembers its replica regions in its own
 primary.
 
 A router picks a replica by where it runs. It learns its location once per isolate, maps it to one of the nine
-`world` regions (`src/regions.js`), and reads from the replica in that region, including the primary's own region.
-Without one there, it tries the neighbours in `NEAR` (`src/index.js`):
+`world` regions (`src/replication/regions.js`), and reads from the replica in that region, including the primary's own region.
+Without one there, it tries the neighbours in `NEAR` (`src/catalog/databases.js`):
 
 | Router in | Then tries |
 | --- | --- |
@@ -67,7 +67,7 @@ a database uses class `i % 8`:
 - A database's shards 0 to 7 never share an isolate with each other. Shards `i` and `i + 8` can, and so can shards
   of different databases in the same class.
 - Read replicas have classes of their own: a replica of a class `k` shard is in `ValkeyShard{8 + k}` (bindings
-  `SHARD8` to `SHARD15`, `replicaBinding` in `src/replication.js`). So a replica never shares an isolate with a
+  `SHARD8` to `SHARD15`, `replicaBinding` in `src/replication/replication.js`). So a replica never shares an isolate with a
   primary, including its own primary's home-region copy, which has the same location hint. The pub/sub and `__meta`
   shards stay in `ValkeyShard`.
 - The class count is fixed when a database is created, in the catalog's `classes` column. Databases created before

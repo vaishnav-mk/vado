@@ -1,11 +1,12 @@
 // The sharding proxy. One Router per client TCP connection, running in the TCP Worker. It parses
 // each request, routes it by key slot to a shard Durable Object over that shard's upstream
 // connection, and writes replies back in request order. Clients see one ordinary Valkey.
-import { arrayOf, bulk, command, concat, decode, elements, error, frameEnd, integer, lower, request, simple, str } from "./resp.js";
-import { keyIndexes } from "./commands.js";
-import { shardOfSlot, slotOf } from "./slots.js";
-import { DB_NAME, DB_NAME_RULE } from "./catalog.js";
-import { FAN_OUT, GREETING_MS, IDLE_MS, ISOLATE_HIGH, ISOLATE_LOW, MAX_REQUEST, MAX_UNAUTHED, PROBE_AFTER_MS, READ_YOUR_WRITES_MS, REPL_RETRY_MS, ROUTER_HIGH_WATER, ROUTER_LOW_WATER, RPC_BATCH_BYTES, SOCKET_BUDGET } from "./constants.js";
+import { arrayOf, bulk, command, concat, decode, elements, error, frameEnd, integer, lower, request, simple, str } from "../protocol/resp.js";
+import { keyIndexes } from "../protocol/commands.js";
+import { shardOfSlot, slotOf } from "../protocol/slots.js";
+import { DB_NAME, DB_NAME_RULE } from "../catalog/catalog.js";
+import { sameSecret, secretMatches } from "./secrets.js";
+import { FAN_OUT, GREETING_MS, IDLE_MS, ISOLATE_HIGH, ISOLATE_LOW, MAX_REQUEST, MAX_UNAUTHED, PROBE_AFTER_MS, READ_YOUR_WRITES_MS, REPL_RETRY_MS, ROUTER_HIGH_WATER, ROUTER_LOW_WATER, RPC_BATCH_BYTES, SOCKET_BUDGET } from "../constants.js";
 
 const enc = new TextEncoder();
 const OK = simple("OK");
@@ -38,18 +39,9 @@ const unsupported = (name) => error(`ERR '${name}' is not supported by the shard
 const NOAUTH = error("NOAUTH Authentication required.");
 const NULL_ARRAY = new TextEncoder().encode("*-1\r\n"), NULL3 = new TextEncoder().encode("_\r\n"); // EXEC aborted
 const WRONGPASS = error("WRONGPASS invalid username-password pair or user is disabled.");
-const te = new TextEncoder();
-// Length leaks; contents don't.
-export const sameSecret = (a, b) => { const x = te.encode(a), y = te.encode(b); return x.length === y.length && crypto.subtle.timingSafeEqual(x, y); };
-// A database's own password is stored as "salt:sha256(salt + password)". Passwords are generated (high
-// entropy), so a fast hash is enough, and AUTH stays cheap for clients that connect often.
-const sha256 = async (s) => [...new Uint8Array(await crypto.subtle.digest("SHA-256", te.encode(s)))].map((b) => b.toString(16).padStart(2, "0")).join("");
-export const hashSecret = async (pass) => { const salt = crypto.randomUUID(); return `${salt}:${await sha256(salt + pass)}`; };
-const secretMatches = async (stored, pass) => { const i = stored.indexOf(":"); return sameSecret(await sha256(stored.slice(0, i) + pass), stored.slice(i + 1)); };
-
 const SUBSCRIBE = new Set(["subscribe", "psubscribe", "ssubscribe"]);
 const PUBSUB = new Set(["publish", "spublish", "pubsub", "unsubscribe", "punsubscribe", "sunsubscribe", ...SUBSCRIBE]);
-// save/bgrewriteaof: the shards schedule their own AOF rewrites (src/shard.js).
+// save/bgrewriteaof: the shards schedule their own AOF rewrites (src/shard/shard.js).
 // acl: the router does AUTH itself; a password set on a shard would lock the routers out.
 const UNSUPPORTED = new Set(["monitor", "sync", "psync", "replicaof", "slaveof", "failover", "shutdown", "debug",
   "migrate", "move", "swapdb", "bgsave", "save", "bgrewriteaof", "acl", "lpush_x"]);
@@ -468,7 +460,7 @@ export class Router {
   }
 
   #handle(argv, raw) {
-    this.commands++; // read by the live view (src/index.js)
+    this.commands++; // read by the live view (src/router/serve.js)
     if (this.#pass) return this.#passRequest(argv, raw);
     const name = lower(argv[0]);
     if (!this.#authed && name !== "auth" && name !== "hello" && name !== "quit") return this.#reply(NOAUTH);

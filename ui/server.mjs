@@ -7,7 +7,7 @@
 import http from "node:http";
 import { readFile } from "node:fs/promises";
 import Redis from "ioredis";
-import { shardOfSlot, slotOf } from "../src/slots.js";
+import { shardOfSlot, slotOf } from "../src/protocol/slots.js";
 
 const env = process.env;
 const BASE = env.VADO_URL, TOKEN = env.TOKEN, HOST = env.HOST, PORT = Number(env.PORT ?? 6379), PW = env.PW;

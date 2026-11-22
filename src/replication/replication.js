@@ -2,8 +2,8 @@
 // the commands that redo it. So a replica is sent the AOF files as a starting copy, then every append
 // as it happens, over one socket per replica. Replicas keep their data in memory only; one that
 // resets starts empty, and its primary copies it again.
-import { REPL_BACKLOG, REPL_IDLE_MS, REPL_RETRY_MS, REPL_STUCK_MS, REPL_TICK_MS } from "./constants.js";
-import { command, concat } from "./resp.js";
+import { REPL_BACKLOG, REPL_IDLE_MS, REPL_RETRY_MS, REPL_STUCK_MS, REPL_TICK_MS } from "../constants.js";
+import { command, concat } from "../protocol/resp.js";
 
 const REPLY_OFF = command(["CLIENT", "REPLY", "OFF"]);
 // With replies off, only this comes back: "+OK" then "+PONG", once the replica has run everything before it.

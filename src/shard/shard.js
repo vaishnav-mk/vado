@@ -1,12 +1,12 @@
 // One Valkey shard: a Durable Object running valkey.wasm with its AOF in the object's SQLite.
 import { DurableObject } from "cloudflare:workers";
-import valkeyWasm from "../vendor/valkey.wasm";
+import valkeyWasm from "../../wasm/valkey.wasm";
 import { ValkeyHost } from "./valkey-host.js";
-import { command, concat, decodeAll } from "./resp.js";
-import { coloOf } from "./pulse.js";
-import { replicaBinding, Replicator } from "./replication.js";
+import { command, concat, decodeAll } from "../protocol/resp.js";
+import { coloOf } from "../replication/regions.js";
+import { replicaBinding, Replicator } from "../replication/replication.js";
 import { rewriteByHelper } from "./rewriter.js";
-import { AOF_CHECK_MS, AOF_HELPER_RETRY_MS, AOF_REWRITE_CAP, AOF_REWRITE_IDLE_MS, AOF_REWRITE_MIN } from "./constants.js";
+import { AOF_CHECK_MS, AOF_HELPER_RETRY_MS, AOF_REWRITE_CAP, AOF_REWRITE_IDLE_MS, AOF_REWRITE_MIN } from "../constants.js";
 
 // Valkey's own config. appendfsync always + the write-through Vfs: a reply leaves only after the
 // AOF bytes behind it are in SQLite (the output gate holds it until then).
@@ -257,7 +257,7 @@ export class ValkeyShard extends DurableObject {
   }
 }
 
-// The same object under other class names (SHARD_CLASSES in constants.js): see shardNs in index.js.
+// The same object under other class names (SHARD_CLASSES in constants.js): see shardNs in src/catalog/databases.js.
 export class ValkeyShard1 extends ValkeyShard { static binding = "SHARD1"; }
 export class ValkeyShard2 extends ValkeyShard { static binding = "SHARD2"; }
 export class ValkeyShard3 extends ValkeyShard { static binding = "SHARD3"; }

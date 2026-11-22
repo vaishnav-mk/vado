@@ -5,12 +5,6 @@ import { DurableObject } from "cloudflare:workers";
 
 const STALE_MS = 10_000; // an isolate that hasn't reported for this long has no open connections
 
-/** The colo this code runs in, from Cloudflare's trace endpoint; null if it can't be reached (offline dev). */
-export async function coloOf() {
-  const text = await (await fetch("https://cloudflare.com/cdn-cgi/trace")).text();
-  return /^colo=(\w+)$/m.exec(text)?.[1] ?? null;
-}
-
 export class Pulse extends DurableObject {
   #isolates = new Map(); // isolate id -> its last report
 

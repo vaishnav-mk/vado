@@ -33,7 +33,7 @@ every shard.
   `zset-max-listpack-entries`, `zset-max-listpack-value`, `zset-max-ziplist-entries`, `zset-max-ziplist-value`,
   `hll-sparse-max-bytes`, `stream-node-max-bytes`, `stream-node-max-entries`), `lfu-log-factor`, `lfu-decay-time`,
   `slowlog-log-slower-than`, `slowlog-max-len`, `latency-monitor-threshold`, `busy-reply-threshold`,
-  `lua-time-limit` and `activerehashing` (`CONFIG_SET` in `src/router.js`). Any other setting gets
+  `lua-time-limit` and `activerehashing` (`CONFIG_SET` in `src/router/router.js`). Any other setting gets
   `ERR 'config set <name>' is not supported by the sharded router`. An allowed one goes to every primary shard, not
   to replicas or the pub/sub shard, and lasts until that shard restarts and boots with the Worker's settings again.
 - **`CONFIG` inside MULTI is refused.**
@@ -65,7 +65,7 @@ every shard.
 
 ## The bench API
 
-The Worker's HTTP API (`src/bench.js`) needs `Authorization: Bearer <BENCH_TOKEN>` and is refused without
+The Worker's HTTP API (`src/bench/bench.js`) needs `Authorization: Bearer <BENCH_TOKEN>` and is refused without
 `BENCH_TOKEN` set. With the token, anyone can:
 
 - list every database (`dbs`), create databases, and choose their placement and replica regions (`db`);

@@ -50,7 +50,7 @@ for p in "${PATCHES[@]}"; do
   patch -s -p1 -F0 -d "$VK" -i "$p"
 done
 # Upstream's Makefile writes release.h from git metadata, which a tarball lacks.
-# Pinned to the values the earlier vendor/valkey.wasm was built with; INFO shows
+# Pinned to the values the earlier vendored valkey.wasm was built with; INFO shows
 # only a hash of them (redis_build_id).
 cat >"$SRC/release.h" <<'EOF'
 #define REDIS_GIT_SHA1 "0"

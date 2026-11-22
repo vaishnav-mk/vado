@@ -55,7 +55,7 @@ over minutes. Wait at least 5 minutes after a deploy before you measure anything
 | Var | Default | Meaning |
 | --- | --- | --- |
 | `VALKEY_PASSWORD` (secret) | unset | Makes AUTH mandatory and enables `/ws` |
-| `BENCH_TOKEN` (secret) | unset | Bearer token for the bench API (`src/bench.js`); unset disables it |
+| `BENCH_TOKEN` (secret) | unset | Bearer token for the bench API (`src/bench/bench.js`); unset disables it |
 | `SHARD_EPOCHS` | `[{"from":0,"shards":16}]` | Shard count by database creation time, `[{ from, shards }]` in ms. Append, never edit |
 | `LOCATION_HINT` | unset | Region for new shard objects (`apac`, `weur`, `enam`...) of databases without a `regions` list, and for every pub/sub shard |
 | `VALKEY_MAXMEMORY` | `64mb` | Per shard and per replica. The isolate has 128 MB, so keep it at or under 64 MB |
@@ -148,7 +148,7 @@ longer feeds keeps serving its last data until it resets. Don't use it on a data
 ## Reach it
 
 - **From a Worker:** a service binding to this Worker, then `env.VALKEY.connect("<db>:6379")` for raw RESP, or
-  ioredis with `bindingConnector` from `src/client.js`.
+  ioredis with `bindingConnector` from `src/client/ioredis.js`.
 - **Over TCP:** a Spectrum application of type Workers (tcp) with this Worker as origin, on port 6379. Turn on TLS
   (`flexible`). Spectrum doesn't pass the hostname, so clients pick the database with `AUTH <db> <password>`.
 - **Over WebSocket:** `node scripts/ws-shim.mjs wss://<your-worker>.workers.dev/ws 6379`, then point any client at
@@ -181,5 +181,5 @@ HOST=<your-host> PORT=6379 PW=... DB=check node test/ioredis.mjs
   upgrade. Don't roll back past that change.
 - Keep the rewriter classes in step with the shard classes: shard class `k` finds its rewriter by binding name
   (`SHARD<k>` uses `REWRITER<k>`).
-- Changes to Valkey go in `wasm/patches/` or `wasm/wasi/`. Rebuild `vendor/valkey.wasm` with `wasm/build.sh` and
+- Changes to Valkey go in `wasm/patches/` or `wasm/wasi/`. Rebuild `wasm/valkey.wasm` with `wasm/build.sh` and
   wasi-sdk (`wasm/README.md`).
