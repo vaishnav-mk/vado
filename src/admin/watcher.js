@@ -138,6 +138,8 @@ export class Watcher extends DurableObject {
     await this.stopTest(true, "Test traffic stopped: nobody is watching");
     this.#reader?.close(); this.#writer?.close();
     this.#reader = this.#writer = null;
+    // Shards may restart while nobody watches: start over rather than report restarts and rates from then.
+    this.#shards.clear(); this.#isolates.clear(); this.#probes = [];
   }
 
   async #poll() {
