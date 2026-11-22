@@ -5,7 +5,7 @@ import * as v from "valibot";
 
 export const Route = createFileRoute("/signin")({
   // Only a path on this site ("/...", not "//host"), so a link can't send someone elsewhere after signing in.
-  validateSearch: v.object({ to: v.fallback(v.pipe(v.string(), v.regex(/^\/(?!\/)/)), "/") }),
+  validateSearch: v.object({ to: v.fallback(v.pipe(v.string(), v.regex(/^\/(?![/\\])/)), "/") }),
   loaderDeps: ({ search }) => search,
   loader: ({ deps }) => {
     throw redirect({ href: deps.to });
