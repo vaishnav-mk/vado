@@ -40,7 +40,7 @@ export class Watcher extends DurableObject {
   #asked = new Map(); // shard i -> when the dashboard asked it to restart
   #reader = null; #writer = null; // probe connections: a reader never writes, so it reads where clients would
   #probes = [];
-  #test = null;
+  #test = null; #testLoaded = false;
   #seq = 0; // event ids
 
   async fetch(req) {
@@ -59,6 +59,7 @@ export class Watcher extends DurableObject {
   // One poll per alarm while anyone is watching: each has the budget of a fresh request.
   async alarm() {
     this.#name ??= this.ctx.id.name;
+    await this.#loadTest();
     const watchers = this.ctx.getWebSockets();
     if (!watchers.length) return this.#idle();
     const started = Date.now();
@@ -94,15 +95,18 @@ export class Watcher extends DurableObject {
     // well inside its memory however many senders there are.
     const keys = Math.max(100, Math.floor((record.shards * TEST_KEYS_PER_SHARD) / senders.length));
     this.#test = { level, from, since, until, senders };
+    await this.ctx.storage.put("test", this.#test);
     await Promise.all(senders.map(({ region, k }) => this.#sender(region, k).loop(this.#name, `test-${region}${k}-`, until, keys)));
     this.#event("info", "test", `Test traffic started: ${level}, from ${from === "everywhere" ? "everywhere" : REGION_NAMES[from]}`);
     return this.#testView();
   }
 
   async stopTest(say = true, why = "Test traffic stopped") {
+    await this.#loadTest();
     const t = this.#test;
     if (!t) return null;
     this.#test = null;
+    await this.ctx.storage.delete("test");
     await Promise.all(t.senders.map(({ region, k }) => this.#sender(region, k).stop().catch(() => {})));
     if (say) this.#event("info", "test", why);
     return null;
@@ -118,6 +122,13 @@ export class Watcher extends DurableObject {
     return this.env.SENDER.getByName(`${this.#name}/${region}/${k}`, { locationHint: region });
   }
 
+  // The running test is kept in storage too, so a restarted Watcher can still show and stop it.
+  async #loadTest() {
+    if (this.#testLoaded) return;
+    this.#test ??= (await this.ctx.storage.get("test")) ?? null;
+    this.#testLoaded = true;
+  }
+
   #testView() {
     const t = this.#test;
     return t && { level: t.level, from: t.from, since: t.since, until: t.until, senders: t.senders.length };
@@ -131,7 +142,11 @@ export class Watcher extends DurableObject {
 
   async #poll() {
     const at = Date.now();
-    if (this.#test && at >= this.#test.until) { this.#test = null; this.#event("info", "test", "Test traffic stopped after 10 minutes"); } // the senders stop themselves
+    if (this.#test && at >= this.#test.until) { // the senders stop themselves
+      this.#test = null;
+      await this.ctx.storage.delete("test");
+      this.#event("info", "test", "Test traffic stopped after 10 minutes");
+    }
     let error = null, shards = this.#state?.shards ?? [], entries = this.#state?.map.entries ?? [], db = this.#state?.db ?? null, here = this.#state?.watcher ?? null;
     try {
       const record = await current(this.env, this.#name);
