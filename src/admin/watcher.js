@@ -224,7 +224,7 @@ export class Watcher extends DurableObject {
     for (const r of others) this.#event("warning", "restart", r.backMs === null ? `Shard ${r.i} restarted` : `Shard ${r.i} restarted and was back in ${(r.backMs / 1000).toFixed(1)} s`, { shard: r.i });
     const failed = rewrites.filter((r) => r.error), done = rewrites.filter((r) => !r.error);
     for (const r of failed) this.#event("warning", "rewrite", `Shard ${r.i} couldn't compact its log in a helper, so it did it itself`, { shard: r.i });
-    const mb = (b) => `${(b / 2 ** 20).toFixed(1)} MB`, sec = (ms) => `${(ms / 1000).toFixed(1)} s`;
+    const mb = (b) => (b < 2 ** 20 ? `${Math.max(1, Math.round(b / 1024))} KB` : `${(b / 2 ** 20).toFixed(1)} MB`), sec = (ms) => `${(ms / 1000).toFixed(1)} s`;
     if (done.length === 1) this.#event("success", "rewrite", `Shard ${done[0].i} compacted its log in ${sec(done[0].ms)}${done[0].bytes ? `, to ${mb(done[0].bytes)}` : ""}`, { shard: done[0].i });
     else if (done.length) this.#event("success", "rewrite", `${plural(done.length, "shard")} compacted their logs, the slowest in ${sec(Math.max(...done.map((r) => r.ms)))}`);
     const by = (to) => replicas.filter((r) => r.to === to);
