@@ -780,7 +780,7 @@ export class Router {
         this.#ups.clear();
         this.#clearWatch();
         this.endPassthrough(false);
-        Object.assign(this, { db: next.db, shardStub: next.shard, pubsubStub: next.pubsub, replicaStub: next.replica });
+        Object.assign(this, { db: next.db, table: next.table, shardStub: next.shard, pubsubStub: next.pubsub, replicaStub: next.replica });
       }
       this.#authed = true;
       then();

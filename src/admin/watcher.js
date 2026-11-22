@@ -157,7 +157,7 @@ export class Watcher extends DurableObject {
       if (!record || record.dropped) throw new Error(`There is no database named ${this.#name}`);
       db = dbView(record);
       const [snaps, table, pulse, colo] = await Promise.all([
-        shardSnapshots(this.env, record), commands(this.env),
+        shardSnapshots(this.env, record), commands(this.env, record.flavour),
         this.env.PULSE ? this.env.PULSE.getByName("pulse").snapshot() : { isolates: [] },
         here?.colo ?? coloOf().catch(() => null), this.#probe(),
       ]);

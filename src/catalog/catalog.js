@@ -9,8 +9,10 @@ import { HINTS } from "../replication/regions.js";
 /** Database names. They become part of shard object names, so the catalog is the one place that defines them. */
 export const DB_NAME = /^[a-z0-9][a-z0-9_-]{0,62}$/;
 export const DB_NAME_RULE = "database names are 1-63 characters of a-z 0-9 _ -, starting with a letter or digit";
+/** What a database runs: real Valkey (wasm/) or real Redis (wasm/redis/), fixed when it is created. */
+export const FLAVOURS = ["valkey", "redis"];
 
-const record = ({ regions, replicas, ...r }) => ({ ...r, regions: regions ? JSON.parse(regions) : null, replicas: replicas ? JSON.parse(replicas) : null });
+const record = ({ regions, replicas, flavour, ...r }) => ({ ...r, flavour: flavour ?? "valkey", regions: regions ? JSON.parse(regions) : null, replicas: replicas ? JSON.parse(replicas) : null });
 
 export class Catalog extends DurableObject {
   #sql;
@@ -32,10 +34,12 @@ export class Catalog extends DurableObject {
     if (!cols.includes("secret")) this.#sql.exec(`ALTER TABLE dbs ADD COLUMN secret TEXT`);
     // Added later: when the database was dropped (its name is never reused); NULL = it wasn't.
     if (!cols.includes("dropped")) this.#sql.exec(`ALTER TABLE dbs ADD COLUMN dropped INTEGER`);
+    // Added later: "redis" for a Redis database; NULL = Valkey.
+    if (!cols.includes("flavour")) this.#sql.exec(`ALTER TABLE dbs ADD COLUMN flavour TEXT`);
   }
 
   /** The database's record, created on first use. `shards`, `regions` and `replicas` apply only to a new database. */
-  get(name, shards, regions, replicas, classes = SHARD_CLASSES, secret = null) {
+  get(name, shards, regions, replicas, classes = SHARD_CLASSES, secret = null, flavour = "valkey") {
     if (!DB_NAME.test(name)) throw new Error(DB_NAME_RULE);
     const row = this.find(name);
     if (row?.dropped) throw new Error(`database ${name} was dropped`);
@@ -45,20 +49,21 @@ export class Catalog extends DurableObject {
     if (!Number.isSafeInteger(count) || count < 1 || count > 16384) throw new Error("shards must be 1..16384");
     for (const list of [regions, replicas]) if (list !== undefined && (!Array.isArray(list) || !list.length || !list.every((r) => HINTS.has(r)))) throw new Error(`regions and replicas must be lists of ${[...HINTS].join(", ")}`);
     if (!Number.isSafeInteger(classes) || classes < 1 || classes > SHARD_CLASSES) throw new Error(`classes must be 1..${SHARD_CLASSES}`);
-    const r = { name, created, shards: count, regions: regions ? JSON.stringify(regions) : null, replicas: replicas ? JSON.stringify(replicas) : null, classes, secret };
-    this.#sql.exec(`INSERT INTO dbs (name, created, shards, regions, replicas, classes, secret) VALUES (?, ?, ?, ?, ?, ?, ?)`, r.name, r.created, r.shards, r.regions, r.replicas, r.classes, r.secret);
+    if (!FLAVOURS.includes(flavour)) throw new Error(`flavour is ${FLAVOURS.join(" or ")}`);
+    const r = { name, created, shards: count, regions: regions ? JSON.stringify(regions) : null, replicas: replicas ? JSON.stringify(replicas) : null, classes, secret, flavour: flavour === "valkey" ? null : flavour };
+    this.#sql.exec(`INSERT INTO dbs (name, created, shards, regions, replicas, classes, secret, flavour) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`, r.name, r.created, r.shards, r.regions, r.replicas, r.classes, r.secret, r.flavour);
     return record(r);
   }
 
   /** The database's record, or null: never creates one. */
   find(name) {
-    const row = this.#sql.exec(`SELECT name, created, shards, regions, replicas, classes, secret, dropped FROM dbs WHERE name = ?`, name).toArray()[0];
+    const row = this.#sql.exec(`SELECT name, created, shards, regions, replicas, classes, secret, dropped, flavour FROM dbs WHERE name = ?`, name).toArray()[0];
     return row ? record(row) : null;
   }
 
   /** Every database not dropped, without password hashes. */
   list() {
-    return this.#sql.exec(`SELECT name, created, shards, regions, replicas, classes, secret IS NOT NULL AS password FROM dbs WHERE dropped IS NULL ORDER BY name`).toArray().map(record);
+    return this.#sql.exec(`SELECT name, created, shards, regions, replicas, classes, flavour, secret IS NOT NULL AS password FROM dbs WHERE dropped IS NULL ORDER BY name`).toArray().map(record);
   }
 
   /** Marks the database dropped; its record stays, so the name (and its shards' names) is never reused. */

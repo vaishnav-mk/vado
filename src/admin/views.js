@@ -10,7 +10,7 @@ export const place = (colo) => {
 
 /** A catalog record without its password hash. */
 export const dbView = (db) => ({
-  name: db.name, created: db.created, shards: db.shards, regions: db.regions ?? null, replicas: db.replicas ?? null,
+  name: db.name, created: db.created, shards: db.shards, regions: db.regions ?? null, replicas: db.replicas ?? null, flavour: db.flavour ?? "valkey",
   password: !!(db.secret ?? db.password),
 });
 

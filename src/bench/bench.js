@@ -33,7 +33,7 @@ const tests = {
     const list = (v) => (v === "world" ? WORLD : v ? v.split(",") : undefined);
     const password = q.get("password") === "new" ? btoa(String.fromCharCode(...crypto.getRandomValues(new Uint8Array(24)))).replace(/\+/g, "-").replace(/\//g, "_") : null;
     const secret = password && (await hashSecret(password));
-    const { secret: stored, ...db } = await database(env, q.get("db"), q.get("shards") ? Number(q.get("shards")) : undefined, list(q.get("regions")), list(q.get("replicas")), q.get("classes") ? Number(q.get("classes")) : undefined, secret);
+    const { secret: stored, ...db } = await database(env, q.get("db"), q.get("shards") ? Number(q.get("shards")) : undefined, list(q.get("regions")), list(q.get("replicas")), q.get("classes") ? Number(q.get("classes")) : undefined, secret, q.get("flavour") ?? undefined);
     if (password && stored !== secret) throw new Error("the database already exists, so it keeps the password it has");
     if (db.replicas) await configureReplicas(env, db);
     return { db: { ...db, password: !!stored }, ...(password ? { password } : {}) };

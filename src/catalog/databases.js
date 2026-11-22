@@ -8,7 +8,9 @@ import { replicaBinding, replicaName } from "../replication/replication.js";
 const dbs = new Map(); // name -> Promise<db>; a database's record never changes once created
 
 export const objectOptions = (env, hint = env.LOCATION_HINT) => (HINTS.has(hint) ? { locationHint: hint } : {});
-const shardName = (db, i) => `${db.name}.${db.created.toString(36)}.${i}`;
+// A Redis database's objects have a "redis" segment in their names, so each one knows what to boot (flavourOf in
+// src/shard/shard.js); database names have no dots, so no database name can look like it.
+const shardName = (db, i) => `${db.name}.${db.created.toString(36)}${db.flavour === "redis" ? ".redis" : ""}.${i}`;
 // Shard i uses class k = i % db.classes, so shards less than db.classes apart never share an isolate.
 // Databases from before classes have none: all their shards are ValkeyShard (k = 0). Pub/sub stays there too.
 const classOf = (db, i) => (typeof i === "number" && db.classes > 1 ? i % db.classes : 0);
@@ -34,10 +36,10 @@ export const configureReplicas = (env, db) =>
   Promise.all(Array.from({ length: db.shards }, (_, i) => shardStub(env, db, i).replicate(db.replicas)));
 
 /** The database's record, created with these settings if it doesn't exist yet. */
-export function database(env, name, shards, regions, replicas, classes, secret) {
+export function database(env, name, shards, regions, replicas, classes, secret, flavour) {
   let db = dbs.get(name);
   if (!db) {
-    db = env.CATALOG.getByName("catalog").get(name, shards, regions, replicas, classes, secret);
+    db = env.CATALOG.getByName("catalog").get(name, shards, regions, replicas, classes, secret, flavour);
     db.catch(() => dbs.delete(name));
     dbs.set(name, db);
   }

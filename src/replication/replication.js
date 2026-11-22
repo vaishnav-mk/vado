@@ -9,6 +9,7 @@ const REPLY_OFF = command(["CLIENT", "REPLY", "OFF"]);
 // With replies off, only this comes back: "+OK" then "+PONG", once the replica has run everything before it.
 const MARK = concat([command(["CLIENT", "REPLY", "ON"]), command(["PING"]), command(["CLIENT", "REPLY", "OFF"])]);
 // The stream's connection is the import source (replicas run with import-mode): to it no key is ever expired.
+// Redis lacks the command (its import-mode treats every write as the stream's); with replies off the error is unseen.
 const START = concat([REPLY_OFF, command(["CLIENT", "IMPORT-SOURCE", "ON"]), command(["FLUSHALL"])]);
 export const MANIFEST = "aof/appendonly.aof.manifest";
 const COPY_CHUNK = 1 << 20;

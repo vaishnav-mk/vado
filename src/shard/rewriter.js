@@ -7,12 +7,11 @@
 // one never shares an isolate (or its memory limit) with a shard; a shard of class k uses rewriter class k,
 // so a database's shards rewriting at once don't all land in one rewriter isolate.
 import { DurableObject } from "cloudflare:workers";
-import valkeyWasm from "../../wasm/valkey.wasm";
 import { ValkeyHost } from "./valkey-host.js";
 import { Vfs } from "./vfs.js";
 import { command, concat, decodeAll } from "../protocol/resp.js";
 import { aofFiles, MANIFEST } from "../replication/replication.js";
-import { valkeyArgs } from "./shard.js";
+import { flavourOf, valkeyArgs, WASM } from "./shard.js";
 import { AOF_HELPER_TIMEOUT_MS, VFS_CHUNK } from "../constants.js";
 
 const line = (o) => new TextEncoder().encode(JSON.stringify(o) + "\n");
@@ -114,7 +113,8 @@ export class ValkeyRewriter extends DurableObject {
       // Valkey loads the files as it boots; the rewrite then runs inline, blocking only this object.
       // import-mode: no expiry or eviction here, so the base keeps a key that expired after the shard's
       // rewrite started (the shard may have PERSISTed it since). A forked child never expires keys either.
-      const host = new ValkeyHost(valkeyWasm, sql, { args: [...valkeyArgs(this.env, false), "--aof-use-rdb-preamble", rdb ? "yes" : "no", "--import-mode", "yes"], log: (l) => logs.push(l) });
+      // Named after its shard, so it boots the same server.
+      const host = new ValkeyHost(WASM[flavourOf(this.ctx.id.name)], sql, { args: [...valkeyArgs(this.env, false), "--aof-use-rdb-preamble", rdb ? "yes" : "no", "--import-mode", "yes"], log: (l) => logs.push(l) });
       const [reply] = decodeAll(await host.execBatch(command(["BGREWRITEAOF"]), 1));
       if (reply?.err) throw new Error(reply.err);
       const { base } = aofFiles(host), size = host.fileSize(base);

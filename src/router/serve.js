@@ -6,14 +6,16 @@ import { database, forget, lookup, objectOptions, replicaRegion, replicaStub, sh
 import { coloOf } from "../replication/regions.js";
 import { IDLE_MS, PULSE_MS } from "../constants.js";
 
-let table = null; // Promise<command table>, per isolate
+const tables = new Map(); // flavour -> Promise<command table>, per isolate
 
-export function commands(env) {
-  // Any Valkey answers COMMAND the same way; a dedicated object keeps it off data shards. Cached as a
-  // promise: hundreds of connections landing on a cold isolate would otherwise all ask at once.
+export function commands(env, flavour = "valkey") {
+  // Any Valkey (or Redis) answers COMMAND the same way; a dedicated object keeps it off data shards. Cached
+  // as a promise: hundreds of connections landing on a cold isolate would otherwise all ask at once.
+  let table = tables.get(flavour);
   if (!table) {
-    table = env.SHARD.getByName("__meta", objectOptions(env)).run([["COMMAND"]]).then((r) => commandTable(r[0]));
-    table.catch(() => { table = null; });
+    table = env.SHARD.getByName(flavour === "valkey" ? "__meta" : `__meta.${flavour}`, objectOptions(env)).run([["COMMAND"]]).then((r) => commandTable(r[0]));
+    table.catch(() => tables.delete(flavour));
+    tables.set(flavour, table);
   }
   return table;
 }
@@ -84,6 +86,7 @@ async function serveRouter(socket, env, name, conn) {
   let db, t;
   try {
     [db, t] = await Promise.all([database(env, name), commands(env)]);
+    if (db.flavour !== "valkey") t = await commands(env, db.flavour);
   } catch (e) {
     const w = socket.writable.getWriter();
     await w.write(new TextEncoder().encode(`-ERR ${e.message}\r\n`)).catch(() => {});
@@ -97,7 +100,7 @@ async function serveRouter(socket, env, name, conn) {
     password: env.VALKEY_PASSWORD,
     trusted: conn.via === "binding", // our own Workers: the shared password opens any database
     lookup: (n) => lookup(env, n),
-    open: async (n) => handles(env, await database(env, n)),
+    open: async (n) => { const next = await database(env, n); return { ...handles(env, next), table: await commands(env, next.flavour) }; },
     onDropped: forget,
     signIns: conn.via === "binding" ? null : signIns(env, conn.where),
     idleMs: Number(env.ROUTER_IDLE_MS || IDLE_MS),

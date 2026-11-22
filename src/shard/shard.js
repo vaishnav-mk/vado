@@ -1,6 +1,8 @@
-// One Valkey shard: a Durable Object running valkey.wasm with its AOF in the object's SQLite.
+// One shard: a Durable Object running valkey.wasm (or, for a Redis database, redis.wasm) with its AOF in the
+// object's SQLite. Both builds have the same interface, so everything here runs either.
 import { DurableObject } from "cloudflare:workers";
 import valkeyWasm from "../../wasm/valkey.wasm";
+import redisWasm from "../../wasm/redis/redis.wasm";
 import { ValkeyHost } from "./valkey-host.js";
 import { command, concat, decodeAll } from "../protocol/resp.js";
 import { coloOf } from "../replication/regions.js";
@@ -8,7 +10,11 @@ import { replicaBinding, Replicator } from "../replication/replication.js";
 import { rewriteByHelper } from "./rewriter.js";
 import { AOF_CHECK_MS, AOF_HELPER_RETRY_MS, AOF_REWRITE_CAP, AOF_REWRITE_IDLE_MS, AOF_REWRITE_MIN } from "../constants.js";
 
-// Valkey's own config. appendfsync always + the write-through Vfs: a reply leaves only after the
+export const WASM = { valkey: valkeyWasm, redis: redisWasm };
+/** What an object runs, from its name: a Redis database's objects have a "redis" segment (src/catalog/databases.js). */
+export const flavourOf = (name) => ((name ?? "").split(".").includes("redis") ? "redis" : "valkey");
+
+// Valkey's own config (Redis takes the same). appendfsync always + the write-through Vfs: a reply leaves only after the
 // AOF bytes behind it are in SQLite (the output gate holds it until then).
 export const valkeyArgs = (env, replica) => [
   "--port", "6379", "--bind", "127.0.0.1", "--protected-mode", "no", "--daemonize", "no",
@@ -23,7 +29,7 @@ export const valkeyArgs = (env, replica) => [
   "--latency-tracking", "no",
   // A replica follows its primary, as a Valkey replica does: it neither expires nor evicts keys of its own (the
   // primary's stream deletes them; reads still hide expired keys), and has no memory limit to fail a streamed
-  // write on, which with replies off nobody would see.
+  // write on, which with replies off nobody would see. (Redis lacks import-mode; wasm/redis/patches/0005 adds it.)
   ...(replica ? ["--import-mode", "yes", "--maxmemory", "0"] : ["--maxmemory", env.VALKEY_MAXMEMORY || "64mb"]),
   "--maxmemory-policy", env.VALKEY_MAXMEMORY_POLICY || "noeviction",
   // Every RPC batch and router socket is a new Valkey connection. The default accepts 10 per event
@@ -42,6 +48,7 @@ export class ValkeyShard extends DurableObject {
   #colo; // where this object runs, learned on the first stats() (null until then, or offline)
 
   #replica; // true for a read replica (named <primary>.r.<region>)
+  #flavour; // "valkey" or "redis"
   #ready = false; // a replica serves reads only once its primary's copy has fully arrived, while its stream lasts
   #stream = null; // a replica's current stream from its primary
   #repl = null; // a primary's Replicator
@@ -56,7 +63,8 @@ export class ValkeyShard extends DurableObject {
     this.#replica = /\.r\.[a-z-]+$/.test(ctx.id.name ?? "");
     this.#dropped = ctx.storage.sql.exec(`SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'dropped'`).toArray().length > 0;
     if (this.#dropped) return;
-    this.#host = new ValkeyHost(valkeyWasm, ctx.storage.sql, {
+    this.#flavour = flavourOf(ctx.id.name);
+    this.#host = new ValkeyHost(WASM[this.#flavour], ctx.storage.sql, {
       args: valkeyArgs(env, this.#replica), sync: () => ctx.storage.sync(), fatal: (e) => setTimeout(() => ctx.abort(e), 0),
     });
     if (!this.#replica) {
@@ -276,7 +284,7 @@ export class ValkeyShard extends DurableObject {
     if (this.#dropped) return { dropped: true, instance: this.#instance, isolate: (isolateId ??= crypto.randomUUID()), files: [], replicas: [] };
     if (this.#colo === undefined) { this.#colo = null; coloOf().then((c) => { this.#colo = c; }, () => {}); }
     return {
-      ...this.#host.stats(), instance: this.#instance, version: this.env.VERSION?.id ?? null, isolate: (isolateId ??= crypto.randomUUID()), colo: this.#colo, aliveSeconds: (Date.now() - this.#bornAt) / 1000, files: this.#host.files(),
+      ...this.#host.stats(), flavour: this.#flavour, instance: this.#instance, version: this.env.VERSION?.id ?? null, isolate: (isolateId ??= crypto.randomUUID()), colo: this.#colo, aliveSeconds: (Date.now() - this.#bornAt) / 1000, files: this.#host.files(),
       role: this.#replica ? "replica" : "primary", ...(this.#replica ? { ready: this.#ready } : { replicas: this.#repl.status(), lastRewrite: this.#lastRewrite && { ...this.#lastRewrite, doneMs: this.#host.rewriteDoneMs } }),
     };
   }

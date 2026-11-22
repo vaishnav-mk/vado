@@ -95,7 +95,7 @@ export class Admin extends WorkerEntrypoint {
     if (NEEDS_A_CONNECTION.has(cmd)) throw new Error(`${argv[0].toUpperCase()} needs a client that keeps its connection open, such as valkey-cli`);
     if (Object.hasOwn(REFUSED, cmd)) throw new Error(REFUSED[cmd]);
     const db = await this.#find(name, true);
-    const table = await commands(this.env), entry = table.get(cmd);
+    const table = await commands(this.env, db.flavour), entry = table.get(cmd);
     const idx = keyIndexes(table, cmd, argv.map((a) => enc.encode(a)));
     const key = idx?.length ? argv[idx[0]] : null, slot = key === null ? null : slotOf(enc.encode(key));
     const write = !!entry?.flags.has("write"), read = !!entry?.flags.has("readonly");
