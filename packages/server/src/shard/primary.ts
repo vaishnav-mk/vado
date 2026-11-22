@@ -47,9 +47,11 @@ export class PrimaryRole {
       name: ctx.id.name ?? "",
       replicas,
       dial: replicaDial(deployed),
-      schedule: (at: number) => {
-        if (!this.#stopped) this.alarms.replicaTick(at).catch(logFailure("replica tick"));
-      },
+      // Not inside the wasm call that appended (a write wakes replication): the schedule is a storage transaction.
+      schedule: (at: number) =>
+        queueMicrotask(() => {
+          if (!this.#stopped) this.alarms.replicaTick(at).catch(logFailure("replica tick"));
+        }),
     });
     this.rewrites = new Rewrites(host, this.repl, rewriter, () => ctx.storage.sync());
 
