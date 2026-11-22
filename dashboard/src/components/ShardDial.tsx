@@ -28,6 +28,9 @@ function annulus(r0: number, r1: number, a0: number, a1: number) {
   return `M${x0} ${y0}A${r1} ${r1} 0 ${large} 1 ${x1} ${y1}L${x2} ${y2}A${r0} ${r0} 0 ${large} 0 ${x3} ${y3}Z`;
 }
 
+/** All of a shard's replicas as one state: serving if any serves, else copying, reconnecting, or asleep. */
+const summaryState = (reps: { state: string }[]) =>
+  reps.some((r) => r.state === "ready") ? "ready" : reps.some((r) => r.state === "copying" || r.state === "catching up") ? "copying" : reps.some((r) => r.state === "idle") ? "idle" : "asleep";
 const ops = (s: Shard | undefined) => (s?.ok ? (s.reads ?? 0) + (s.writes ?? 0) + s.replicas.reduce((a, r) => a + (r.reads ?? 0), 0) : 0);
 
 export function ShardDial({ shards, count, total, dark, selected, onSelect, highlight }: {
@@ -108,9 +111,10 @@ export function ShardDial({ shards, count, total, dark, selected, onSelect, high
                   {(selected === i || hover === i) && <path d={annulus(R_IN, R_OUT, a0, a1)} className="fill-none stroke-kumo-brand" strokeWidth={3} />}
                   {highlight === i && <path d={annulus(R_IN - 6, R_OUT + 4, a0, a1)} fill="none" stroke={HIGHLIGHT} strokeWidth={3} className="motion-safe:animate-pulse" />}
                   {n <= 32 && <text x={lx} y={ly} textAnchor="middle" dominantBaseline="central" className={`pointer-events-none text-[15px] font-semibold ${l > 0.55 ? "fill-white" : "fill-current text-kumo-default"}`}>{i}</text>}
-                  {reps.map((r, k) => {
-                    const [dx, dy] = pt(R_OUT + 10, a0 + ((k + 0.5) / reps.length) * (a1 - a0));
-                    return <circle key={r.region} cx={dx} cy={dy} r={n > 16 ? 2 : 3.2} style={{ fill: replicaColor(r.state) }} />;
+                  {/* A dot per replica, or past 16 shards one per shard for all of its replicas (else 576 dots make a solid ring). */}
+                  {(n > 16 && reps.length ? [{ region: "all", state: summaryState(reps) }] : reps).map((r, k, all) => {
+                    const [dx, dy] = pt(R_OUT + 10, a0 + ((k + 0.5) / all.length) * (a1 - a0));
+                    return <circle key={r.region} cx={dx} cy={dy} r={n > 16 ? 2.4 : 3.2} style={{ fill: replicaColor(r.state), opacity: r.state === "asleep" ? 0.5 : 1 }} />;
                   })}
                 </g>
               );

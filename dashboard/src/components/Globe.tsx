@@ -1,6 +1,7 @@
 // A spinning globe drawn on a canvas with d3-geo, styled like Kumo's GlobeMap (hatched land on the base
-// surface). It shows where traffic enters Cloudflare, the shards, their replicas, the streams from each shard
-// to its replicas (dots move as fast as the shard's writes), and the last command's path. Everything drawn
+// surface). It shows where traffic enters Cloudflare, the shards, their replicas, the streams of writes from
+// shards to their awake replicas (dots move as fast as the writes), and the last command's path. An arc means
+// data is moving: nothing is drawn for replicas that are asleep, or for shards that take no writes. Everything drawn
 // per frame is read from refs; React only re-renders for data (once a second) and for the hover tooltip.
 import { useEffect, useMemo, useRef, useState } from "react";
 import { geoDistance, geoInterpolate, geoOrthographic, geoPath } from "d3-geo";
@@ -19,9 +20,11 @@ const LAND = feature(land110 as any, (land110 as any).objects.land) as unknown a
 const SPIN = 5; // degrees per second
 const PATH_MS = 6_000; // how long the last command's path stays
 const TRAVEL_MS = 1_200; // how long its dot takes to cross
+const MAX_STREAMS = 40; // the busiest streams of writes; more is a tangle, not information
+const MAX_ENTRY_ARCS = 3; // traffic arcs only for a database whose shards live in this many places or fewer
 
 type LonLat = [number, number];
-interface Layer { kind: "entry" | "shard" | "replica"; color: string; size: number }
+interface Layer { kind: "entry" | "shard" | "replica"; color: string; size: number; alpha?: number }
 /** One place on the globe. What's there is drawn inside out (shards, replicas, traffic), each later layer as a ring
  *  around the earlier ones, so traffic entering in the same city as the shards still shows. */
 interface Spot { at: LonLat; title: string; lines: string[]; layers: Layer[]; seed: number }
@@ -68,16 +71,23 @@ function scene(state: LiveState | null, last: LastCommand | null, dark: boolean)
       if (!has(s) || key(s) === key(r)) continue;
       const k = `${key(s)}>${key(r)}`;
       const st = streams.get(k) ?? { from: [s.lon, s.lat] as LonLat, to: [r.lon, r.lat] as LonLat, rate: 0, states: [] };
-      st.rate += s.ok ? s.writes ?? 0 : 0;
+      if (r.state === "asleep" || r.state === "idle" || !s.ok || !s.writes) continue; // nothing is moving
+      st.rate += s.writes;
       st.states.push(r.state);
       streams.set(k, st);
     }
   }
   const worst = (xs: ReplicaState[]) => WORST.find((w) => xs.includes(w)) ?? "asleep";
 
-  for (const [k, st] of streams) arcs.push(arc(k, st.from, st.to, replicaColor(worst(st.states)), st.rate));
-  const top = [...entries].sort((a, b) => b.ops - a.ops).slice(0, 12), targets = [...homes.values()];
-  for (const e of top) for (const h of targets) if (key(e) !== key({ lat: h.at[1], lon: h.at[0] })) arcs.push(arc(`${key(e)}>${h.at}`, [e.lon, e.lat], h.at, blue, e.ops / targets.length, 0.18));
+  const busiest = [...streams].sort((a, b) => b[1].rate - a[1].rate).slice(0, MAX_STREAMS);
+  for (const [k, st] of busiest) arcs.push(arc(k, st.from, st.to, replicaColor(worst(st.states)), st.rate, 0.3 + 0.3 * Math.min(1, Math.log10(1 + st.rate) / 3)));
+  // Traffic arcs only when the shards are in a few places: every client talks to every shard, so for a database
+  // spread around the world they would join every entry to every city.
+  const targets = [...homes.values()];
+  if (targets.length <= MAX_ENTRY_ARCS) {
+    for (const e of [...entries].sort((a, b) => b.ops - a.ops).slice(0, 8)) for (const h of targets)
+      if (key(e) !== key({ lat: h.at[1], lon: h.at[0] })) arcs.push(arc(`${key(e)}>${h.at}`, [e.lon, e.lat], h.at, blue, e.ops / targets.length, 0.25));
+  }
 
   for (const h of homes.values()) {
     spot(h.at, h.city, { kind: "shard", color: SHARD, size: 5 + Math.min(5, Math.sqrt(h.shards.length)) },
@@ -85,7 +95,8 @@ function scene(state: LiveState | null, last: LastCommand | null, dark: boolean)
   }
   for (const c of copies.values()) {
     const counts = WORST.filter((w) => c.states.includes(w)).map((w) => `${c.states.filter((x) => x === w).length} ${replicaWords(w).toLowerCase()}`);
-    spot(c.at, `${c.city}, ${c.region}`, { kind: "replica", color: replicaColor(worst(c.states)), size: 4 },
+    const asleep = c.states.every((x) => x === "asleep");
+    spot(c.at, `${c.city}, ${c.region}`, { kind: "replica", color: replicaColor(worst(c.states)), size: asleep ? 2.5 : 4, alpha: asleep ? 0.55 : 1 },
       `${plural(c.states.length, "read replica")}: ${counts.join(", ")}${c.reads ? `. Serving ${num(c.reads)} reads/s` : ""}${c.lag ? `, up to ${ms(c.lag)} behind` : ""}`);
   }
   for (const e of entries) {
@@ -129,7 +140,7 @@ export function Globe({ state, last, dark }: { state: LiveState | null; last: La
   const drag = useRef<{ id: number; x: number; y: number; rot: [number, number] } | null>(null);
   const inside = useRef(false);
   const drawn = useRef<{ x: number; y: number; r: number; m: Spot }[]>([]);
-  const [tip, setTip] = useState<{ x: number; y: number; title: string; lines: string[] } | null>(null);
+  const [tip, setTip] = useState<{ x: number; y: number; r: number; title: string; lines: string[] } | null>(null);
 
   // Face the shards when the first numbers arrive, unless someone already turned the globe.
   const aimed = useRef(false);
@@ -233,7 +244,7 @@ export function Globe({ state, last, dark }: { state: LiveState | null; last: La
         const [x, y] = projection(m.at)!;
         let r0 = 0;
         for (const l of m.layers) {
-          ctx.globalAlpha = o;
+          ctx.globalAlpha = o * (l.alpha ?? 1);
           if (!r0) {
             r0 = l.size * dpr;
             ctx.fillStyle = l.color; ctx.strokeStyle = colors.ocean; ctx.lineWidth = 1.5 * dpr;
@@ -299,7 +310,7 @@ export function Globe({ state, last, dark }: { state: LiveState | null; last: La
                 return;
               }
               const [x, y] = local(e), h = hit(x, y);
-              setTip((cur) => (h ? (cur?.title === h.m.title && cur.lines.join() === h.m.lines.join() ? cur : { x: h.x, y: h.y - h.r, title: h.m.title, lines: h.m.lines }) : null));
+              setTip((cur) => (h ? (cur?.title === h.m.title && cur.lines.join() === h.m.lines.join() ? cur : { x: h.x, y: h.y, r: h.r, title: h.m.title, lines: h.m.lines }) : null));
             }}
             onPointerUp={(e) => { if (drag.current?.id === e.pointerId) drag.current = null; }}
             onPointerCancel={() => { drag.current = null; }}
@@ -311,13 +322,18 @@ export function Globe({ state, last, dark }: { state: LiveState | null; last: La
               rot.current = [r[0] + step[0], Math.max(-90, Math.min(90, r[1] + step[1]))];
             }}
           />
-          {tip && (
-            <div role="tooltip" className="pointer-events-none absolute z-10 flex max-w-64 -translate-x-1/2 -translate-y-full flex-col gap-0.5 rounded-lg border border-kumo-line bg-kumo-base px-2 py-1.5 text-xs text-kumo-default shadow-lg"
-              style={{ left: tip.x, top: tip.y - 6 }}>
+          {tip && (() => {
+            // A fixed width, kept inside the globe's box, and below the marker when there's no room above it.
+            const W = 240, width = wrap.current?.clientWidth ?? 460, below = tip.y < 120;
+            const left = Math.max(4, Math.min(width - W - 4, tip.x - W / 2));
+            return (
+            <div role="tooltip" className={`pointer-events-none absolute z-10 flex flex-col gap-0.5 rounded-lg border border-kumo-line bg-kumo-base px-2.5 py-2 text-xs leading-snug text-kumo-default shadow-lg ${below ? "" : "-translate-y-full"}`}
+              style={{ left, width: W, top: below ? tip.y + tip.r + 8 : tip.y - tip.r - 8 }}>
               <strong>{tip.title}</strong>
               {tip.lines.map((l) => <span key={l} className="text-kumo-subtle">{l}</span>)}
             </div>
-          )}
+            );
+          })()}
         </div>
         <div className="flex flex-wrap items-center justify-center gap-x-4 gap-y-1">
           <Legend color={traffic(dark)} label="Traffic entering Cloudflare" />
