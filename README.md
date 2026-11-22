@@ -17,7 +17,9 @@ Experimental. Independent project, not an official Cloudflare or Valkey product.
   read from a replica in or next to their region, a connection still reads its own writes, and `WAIT` reports how
   many replicas have them. An idle replicated database stops its replicas and sleeps until it is used again.
 - A database can have its own password, and can be dropped for good.
-- A local live view (`ui/`) shows each shard and replica, where traffic enters, and response times.
+- A live dashboard (`dashboard/`, at the Worker's own URL) shows each shard and replica on a spinning globe, where
+  traffic enters, response times and what just happened. Anyone can watch; signing in lets you create databases,
+  run commands, restart shards and start test traffic.
 
 ## How it works
 
@@ -83,7 +85,7 @@ From another Worker, use a service binding and `env.VALKEY.connect("mydb:6379")`
 
 [Architecture](docs/architecture.md), [life of a command](docs/lifecycle.md), [durability and failures](docs/durability.md),
 [shards and limits](docs/scaling.md), [security](docs/security.md), [build, deploy and operate](docs/operations.md) and
-[measurements](docs/measurements.md). To run the live view, see [watch it live](docs/operations.md#watch-it-live).
+[measurements](docs/measurements.md). For the dashboard, see [watch it live](docs/operations.md#watch-it-live).
 Rules for changing the code: [AGENTS.md](AGENTS.md).
 
 ## License

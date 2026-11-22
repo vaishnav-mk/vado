@@ -95,24 +95,33 @@ times, bytes, any error and `doneMs`.
 
 ## Watch it live
 
-`ui/` is a local page for one database: health, commands per second (replica reads included), response time
-measured from your computer, keys and memory, each shard and replica with where it runs, and a map of where traffic
-enters Cloudflare. It can also create databases (1, 4, 16 or 64 shards, in one region or around the world, with or
-without replicas in every region), start test traffic from Sender objects in one region or all, restart a shard,
-and run a command.
+The dashboard is the Worker's own URL: `https://<your-worker>.workers.dev/db/<name>`. It shows one database at a
+time: health, commands per second (replica reads included), response time, keys, memory and the saved log, the
+shard dial, a spinning globe with the shards, their replicas and where traffic enters, a grid of every replica's
+state and lag, each shard's details, and a timeline of restarts, deploys, log compactions and replica changes.
+Anyone can watch. Signed in with the bench token, you can also create databases (1, 4, 16 or 64 shards, in one
+region or around the world, with or without replicas in every region), run a command and see which shard and
+replica handled it, restart a shard, and start test traffic from Sender objects in one region or all (it stops by
+itself after 10 minutes).
+
+How it fits together:
+
+- `dashboard/` is its own Worker, `vado-dashboard` (TanStack Start, React, `@cloudflare/kumo`), with no URL of its
+  own. This Worker forwards every request that isn't `/ws`, `/live` or a bench call to it (`DASHBOARD` binding).
+- The page's live numbers come from `/live?db=<name>`, a WebSocket from that database's Watcher object
+  (`src/admin/watcher.js`). It polls every shard and ready replica once a second while anyone watches, measures
+  response time on connections of its own (from wherever the Watcher runs, which the page says), and stops when
+  nobody watches.
+- Everything else goes through the dashboard's server functions to this Worker's `Admin` RPC entrypoint
+  (`src/admin/admin.js`), which checks the sign-in session on every change.
+
+Deploy both Workers. They bind to each other, so on a new account deploy this one once without the `DASHBOARD`
+service in `wrangler.jsonc`, then the dashboard, then this one with it:
 
 ```sh
-npm install                     # ioredis, which ui/server.mjs uses
-npm --prefix ui install
-npm --prefix ui run build       # Vite + React + @cloudflare/kumo, into ui/dist
-VADO_URL=https://<your-worker>.workers.dev TOKEN=<bench token> HOST=<your-host> PORT=6379 PW=<password> DB=mydb \
-  npm run ui                    # then open http://127.0.0.1:4040
+npx wrangler deploy                                  # the database Worker
+(cd dashboard && npm install && npm run deploy)      # vado-dashboard: vite build, then wrangler deploy
 ```
-
-`ui/server.mjs` keeps the bench token and password in its own process and listens on 127.0.0.1 only (`UI_PORT`
-changes the port). It polls bench `shards` and `pulse` once a second, measures GET and SET times over TCP to
-`HOST:PORT` (a TCP Worker, or `scripts/ws-shim.mjs` on 127.0.0.1), and streams a snapshot a second to the page.
-Test traffic needs the `SENDER` binding.
 
 ## The bench API
 
@@ -123,7 +132,7 @@ Test traffic needs the `SENDER` binding.
 | --- | --- |
 | `db` | Create a database, or return its record: `shards`, `regions`, `replicas`, `classes`, and `password=new` to give a new database its own password (returned once, in `password`) |
 | `dbs` | Every database's record |
-| `stats`, `shards` | Each shard's host stats, files and replica states; `shards` adds Valkey's INFO for every shard and replica (the live view) |
+| `stats`, `shards` | Each shard's host stats, files and replica states; `shards` adds Valkey's INFO for every shard and each ready replica |
 | `pulse` | Each isolate's open connections, as last reported to the Pulse object |
 | `throughput` | Pipelined SETs (`op=get` reads them back) over `conns` connections: `n`, `batch`, `value`, `keys=<m>` to reuse m keys per connection |
 | `latency`, `conns`, `soak`, `fill`, `cpu`, `cpuSoak`, `idle`, `repeat`, `run`, `ioredis` | Latency, connection count, sustained load, memory, CPU and functional probes |

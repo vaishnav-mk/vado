@@ -48,7 +48,8 @@
   ],
   // SELF: bench requests and the Admin API reach the TCP connect() handler the way a client Worker would.
   // DASHBOARD: the dashboard (dashboard/, Worker vado-dashboard) serves every request that isn't /ws, /live or the
-  // bench API. It binds back to this Worker's Admin entrypoint, so deploy it once before the first deploy here.
+  // bench API. The two bind to each other, so on a new account deploy this Worker once without DASHBOARD, then
+  // the dashboard, then this Worker again (docs/operations.md).
   "services": [{ "binding": "SELF", "service": "valkey-do" }, { "binding": "DASHBOARD", "service": "vado-dashboard" }],
   "vars": {
     // Shard epochs: a database's creation time picks its shard count for life.

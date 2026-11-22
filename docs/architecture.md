@@ -129,7 +129,7 @@ placement, the password, and what happens to clients when a shard resets.
   (database, how each arrived, commands so far) every 2 s (`PULSE_MS`), from each connection's own timer.
 - **Why needed:** routers run in many isolates in many places and share nothing, so nothing else knows where
   traffic enters.
-- **How it helps:** the bench `pulse` endpoint, and the live view in `ui/`, show connections and commands per
+- **How it helps:** the bench `pulse` endpoint, and the dashboard's globe, show connections and commands per
   second by location.
 - **Trade-off:** in memory only, so a reset loses one report interval. An isolate silent for 10 s drops out. Reports
   are sent only when a `PULSE` binding exists.
