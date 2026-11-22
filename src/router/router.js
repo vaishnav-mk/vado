@@ -785,7 +785,8 @@ export class Router {
       case "info": return this.#reply(bulk(`id=${this.#id} name=${this.#name ?? ""} db=0 resp=${this.proto} router=1 shards=${this.db.shards}\n`));
     }
     if (BLOCKED_SUB.client.has(sub)) return this.#reply(unsupported(`client ${sub}`));
-    return this.#reply(error(`ERR unknown subcommand '${sub}'`));
+    // Valkey's wording (addReplySubcommandSyntaxError), with the subcommand as the client spelled it.
+    return this.#reply(error(`ERR unknown subcommand or wrong number of arguments for '${str(argv[1] ?? new Uint8Array()).slice(0, 128)}'. Try CLIENT HELP.`));
   }
 
   #reset() {
