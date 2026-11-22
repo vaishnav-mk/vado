@@ -124,3 +124,14 @@ export const PULSE_MS = 2_000;
 
 /** WebSockets can't push back on the sender, so a client that outruns its router by this much is disconnected. */
 export const WS_MAX_QUEUED = 16 << 20;
+
+// ---- the dashboard's live numbers (src/admin/watcher.js) and test traffic (src/bench/sender.js) ----
+
+/** How often a Watcher polls its database's shards and replicas, while anyone is watching. */
+export const WATCH_MS = 1_000;
+/** Points of history a Watcher keeps for its charts: five minutes at WATCH_MS. */
+export const WATCH_HISTORY = 300;
+/** Rates are taken over this many polls, so one slow poll doesn't draw a spike. */
+export const WATCH_RATE_POLLS = 5;
+/** Test traffic stops by itself after this long, so a forgotten test doesn't run up a bill. */
+export const TEST_TRAFFIC_MS = 10 * 60_000;
