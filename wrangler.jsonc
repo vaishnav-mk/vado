@@ -49,10 +49,6 @@
     { "tag": "v9", "new_sqlite_classes": ["Watcher"] }
   ],
   "vars": {
-    // Shard epochs: a database's creation time picks its shard count for life.
-    // Databases created from this epoch on start at 1 shard (64 MB); create bigger ones explicitly.
-    "SHARD_EPOCHS": "[{\"from\":0,\"shards\":16},{\"from\":1795002173433,\"shards\":1}]",
-    "LOCATION_HINT": "apac",
     // Signing in to the dashboard, with Cloudflare Access (README.md#sign-in). Empty: the dashboard is read-only.
     "ACCESS_TEAM_DOMAIN": "",
     "ACCESS_AUD": ""

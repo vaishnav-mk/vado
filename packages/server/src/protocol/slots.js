@@ -36,7 +36,7 @@ export const shardOfSlot = (slot, shards) => Math.floor((slot * shards) / SLOTS)
  * epoch that starts later sizes new databases without moving any existing one.
  */
 export function parseEpochs(raw) {
-  if (!raw) return [{ from: 0, shards: 16 }];
+  if (!raw) return [{ from: 0, shards: 1 }];
   const list = JSON.parse(raw);
   let prev = -1;
   for (const e of list) {
