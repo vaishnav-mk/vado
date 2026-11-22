@@ -9,7 +9,7 @@ const a = new Redis(opts), b = new Redis(opts), sub = new Redis(opts);
 assert.equal(await a.ping(), "PONG");
 assert.equal(await a.flushall(), "OK"); // fan-out to every shard
 assert.equal(await a.dbsize(), 0);
-assert.match(await a.info("server"), /valkey_version:/);
+assert.match(await a.info("server"), /(valkey|redis)_version:/); // either flavour
 assert.match(await a.info("memory"), /maxmemory:67108864/); // boot config applied
 
 await a.set("hello", "world");

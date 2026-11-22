@@ -63,7 +63,8 @@ const norm = (c, r) => {
   return r;
 };
 
-const setup = async (db, n) => (await (await fetch(`${BASE}/db?db=${db}&shards=${n}`, { headers: { authorization: `Bearer ${TOKEN}` } })).json()).db;
+// FLAVOUR=redis compares two Redis databases instead of two Valkey ones.
+const setup = async (db, n) => (await (await fetch(`${BASE}/db?db=${db}&shards=${n}${process.env.FLAVOUR ? `&flavour=${process.env.FLAVOUR}` : ""}`, { headers: { authorization: `Bearer ${TOKEN}` } })).json()).db;
 console.log(await setup(dbA, 1), await setup(dbB, shards));
 
 let checked = 0, crossSlotRejections = 0;

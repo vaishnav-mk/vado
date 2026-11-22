@@ -21,7 +21,7 @@ const sub = client(), pub = client();
 if (auths.length) { await sub.until((b) => b.startsWith("+OK\r\n")); sub.take(); await pub.until((b) => b.startsWith("+OK\r\n")); pub.take(); }
 const k = `r3:${Date.now()}`;
 sub.send(["HELLO", "3"]);
-await sub.until((b) => b.startsWith("%") && b.includes("valkey"));
+await sub.until((b) => b.startsWith("%") && /valkey|redis/.test(b)); // either flavour
 sub.take();
 sub.send(["SUBSCRIBE", "news"], ["SET", k, "1"], ["GET", k], ["HSET", `${k}h`, "a", "1"], ["HGETALL", `${k}h`]);
 const got = await sub.until((b) => b.includes(">3\r\n$9\r\nsubscribe") && b.includes("%1\r\n"));
