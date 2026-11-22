@@ -874,7 +874,8 @@ export class Router {
   #scan(argv) {
     const N = BigInt(this.db.shards);
     let cursor;
-    try { cursor = BigInt(str(argv[1] ?? new Uint8Array())); } catch { return this.#reply(error("ERR invalid cursor")); }
+    try { cursor = BigInt(str(argv[1] ?? new Uint8Array())); } catch { cursor = -1n; }
+    if (cursor < 0n) return this.#reply(error("ERR invalid cursor"));
     const shard = Number(cursor % N), inner = cursor / N;
     const s = this.#slot();
     this.#hold(this.#afterEarlierReplies(s).then(() => this.shardStub(shard).runRaw([["SCAN", inner.toString(), ...argv.slice(2).map(str)]])).then((f) => {
