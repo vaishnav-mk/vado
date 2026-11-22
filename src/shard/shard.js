@@ -30,7 +30,8 @@ export const valkeyArgs = (env, replica) => [
   // A replica follows its primary, as a Valkey replica does: it neither expires nor evicts keys of its own (the
   // primary's stream deletes them; reads still hide expired keys), and has no memory limit to fail a streamed
   // write on, which with replies off nobody would see. (Redis lacks import-mode; wasm/redis/patches/0005 adds it.)
-  ...(replica ? ["--import-mode", "yes", "--maxmemory", "0"] : ["--maxmemory", env.VALKEY_MAXMEMORY || "64mb"]),
+  // ("3gb" is what 0 means in a 32-bit build, without a warning at every boot.)
+  ...(replica ? ["--import-mode", "yes", "--maxmemory", "3gb"] : ["--maxmemory", env.VALKEY_MAXMEMORY || "64mb"]),
   "--maxmemory-policy", env.VALKEY_MAXMEMORY_POLICY || "noeviction",
   // Every RPC batch and router socket is a new Valkey connection. The default accepts 10 per event
   // loop cycle, which queued hundreds of RPC batches until callers gave up (seen at 96 x 4 load).
