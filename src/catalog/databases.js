@@ -8,7 +8,7 @@ import { replicaBinding, replicaName } from "../replication/replication.js";
 const dbs = new Map(); // name -> Promise<db>; a database's record never changes once created
 
 export const objectOptions = (env, hint = env.LOCATION_HINT) => (HINTS.has(hint) ? { locationHint: hint } : {});
-export const shardName = (db, i) => `${db.name}.${db.created.toString(36)}.${i}`;
+const shardName = (db, i) => `${db.name}.${db.created.toString(36)}.${i}`;
 // Shard i uses class k = i % db.classes, so shards less than db.classes apart never share an isolate.
 // Databases from before classes have none: all their shards are ValkeyShard (k = 0). Pub/sub stays there too.
 const classOf = (db, i) => (typeof i === "number" && db.classes > 1 ? i % db.classes : 0);

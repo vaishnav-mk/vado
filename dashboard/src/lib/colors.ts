@@ -15,7 +15,7 @@ export const REPLICA: Record<ReplicaState, string> = {
 };
 
 /** What each replica state means, in plain words. */
-export const REPLICA_WORDS: Record<ReplicaState, string> = {
+const REPLICA_WORDS: Record<ReplicaState, string> = {
   ready: "Ready",
   copying: "Copying",
   "catching up": "Catching up",

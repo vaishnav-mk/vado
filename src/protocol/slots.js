@@ -11,7 +11,7 @@ const TABLE = (() => {
   return t;
 })();
 
-export function crc16(b, from = 0, to = b.length) {
+function crc16(b, from = 0, to = b.length) {
   let c = 0;
   for (let i = from; i < to; i++) c = ((c << 8) & 0xffff) ^ TABLE[((c >> 8) ^ b[i]) & 0xff];
   return c;

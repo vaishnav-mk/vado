@@ -104,7 +104,7 @@ export function command(args) {
   return concat(parts);
 }
 
-export const CRLF = enc.encode("\r\n");
+const CRLF = enc.encode("\r\n");
 export const simple = (s) => enc.encode(`+${s}\r\n`);
 // Newlines become spaces, as Valkey does: client text in an error must not end the frame early.
 export const error = (s) => enc.encode(`-${s.replace(/[\r\n]/g, " ")}\r\n`);
