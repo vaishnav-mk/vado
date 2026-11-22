@@ -122,13 +122,18 @@ export class ValkeyShard extends DurableObject {
    *  boots again (a router that still knows the database gets errors, not an empty shard). */
   async drop() {
     if (this.#dropped) return;
+    this.#dropped = true; // entry points refuse from here
     await this.#repl?.retireAll();
-    await this.ctx.storage.deleteAlarm();
-    await this.ctx.storage.deleteAll();
-    this.ctx.storage.sql.exec(`CREATE TABLE dropped (at INTEGER NOT NULL)`);
-    this.ctx.storage.sql.exec(`INSERT INTO dropped VALUES (?)`, Date.now());
+    const sql = this.ctx.storage.sql;
+    // The tombstone is stored before anything is deleted, so a reset partway (Valkey writing to a table that
+    // is gone resets the object) still leaves a dropped shard, never an empty live one.
+    sql.exec(`CREATE TABLE IF NOT EXISTS dropped (at INTEGER NOT NULL)`);
+    sql.exec(`INSERT INTO dropped VALUES (?)`, Date.now());
     await this.ctx.storage.sync();
-    this.#dropped = true;
+    await this.ctx.storage.deleteAlarm();
+    const tables = sql.exec(`SELECT name FROM sqlite_master WHERE type = 'table' AND name <> 'dropped' AND name NOT LIKE '\\_cf\\_%' ESCAPE '\\' AND name NOT LIKE 'sqlite\\_%' ESCAPE '\\'`).toArray();
+    for (const { name } of tables) sql.exec(`DROP TABLE "${name}"`);
+    await this.ctx.storage.sync();
     setTimeout(() => this.ctx.abort(new Error("dropped")), 0); // Valkey still holds the data in memory; after this returns
   }
 
