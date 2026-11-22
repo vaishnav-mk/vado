@@ -239,9 +239,11 @@ export class ValkeyShard extends DurableObject {
     this.ctx.abort(new Error(reason));
   }
 
-  /** stats() plus Valkey's own INFO counters, in one call (the live view polls every shard and replica). */
+  /** stats() plus Valkey's own INFO counters, in one call. Not client activity: a database that is only
+   *  watched (the dashboard polls every shard) still goes to sleep. */
   async snapshot() {
-    const [txt] = await this.run([["INFO", "server", "clients", "memory", "persistence", "stats", "keyspace", "commandstats"]]);
+    this.#live();
+    const [txt] = decodeAll(await this.#host.execBatch(command(["INFO", "server", "clients", "memory", "persistence", "stats", "keyspace", "commandstats"]), 1));
     const info = Object.fromEntries(String(txt).split("\r\n").filter((l) => l.includes(":")).map((l) => [l.slice(0, l.indexOf(":")), l.slice(l.indexOf(":") + 1)]));
     const { files, ...stats } = this.stats();
     return { ...stats, info };

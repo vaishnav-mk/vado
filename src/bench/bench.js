@@ -7,6 +7,7 @@ import { bindingConnector } from "../client/ioredis.js";
 import { hashSecret, sameSecret } from "../router/secrets.js";
 import { RespClient } from "../client/resp-client.js";
 import { command, concat } from "../protocol/resp.js";
+import { shardSnapshots } from "../admin/snapshot.js";
 import { HINTS, WORLD } from "../replication/regions.js";
 
 async function open(env, q, stallMs) {
@@ -164,17 +165,10 @@ const tests = {
     return { aborted: idx, ...(replica ? { replica } : {}) };
   },
 
-  // Every shard's stats with Valkey's own INFO counters, for the live view in ui/. A shard that can't
-  // answer right now is { down }, so the others still show.
+  // Every shard's stats with Valkey's own INFO counters, and its ready replicas' (src/admin/snapshot.js).
   async shards(env, q) {
     const db = await database(env, q.get("db"));
-    const one = (stub) => stub.snapshot().catch((e) => ({ down: e.message }));
-    const shards = await Promise.all(Array.from({ length: db.shards }, async (_, i) => {
-      const regions = db.replicas ?? [];
-      const [primary, ...copies] = await Promise.all([one(shardStub(env, db, i)), ...regions.map((r) => one(replicaStub(env, db, i, r)))]);
-      return { ...primary, replicaSnapshots: copies.map((c, k) => ({ region: regions[k], ...c })) };
-    }));
-    return { db, shards };
+    return { db, shards: await shardSnapshots(env, db) };
   },
 
   // What every isolate running routers last reported (src/admin/pulse.js), for ui/.
