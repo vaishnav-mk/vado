@@ -1,18 +1,18 @@
-# Rebuild wasm/valkey.wasm and wasm/redis/redis.wasm from the official release
-# tarballs and check that each committed binary is exactly what its build
-# produces, and that its imports and exports match its interface.txt (what the
-# JS host provides).
+# Rebuild packages/wasm/valkey/valkey.wasm and packages/wasm/redis/redis.wasm from
+# the official release tarballs and check that each committed binary is exactly
+# what its build produces, and that its imports and exports match its
+# interface.txt (what the JS host provides).
 name: wasm
 
 on:
   push:
     paths:
-      - "wasm/**"
+      - "packages/wasm/**"
       - ".github/workflows/wasm.yml"
       - ".github/actions/wasm-toolchain/**"
   pull_request:
     paths:
-      - "wasm/**"
+      - "packages/wasm/**"
       - ".github/workflows/wasm.yml"
       - ".github/actions/wasm-toolchain/**"
   workflow_dispatch:
@@ -28,8 +28,8 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - { name: valkey, dir: wasm }
-          - { name: redis, dir: wasm/redis }
+          - { name: valkey, dir: packages/wasm/valkey }
+          - { name: redis, dir: packages/wasm/redis }
     name: build (${{ matrix.name }})
     env:
       DIR: ${{ matrix.dir }}
@@ -44,15 +44,15 @@ jobs:
       # Only the downloaded tarballs: build.sh extracts a fresh tree every run.
       - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
-          path: wasm/.cache/*.tar.gz
-          key: wasm-cache-${{ matrix.name }}-${{ hashFiles(format('{0}/build.sh', matrix.dir)) }}
+          path: packages/wasm/.cache/*.tar.gz
+          key: wasm-cache-${{ matrix.name }}-${{ hashFiles(format('{0}/build.sh', matrix.dir), 'packages/wasm/common.sh') }}
 
       - id: build
         run: bash "$DIR/build.sh"
 
       - name: Interface matches interface.txt
         if: ${{ !cancelled() && steps.build.outcome == 'success' }}
-        run: node wasm/interface.mjs "$DIR/build/$WASM" --check "$DIR/interface.txt"
+        run: node packages/wasm/interface.mjs "$DIR/build/$WASM" --check "$DIR/interface.txt"
 
       - name: Build is byte-identical to the committed wasm
         if: ${{ !cancelled() && steps.build.outcome == 'success' }}
@@ -62,7 +62,7 @@ jobs:
           if ! cmp "$DIR/build/$WASM" "$DIR/$WASM"; then
             echo "::error::$DIR/build/$WASM differs from the committed $DIR/$WASM." \
               "If the change is intended, copy the build (the ${{ matrix.name }}-wasm artifact) over $DIR/$WASM" \
-              "and run: node wasm/interface.mjs $DIR/$WASM > $DIR/interface.txt"
+              "and run: node packages/wasm/interface.mjs $DIR/$WASM > $DIR/interface.txt"
             exit 1
           fi
 

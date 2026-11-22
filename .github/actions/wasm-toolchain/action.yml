@@ -1,8 +1,8 @@
 name: wasm toolchain
 description: >
   Install wasi-sdk 34 and binaryen version_133 (Linux x86_64), checked by sha256,
-  and set WASI_SDK and PATH for wasm/build.sh. These are the versions
-  wasm/valkey.wasm was built with; other versions give different bytes.
+  and set WASI_SDK and PATH for packages/wasm/valkey/build.sh. These are the versions
+  packages/wasm/valkey/valkey.wasm was built with; other versions give different bytes.
 runs:
   using: composite
   steps:

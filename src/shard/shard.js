@@ -1,8 +1,8 @@
 // One shard: a Durable Object running valkey.wasm (or, for a Redis database, redis.wasm) with its AOF in the
 // object's SQLite. Both builds have the same interface, so everything here runs either.
 import { DurableObject } from "cloudflare:workers";
-import valkeyWasm from "../../wasm/valkey.wasm";
-import redisWasm from "../../wasm/redis/redis.wasm";
+import valkeyWasm from "../../packages/wasm/valkey/valkey.wasm";
+import redisWasm from "../../packages/wasm/redis/redis.wasm";
 import { ValkeyHost } from "./valkey-host.js";
 import { command, concat, decodeAll } from "../protocol/resp.js";
 import { coloOf } from "../replication/regions.js";

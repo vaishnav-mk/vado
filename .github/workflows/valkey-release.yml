@@ -27,7 +27,7 @@ jobs:
         id: release
         run: |
           set -euo pipefail
-          current=$(sed -n 's/^VALKEY_VERSION=//p' wasm/build.sh)
+          current=$(sed -n 's/^VALKEY_VERSION=//p' packages/wasm/valkey/build.sh)
           # Highest version, not the newest date: Valkey also ships patch
           # releases for older branches.
           latest=$(gh api --paginate 'repos/valkey-io/valkey/releases?per_page=100' \
@@ -53,12 +53,12 @@ jobs:
           LATEST: ${{ steps.release.outputs.latest }}
         run: |
           set +e -uo pipefail # no -e: every result goes in the report
-          before=$(stat -c %s wasm/valkey.wasm)
+          before=$(stat -c %s packages/wasm/valkey/valkey.wasm)
           details() { printf '<details><summary>%s</summary>\n\n```\n' "$1"; tail -n 60 "$2"; printf '```\n\n</details>\n\n'; }
           {
-            echo "Valkey [$LATEST](https://github.com/valkey-io/valkey/releases/tag/$LATEST) is out; \`wasm/build.sh\` pins $CURRENT."
+            echo "Valkey [$LATEST](https://github.com/valkey-io/valkey/releases/tag/$LATEST) is out; \`packages/wasm/valkey/build.sh\` pins $CURRENT."
             echo
-            if bash wasm/update.sh "$LATEST" >update.log 2>&1; then
+            if bash packages/wasm/valkey/update.sh "$LATEST" >update.log 2>&1; then
               echo "- Patches: all apply."
               patched=true
             else
@@ -68,12 +68,12 @@ jobs:
             built=skipped
             if [ "$patched" = false ]; then
               echo "- Build: skipped."
-            elif bash wasm/build.sh >build.log 2>&1; then
+            elif bash packages/wasm/valkey/build.sh >build.log 2>&1; then
               built=ok
-              after=$(stat -c %s wasm/build/valkey.wasm)
+              after=$(stat -c %s packages/wasm/valkey/build/valkey.wasm)
               echo "- Build: ok."
               printf -- '- Size: %d bytes (%s, committed) -> %d bytes (%s), %+d bytes.\n' "$before" "$CURRENT" "$after" "$LATEST" "$((after - before))"
-              if node wasm/interface.mjs wasm/build/valkey.wasm --check wasm/interface.txt >interface.log 2>&1; then
+              if node packages/wasm/interface.mjs packages/wasm/valkey/build/valkey.wasm --check packages/wasm/valkey/interface.txt >interface.log 2>&1; then
                 echo "- Interface: unchanged."
               else
                 echo "- Interface: **changed**, the JS host (src/shard/valkey-host.js) may need updating:"
@@ -89,7 +89,7 @@ jobs:
             echo
             details "update.sh output" update.log
             [ "$built" = failed ] && details "build.sh output (last 60 lines)" build.log
-            echo "To bump: \`wasm/update.sh $LATEST\`, fix any patches, rebuild, copy \`wasm/build/valkey.wasm\` to \`wasm/valkey.wasm\`, regenerate \`wasm/interface.txt\` (see wasm/README.md)."
+            echo "To bump: \`packages/wasm/valkey/update.sh $LATEST\`, fix any patches, rebuild, copy \`packages/wasm/valkey/build/valkey.wasm\` to \`packages/wasm/valkey/valkey.wasm\`, regenerate \`packages/wasm/valkey/interface.txt\` (see wasm/README.md)."
           } >issue.md
           cat issue.md
           gh issue create --repo "$GITHUB_REPOSITORY" --title "Valkey $LATEST is out" --body-file issue.md
