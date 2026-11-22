@@ -479,7 +479,7 @@ export class Router {
       case "ping": return this.#reply(argv.length > 1 ? bulk(argv[1]) : simple("PONG"));
       case "echo": return this.#reply(argv.length === 2 ? bulk(argv[1]) : error("ERR wrong number of arguments for 'echo' command"));
       case "quit": this.#reply(OK); this.#closed = true; return;
-      case "select": return this.#reply(str(argv[1] ?? "") === "0" ? OK : error("ERR DB index is out of range (use one database name per connection address)"));
+      case "select": return this.#reply(this.#arity(name, argv) ?? (str(argv[1]) === "0" ? OK : error("ERR DB index is out of range (use one database name per connection address)")));
       case "auth":
         if (argv.length !== 2 && argv.length !== 3) return this.#reply(error("ERR wrong number of arguments for 'auth' command"));
         return this.#login(argv.length === 3 ? str(argv[1]) : null, str(argv[argv.length - 1]), () => this.#reply(OK));
