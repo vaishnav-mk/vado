@@ -1,9 +1,9 @@
 // A database's record from the catalog, cached per isolate.
+import { IsolateCache } from "../isolate-cache";
 import type { DatabaseRecord, Flavour, Hint } from "./types";
 
-// Cache the promise, not the result: hundreds of connections landing on a cold isolate would otherwise all ask
-// the catalog at once. A record never changes once created; a failed lookup is dropped so the next one retries.
-const records = new Map<string, Promise<DatabaseRecord>>();
+// A record never changes once created, so each isolate asks the catalog once per database.
+const records = new IsolateCache<string, DatabaseRecord>();
 
 export const catalogStub = (env: Env) => env.CATALOG.getByName("catalog");
 
@@ -18,15 +18,7 @@ export function database(
   secret?: string | null,
   flavour?: Flavour,
 ): Promise<DatabaseRecord> {
-  let record = records.get(name);
-
-  if (!record) {
-    record = catalogStub(env).get(name, shards, regions, replicas, classes, secret, flavour);
-    record.catch(() => records.delete(name));
-    records.set(name, record);
-  }
-
-  return record;
+  return records.get(name, () => catalogStub(env).get(name, shards, regions, replicas, classes, secret, flavour));
 }
 
 /** Forgets this isolate's copy of a database's record (it was dropped). */
@@ -38,5 +30,5 @@ export const current = (env: Env, name: string): Promise<DatabaseRecord | null> 
 
 /** The database's record if it exists (null if not): unlike database(), never creates one. */
 export async function lookup(env: Env, name: string): Promise<DatabaseRecord | null> {
-  return (await records.get(name)) ?? (await current(env, name));
+  return records.peek(name) ?? (await current(env, name));
 }
