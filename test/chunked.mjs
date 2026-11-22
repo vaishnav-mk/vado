@@ -5,7 +5,7 @@ import net from "node:net";
 import assert from "node:assert/strict";
 
 const enc = (a) => `*${a.length}\r\n` + a.map((x) => `$${Buffer.byteLength(x)}\r\n${x}\r\n`).join("");
-const s = net.connect(Number(process.env.PORT ?? 6380), process.env.HOST ?? "127.0.0.1");
+const s = net.connect(Number(process.env.PORT ?? 6379), process.env.HOST ?? "127.0.0.1");
 s.setNoDelay(true);
 let buf = "";
 s.on("data", (d) => { buf += d.toString("latin1"); });

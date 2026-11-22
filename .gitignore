@@ -1,11 +1,11 @@
 node_modules
+dist
 .wrangler
+.dev.vars
 .bench-token
-.local-do
-.dist
-config.capnp
 .valkey-password
 private/
 results/
 packages/wasm/.cache/
 packages/wasm/*/build/
+.tanstack

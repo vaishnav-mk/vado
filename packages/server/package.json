@@ -1,0 +1,20 @@
+{
+  "name": "@vado/server",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "license": "Apache-2.0",
+  "description": "The database: a sharding router, Durable Objects running Valkey or Redis, read replicas and the catalog",
+  "exports": {
+    ".": "./src/index.js",
+    "./*": "./src/*"
+  },
+  "scripts": {
+    "colos": "node scripts/colos.mjs"
+  },
+  "dependencies": {
+    "@vado/client": "*",
+    "@vado/wasm": "*",
+    "ioredis": "^5.4.1"
+  }
+}

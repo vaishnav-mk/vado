@@ -3,11 +3,12 @@
 import Redis from "ioredis";
 import assert from "node:assert/strict";
 
-const HTTP = "http://127.0.0.1:8787", H = { authorization: "Bearer local" };
-const api = (p) => fetch(HTTP + p, { headers: H }).then((r) => r.json());
+const { BASE = "http://localhost:5173", TOKEN = "local", PORT = "6379" } = process.env;
+const H = { authorization: `Bearer ${TOKEN}` };
+const api = (p) => fetch(BASE + p, { headers: H }).then((r) => r.json());
 await api("/db?db=watchreset&shards=1");
 const PW = process.env.VALKEY_PASSWORD || "any"; // without VALKEY_PASSWORD any password selects the database
-const a = new Redis({ port: 6380, host: "127.0.0.1", username: "watchreset", password: PW, maxRetriesPerRequest: 0 });
+const a = new Redis({ port: Number(PORT), host: "127.0.0.1", username: "watchreset", password: PW, maxRetriesPerRequest: 0 });
 await a.set("k", "1");
 
 // 1. reset between WATCH and MULTI/EXEC

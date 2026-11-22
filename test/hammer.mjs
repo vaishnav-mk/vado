@@ -1,4 +1,4 @@
-// Concurrency invariants against any Redis endpoint (local TCP, or prod through scripts/ws-shim.mjs).
+// Concurrency invariants against any Redis endpoint (local TCP, or prod through npx vado-shim).
 // Each check must hold even with shards being reset underneath it (CHAOS=1 aborts shards via the
 // bench API while checks run): acknowledged effects are never lost, and anything that failed
 // (LOST, reconnect) may or may not have applied, so bounds are [acked, acked + failed].
@@ -9,9 +9,9 @@ import crypto from "node:crypto";
 
 const env = process.env;
 const CHAOS = env.CHAOS === "1"; // CHAOS=1 aborts shards while the checks run
-const PORT = Number(env.PORT ?? 6380), PW = env.PW || undefined, DB = env.DB ?? "hammer";
+const PORT = Number(env.PORT ?? 6379), PW = env.PW || undefined, DB = env.DB ?? "hammer";
 const C = Number(env.C ?? 16), SECONDS = Number(env.SECONDS ?? 20);
-const BASE = env.BASE ?? "http://127.0.0.1:8787", TOKEN = env.TOKEN ?? "local";
+const BASE = env.BASE ?? "http://localhost:5173", TOKEN = env.TOKEN ?? "local";
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const results = [];
 const errors = {}; // error message -> count, across all checks

@@ -1,8 +1,10 @@
 {
   "$schema": "node_modules/wrangler/config-schema.json",
-  "name": "valkey-do",
-  "main": "src/index.js",
+  "name": "vado",
+  // The dashboard (TanStack Start) and the database (@vado/server) in one Worker: src/server.ts.
+  "main": "src/server.ts",
   "compatibility_date": "2026-11-01",
+  "compatibility_flags": ["nodejs_compat"],
   "durable_objects": {
     "bindings": [
       { "name": "SHARD", "class_name": "ValkeyShard" },
@@ -46,11 +48,6 @@
     { "tag": "v8", "new_sqlite_classes": ["ValkeyShard8", "ValkeyShard9", "ValkeyShard10", "ValkeyShard11", "ValkeyShard12", "ValkeyShard13", "ValkeyShard14", "ValkeyShard15"] },
     { "tag": "v9", "new_sqlite_classes": ["Watcher"] }
   ],
-  // SELF: bench requests and the Admin API reach the TCP connect() handler the way a client Worker would.
-  // DASHBOARD: the dashboard (dashboard/, Worker vado-dashboard) serves every request that isn't /ws, /live or the
-  // bench API. The two bind to each other, so on a new account deploy this Worker once without DASHBOARD, then
-  // the dashboard, then this Worker again (docs/operations.md).
-  "services": [{ "binding": "SELF", "service": "valkey-do" }, { "binding": "DASHBOARD", "service": "vado-dashboard" }],
   "vars": {
     // Shard epochs: a database's creation time picks its shard count for life.
     // Databases created from this epoch on start at 1 shard (64 MB); create bigger ones explicitly.
@@ -59,7 +56,7 @@
   },
   // Each deploy's version id: a shard reports it, so the dashboard can tell a deploy from a crash.
   "version_metadata": { "binding": "VERSION" },
-  // Failed AUTHs per client address and Cloudflare location (src/router/serve.js). namespace_id: any integer unique
+  // Failed AUTHs per client address and Cloudflare location (packages/server/src/router/serve.js). namespace_id: any integer unique
   // to the account.
   "ratelimits": [{ "name": "AUTH_LIMIT", "namespace_id": "6379", "simple": { "limit": 30, "period": 60 } }],
   "observability": { "enabled": true }

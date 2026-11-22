@@ -4,10 +4,10 @@ import assert from "node:assert/strict";
 
 const enc = (a) => `*${a.length}\r\n` + a.map((x) => `$${Buffer.byteLength(x)}\r\n${x}\r\n`).join("");
 function client() {
-  const s = net.connect(Number(process.env.PORT ?? 6380), process.env.HOST ?? "127.0.0.1");
+  const s = net.connect(Number(process.env.PORT ?? 6379), process.env.HOST ?? "127.0.0.1");
   let buf = "";
   s.on("data", (d) => { buf += d; });
-  // PW/DB: authenticate first (prod through scripts/ws-shim.mjs); the +OK is consumed below.
+  // PW/DB: authenticate first (prod through npx vado-shim); the +OK is consumed below.
   if (process.env.PW) { s.write(enc(["AUTH", process.env.DB ?? "default", process.env.PW])); auths.push(s); }
   return {
     send: (...cmds) => s.write(cmds.map(enc).join("")),

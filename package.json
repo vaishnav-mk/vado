@@ -2,29 +2,53 @@
   "name": "vado",
   "version": "0.0.0",
   "private": true,
+  "type": "module",
   "license": "Apache-2.0",
-  "description": "Valkey or Redis on Cloudflare Durable Objects: the real servers compiled to wasm, sharded behind a Worker router",
-  "keywords": [
-    "valkey",
-    "redis-protocol",
-    "cloudflare",
-    "workers",
-    "durable-objects",
-    "wasm"
-  ],
+  "description": "Valkey or Redis on Cloudflare Durable Objects: the real servers compiled to wasm, sharded behind a Worker",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/vaishnav-mk/vado.git"
   },
-  "bugs": "https://github.com/vaishnav-mk/vado/issues",
-  "type": "module",
+  "workspaces": [
+    "packages/*"
+  ],
   "scripts": {
-    "dev": "scripts/local.sh",
-    "test": "scripts/test-local.sh",
-    "deploy": "wrangler deploy && npm --prefix dashboard run deploy"
+    "dev": "vp dev",
+    "build": "vp build",
+    "deploy": "vp build && wrangler deploy",
+    "check": "vp check",
+    "test": "vp test"
+  },
+  "dependencies": {
+    "@cloudflare/kumo": "^2.19.0",
+    "@phosphor-icons/react": "^2.1.10",
+    "@tanstack/react-router": "^1.170.46",
+    "@tanstack/react-start": "~1.169.7",
+    "@vado/server": "*",
+    "d3-geo": "^3.1.2",
+    "echarts": "^6.1.0",
+    "react": "^19.3.1",
+    "react-dom": "^19.3.1",
+    "topojson-client": "^3.1.0",
+    "world-atlas": "^2.0.2",
+    "zod": "^4.6.7"
   },
   "devDependencies": {
+    "@cloudflare/vite-plugin": "~1.70.1",
+    "@tailwindcss/vite": "^4.3.5",
+    "@types/d3-geo": "^3.1.1",
+    "@types/react": "^19.3.0",
+    "@types/react-dom": "^19.3.0",
+    "@types/topojson-client": "^3.1.5",
+    "@vitejs/plugin-react": "^6.3.0",
     "ioredis": "^5.4.1",
-    "workerd": "^1.20261115.1"
+    "tailwindcss": "^4.3.5",
+    "typescript": "^5.9.3",
+    "vite": "npm:@voidzero-dev/vite-plus-core@8.3.8000",
+    "vite-plus": "1.7.0",
+    "wrangler": "^4.166.0"
+  },
+  "overrides": {
+    "vite": "npm:@voidzero-dev/vite-plus-core@8.3.8000"
   }
 }

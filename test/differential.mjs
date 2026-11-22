@@ -3,7 +3,7 @@
 // Usage: node test/differential.mjs [seed] [rounds] [shards]   (BASE, TOKEN env for remote)
 import assert from "node:assert/strict";
 
-const BASE = process.env.BASE ?? "http://127.0.0.1:8787";
+const BASE = process.env.BASE ?? "http://localhost:5173";
 const TOKEN = process.env.TOKEN ?? "local";
 const seed = Number(process.argv[2] ?? 1), rounds = Number(process.argv[3] ?? 40), shards = Number(process.argv[4] ?? 16);
 const run = Date.now().toString(36);
