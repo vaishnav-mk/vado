@@ -1,0 +1,11 @@
+--- a/src/util.c
++++ b/src/util.c
+@@ -1087,6 +1087,8 @@
+ long getTimeZone(void) {
+ #if defined(__linux__) || defined(__sun)
+     return timezone;
++#elif defined(VALKEY_WASM)
++    return 0; /* UTC: WASI has no time zones, and its gettimeofday() never fills in tz */
+ #else
+     struct timezone tz;
+ 

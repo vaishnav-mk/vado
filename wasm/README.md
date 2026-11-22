@@ -36,6 +36,8 @@ compiles Valkey with the shims in `wasi/`, links, and runs `wasm-opt`. Every run
     exits. If that rewrite isn't running any more (it was killed, and maybe another started), the export returns 0
     and the host removes the file itself. `wasi/wasm_compat.h` makes `waitpid()` return 0, so the child never
     appears to exit by itself, and `kill()` fail with `ESRCH`, so killing the rewrite doesn't wait for a process.
+  - `0005-utc-log-times.patch`: log lines in UTC. WASI has no time zones, and Valkey read its offset from a
+    `gettimeofday()` argument WASI never fills in, so log dates came out as garbage.
 - `patches/mimalloc/` is applied only with `ALLOCATOR=mimalloc`:
   - `0001-zmalloc-mimalloc.patch`: a `USE_MIMALLOC` branch in zmalloc. It calls `mi_malloc`, `mi_calloc`,
     `mi_realloc` and `mi_free`, sizes blocks with `mi_usable_size`, and INFO shows `mem_allocator:mimalloc-3.7.0`.
@@ -85,8 +87,8 @@ relative to the Valkey tree, so the same wasi-sdk and binaryen give the same byt
 `wasm/valkey.wasm` is this script's `ALLOCATOR=libc` output, and a fresh build reproduces it byte for byte.
 
 Checked with wasi-sdk 34 and binaryen 133 on three hosts: macOS arm64 (wasi-sdk release, Homebrew binaryen), and
-Linux arm64 and x86_64 in `ubuntu:24.04` (both projects' release builds). All give the committed file: 1,940,664
-bytes, sha256 `55624fa36ae4f3e9fd8ec32f6757fe1360535f46e92a846d4428102f8756a78e`.
+Linux arm64 and x86_64 in `ubuntu:24.04` (both projects' release builds). All gave the committed file then;
+the current one is 1,940,632 bytes, sha256 `aa27bd1b67b77fd4e8f8ef8fdfe7dd1bf6d6a1c5da92e5d2c9577d047d091da6`.
 
 ## Pipeline
 

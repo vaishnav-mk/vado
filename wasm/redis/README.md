@@ -29,6 +29,7 @@ Redis's own Makefile, except `bio` (it starts threads) and `tls`. CI rebuilds it
     sees expired keys and hash fields as alive, as the primary did, and anything else sees them as gone without
     deleting them. A key the stream sets with an expiry already past stays until the stream deletes it. Without it,
     a replica whose stream runs a few ms behind would drop a key that the primary then kept alive.
+  - `0006-utc-log-times.patch`: as Valkey's `0005`, log lines in UTC.
 - `stubs.c`: what Redis needs that wasm32-wasip1 lacks. bio jobs run inline, and completion callbacks run on the
   next event loop pass. fork, exec, `dlopen`, TLS and the hiredis async calls fail or do nothing.
 - `include/module.h`: the shared `reactor.c` includes Valkey's `module.h`; this one includes `server.h`.
