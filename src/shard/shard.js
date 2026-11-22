@@ -187,7 +187,8 @@ export class ValkeyShard extends DurableObject {
       // ends the data only gets older: reset, which also closes routers' open sockets (their reads retry on
       // the primary), and the primary copies a fresh instance.
       if (localAddress?.startsWith("repl")) {
-        const stream = (this.#stream = {});
+        this.#stream?.socket.close().catch(() => {}); // from a primary that reset, so never closed it
+        const stream = (this.#stream = { socket });
         this.#ready = false;
         try { return await this.#host.serve(socket, null, true); } finally {
           if (this.#stream === stream) { this.#stream = null; this.#ready = false; setTimeout(() => this.ctx.abort(new Error("replica stream ended")), 0); }
