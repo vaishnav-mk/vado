@@ -109,15 +109,17 @@ export class Replicator {
   }
 
   /** How many replicas have applied every append so far: a marker goes behind everything already sent to each
-   *  live replica, and this resolves once `n` have answered, or after `ms` (0: REPL_STUCK_MS). */
+   *  live replica, and this resolves once `n` have answered, or after `ms` (0: REPL_STUCK_MS). A replica that is
+   *  copying, or about to (waking from sleep, say), gets its marker once it is live: its copy has every append. */
   wait(n, ms) {
-    const live = [...this.#targets.values()].filter((t) => t.phase === "live");
     let acked = 0, finish;
     const done = new Promise((r) => (finish = r));
+    if (n <= 0 || !this.#targets.size) { finish(0); return done; }
     const timer = setTimeout(() => finish(acked), ms > 0 ? ms : REPL_STUCK_MS);
-    if (acked >= n || !live.length) { clearTimeout(timer); finish(acked); }
-    for (const t of live) {
-      t.marks.push({ at: Date.now(), onAck: () => { if (++acked >= n) { clearTimeout(timer); finish(acked); } } });
+    const onAck = () => { if (++acked >= n) { clearTimeout(timer); finish(acked); } };
+    for (const t of this.#targets.values()) {
+      if (t.phase !== "live") { t.waiting.push(onAck); continue; }
+      t.marks.push({ at: Date.now(), onAck });
       this.#send(t, MARK);
     }
     return done;
@@ -198,7 +200,11 @@ export class Replicator {
       t.marks.push({ at: Date.now(), ready: true });
       await t.writer.write(MARK);
       while (t.phase === "copying" && t.queue.length) { const b = t.queue.shift(); t.queued -= b.length; this.#host.release(b.length); await t.writer.write(b); }
-      if (t.phase === "copying") t.phase = "live"; // no await since the queue emptied, so no append is missed
+      if (t.phase === "copying") { // no await since the queue emptied, so no append is missed
+        t.phase = "live";
+        const waiting = t.waiting.splice(0); // WAITs that started before it was live
+        if (waiting.length) { t.marks.push({ at: Date.now(), onAck: () => waiting.forEach((f) => f()) }); this.#send(t, MARK); }
+      }
     } catch (e) {
       this.#drop(t, e.message);
     } finally {
@@ -239,9 +245,9 @@ export class Replicator {
     try { t.writer?.abort?.(why); } catch { /* gone */ }
     try { t.socket?.close?.(); } catch { /* gone */ }
     this.#host.release(t.inflight + t.queued);
-    Object.assign(t, { phase: "idle", socket: null, writer: null, queue: [], queued: 0, inflight: 0, out: [], writing: false, marks: [], ready: false, error: why, retryAt: Date.now() + REPL_RETRY_MS });
+    Object.assign(t, { phase: "idle", socket: null, writer: null, queue: [], queued: 0, inflight: 0, out: [], writing: false, marks: [], waiting: [], ready: false, error: why, retryAt: Date.now() + REPL_RETRY_MS });
     console.log(`replica ${this.#name} -> ${t.region} dropped: ${why}`);
   }
 }
 
-const idle = (region) => ({ region, phase: "idle", retryAt: 0, queue: [], queued: 0, inflight: 0, marks: [], ready: false, lagMs: null, colo: null, error: null });
+const idle = (region) => ({ region, phase: "idle", retryAt: 0, queue: [], queued: 0, inflight: 0, marks: [], waiting: [], ready: false, lagMs: null, colo: null, error: null });

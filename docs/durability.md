@@ -153,6 +153,7 @@ have (`src/replication/replication.js`).
   writer waits for its replicas first: `WAIT numreplicas timeout` returns how many replicas have every write the
   connection made, counting the shard it wrote to with the fewest. Each primary sends a marker behind everything it
   has streamed and counts the replicas that answer, up to the timeout (0 means 60 s, `REPL_STUCK_MS`, not forever).
+  A replica still copying, or about to (one waking from sleep), counts once its copy is live, if that is in time.
   It doesn't add durability: replicas keep data in memory only. `WAITAOF` answers `1 0`, since every reply already
   waits for the shard's own AOF commit. With replicas in all 9 regions, `WAIT 9` after writes to 3 shards took
   about 0.9 s, the slowest replica's round trip and commit.
