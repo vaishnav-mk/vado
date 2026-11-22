@@ -53,6 +53,10 @@ const CONFIG_SET = new Set(["maxmemory-policy", "maxmemory-samples", "notify-key
   "zset-max-listpack-value", "zset-max-ziplist-entries", "zset-max-ziplist-value", "hll-sparse-max-bytes", "stream-node-max-bytes",
   "stream-node-max-entries", "lfu-log-factor", "lfu-decay-time", "slowlog-log-slower-than", "slowlog-max-len",
   "latency-monitor-threshold", "busy-reply-threshold", "lua-time-limit", "activerehashing"]);
+// Commands the router answers itself (connection state, fan-out, AUTH): queued in MULTI they would reach one
+// shard's Valkey connection, which may be a pooled one other clients share, so they are refused there.
+const NOT_IN_MULTI = new Set(["select", "client", "hello", "auth", "readonly", "readwrite", "flushall", "flushdb", "dbsize",
+  "keys", "scan", "randomkey", "info", "script", "function", "config", "wait", "waitaof", "cluster"]);
 const BLOCKED_SUB = { client: new Set(["tracking", "caching", "getredir", "trackinginfo", "kill", "pause", "unpause", "unblock", "reply", "list", "no-evict", "no-touch", "capa", "import-source"]) };
 
 // Appends a chunk to the unparsed tail `a`. Grows into spare capacity (doubling) so a frame that
@@ -616,8 +620,7 @@ export class Router {
     const m = this.#multi;
     const bad = this.#arity(name, argv);
     if (bad) { m.failed = true; return this.#reply(bad); }
-    // config: CONFIG SET is checked (and fanned out) only outside a transaction.
-    if (PUBSUB.has(name) || UNSUPPORTED.has(name) || name === "config") { m.failed = true; return this.#reply(unsupported(`${name} in MULTI`)); }
+    if (PUBSUB.has(name) || UNSUPPORTED.has(name) || NOT_IN_MULTI.has(name)) { m.failed = true; return this.#reply(unsupported(`${name} in MULTI`)); }
     const idx = keyIndexes(this.table, name, argv);
     if (idx === null) { m.failed = true; return this.#reply(unsupported(`${name} in MULTI`)); }
     if (idx.length && this.db.shards > 1) {
