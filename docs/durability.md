@@ -91,13 +91,15 @@ trusted after that, and what was committed can.
 - **In-flight commands get `LOST`.** The router can't know whether a command ran before the reset, so it says so:
   `ERR shard connection lost; the command may or may not have run`.
 - **Read-only commands retry once.** A non-blocking read outside MULTI and WATCH goes again on a fresh connection.
-  A read sent to a replica that fails goes again to the primary. Writes never retry.
+  A read sent to a replica that fails goes again to the primary. Writes don't retry after a reset; only a shard that
+  restarts cleanly says that they didn't run ([during a deploy](#during-a-deploy)).
 - **WATCH breaks.** If a WATCHed key's shard resets before EXEC, EXEC returns a null reply and the transaction
   doesn't run.
 - **Blocked clients and subscribers lose their wait.** A BLPOP in progress gets `LOST`; a subscriber's connection to
   the pub/sub shard ends, as if the server had restarted.
-- **Stale sockets are detected.** A shard greets each router with its instance ID, and a reply that is late makes the
-  router check whether the instance changed, so a socket left open by a reset object doesn't hang.
+- **Stale sockets are detected.** A shard greets each router with its instance ID, and a reply 1 s late makes the
+  router check whether the instance changed, so a socket left open by a reset object doesn't hang. Each check that
+  finds the same instance doubles the wait for the next, up to 16 s, so a long BLPOP isn't checked every second.
 
 Pub/sub messages are not stored, as in Valkey. A message published while a subscriber's shard resets is lost.
 
@@ -164,8 +166,29 @@ have (`src/replication/replication.js`).
 
 ## During a deploy
 
-Objects move to the new code over minutes. Routers already running keep their connections and their old code until
-those end. That is why Durable Object methods keep stable names and signatures ([AGENTS.md](../AGENTS.md)).
+Routers already running keep their connections and their old code until those end, so old and new code run side
+by side. That is why Durable Object methods keep stable names and signatures ([AGENTS.md](../AGENTS.md)).
+
+The runtime moves a Durable Object with open sockets to new code only by resetting it, and leaves a busy shard on
+the old code for about 5 minutes first. Commands in flight at that reset get `LOST`, and each router took up to 6 s
+to notice. So a shard doesn't wait for it: it restarts itself as soon as it sees newer code.
+
+- **It sees newer code** when a router of the new deploy connects (routers put their deploy time in the address
+  they dial, `router-<ms>:6379`), or, every 30 s while busy (`VERSION_CHECK_MS`), by asking its rewriter object,
+  which runs the newest code whenever it starts. The second covers clients that keep their connections.
+- **It restarts cleanly.** It stops reading client input, answers everything Valkey has already read, waits for
+  those writes to commit, then sends each router its greeting a second time and closes. The repeated greeting
+  means that nothing the router got no reply to ran, so the router sends it all again, in order, on a new socket
+  to the next instance (backing off 10 ms, 20 ms, ... while the old one is still going). A transaction whose MULTI
+  had run, EXEC not yet, is the exception: its EXEC gets `LOST`. RPC batches it refuses while restarting are tried
+  again the same way. A router from before this protocol gets `LOST` for what was pending, without the stall.
+- **Its replicas keep serving** during the restart. The next instance copies to them, and a replica on older code
+  restarts before it accepts that copy; the primary copies again 5 s later.
+- **At most 3 tries per deploy, 30 s apart.** A restart right after a deploy can come back on the old code while
+  the deploy spreads, and under a gradual deploy an object can keep getting the old code.
+
+`/shards` shows each shard's `lastUpgrade`: when, from which version, and how long the drain took.
+[Measurements](measurements.md#deploys) has the before and after.
 
 ## Tests that check this
 

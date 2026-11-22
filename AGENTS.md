@@ -43,6 +43,12 @@ Rules for anyone, human or agent, changing this repo.
   new object a database uses must be named from its shard's name, or from `shardName`, so it boots the same
   server. Both wasm builds must keep the host interface (`interface.txt`) the host provides; a server-specific
   flag goes in that server's patches, not in a branch in the JS.
+- **A restart marker means nothing unanswered ran.** A shard that restarts onto newer code sends a router socket
+  its greeting again only after `drain()`: no input read after it, everything Valkey read answered, every write
+  committed. The router resends what is pending only on that marker, or when a socket closes before its greeting
+  (the output gate held anything the shard did there). Keep both; a reset that isn't clean must still give `LOST`.
+  Keep the dial addresses too (`router-<ms>`, `repl-<ms>`, and the old `router`, `repl`): old and new code dial
+  each other during a deploy.
 - **Idle replication sleeps.** A primary retires its replicas after `REPL_IDLE_MS` with no client activity, so every
   new client entry point on `ValkeyShard` must count as activity (`#active()`), or the database can sleep under
   traffic that only reaches the new path. Retired replicas never serve reads.

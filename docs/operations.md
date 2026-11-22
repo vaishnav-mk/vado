@@ -48,8 +48,12 @@ wrangler secret put BENCH_TOKEN        # optional: enables the bench API
 wrangler deploy
 ```
 
-Connections that are open during a deploy keep the old router code until they end, and shards move to the new code
-over minutes. Wait at least 5 minutes after a deploy before you measure anything.
+`scripts/deploy.sh` runs the unit tests, deploys this Worker and then the dashboard (in that order: the dashboard
+calls `Admin` methods the new Worker must have), and checks that both answer.
+
+Connections that are open during a deploy keep the old router code until they end. Busy shards restart onto the new
+code within about 30 s, without failing commands, and their replicas follow ([during a deploy](durability.md#during-a-deploy));
+idle ones get it when they next start. Wait a minute after a deploy before you measure anything.
 
 ## Configure
 
@@ -177,6 +181,8 @@ HOST=<your-host> PORT=6379 PW=... DB=check node test/ioredis.mjs
 ```
 
 `test/ioredis.mjs`, `test/resp3.mjs`, `test/chunked.mjs` and `test/hammer.mjs` take `HOST` and `PORT`.
+`test/deploy.mjs` keeps connections busy while you deploy from another shell, then checks that no acknowledged
+write went missing and prints every error and slow reply by time.
 `test/hammer.mjs` with `CHAOS=1` also needs `BASE` and `TOKEN`, since it aborts shards through the bench API.
 
 ## Upgrade safely

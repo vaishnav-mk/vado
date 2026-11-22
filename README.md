@@ -19,6 +19,8 @@ Experimental. An independent project, not an official Cloudflare or Valkey produ
 - Shards in the regions you pick, each with read replicas in other regions if you want them. Routers read from the
   nearest copy, a connection always reads its own writes, and `WAIT` counts the replicas that have them.
 - AOF rewrites in a helper object, so a shard keeps serving while Valkey compacts its log.
+- Deploys that fail no commands. Busy shards restart onto the new code within about 30 s, after answering what they
+  have read, and routers send the rest again.
 - A password per database, and databases that can be dropped for good.
 - A live dashboard at the Worker's URL: shards, replicas on a spinning globe, where traffic enters, response times
   and a timeline. Anyone can watch. Signing in lets you create databases, run commands, restart shards and send

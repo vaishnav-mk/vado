@@ -3,7 +3,7 @@
   "version": "0.0.0",
   "private": true,
   "license": "Apache-2.0",
-  "description": "Valkey on Cloudflare Durable Objects: real Valkey compiled to wasm, sharded behind a Worker router",
+  "description": "Valkey or Redis on Cloudflare Durable Objects: the real servers compiled to wasm, sharded behind a Worker router",
   "keywords": [
     "valkey",
     "redis-protocol",

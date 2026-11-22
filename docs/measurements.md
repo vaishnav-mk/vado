@@ -2,6 +2,45 @@
 
 Newest first. Each section keeps its numbers as measured; later changes don't rewrite them.
 
+## 2026-11-22: Redis, cold starts and deploys
+
+Production, one account. Two databases of 4 shards with a replica of every shard in all 9 regions, one on Valkey and
+one on Redis, unless noted.
+
+### Deploys
+
+Load: 16 TCP connections per database from one laptop, each looping over INCR, GET of its own key and GET of a key a
+replica can serve (about 200 commands/s per database), with a deploy of the same code partway through. Every counter
+was checked at the end: acknowledged INCRs <= its value <= acknowledged + `LOST`.
+
+| | Before (f334cab) | After (clean restarts) |
+| --- | --- | --- |
+| Shards on the new code | about 5 minutes after the deploy, when the runtime reset them | 10-25 s after it |
+| Commands that failed | 20 INCRs got `LOST` | none |
+| Slowest reply | 6.4 s (the router noticed the dead socket after 5 s) | under 1 s |
+| Throughput | down to a quarter for about 15 s | unchanged |
+| Replicas | not measured | all 9 per shard on the new code and serving within 35 s |
+| Counters | all correct | all correct |
+
+A shard's drain took 2-4 ms. The first versions of the change found two router bugs this way: a write that failed
+because the shard had closed made the router give up before it read the marker, and redials reused the stub of the
+instance that had restarted, which stays broken.
+
+### Cold starts
+
+Over TCP from Bengaluru to shards in Singapore: ten samples for new databases, six for reloads.
+
+| Event | Valkey | Redis |
+| --- | --- | --- |
+| First SET on a new database (creates the shard object and boots the server) | 486-648 ms | 512-642 ms |
+| Next SET | 49-62 ms | 50-66 ms |
+| First GET after the shard is aborted, 16 MB of data | 75-395 ms | 161-293 ms |
+| First GET after the shard is aborted, 56 MB of data | 79-353 ms | 146-316 ms |
+
+Carrying both wasm modules (1.77 MB gzipped against 0.86 MB) didn't change the Worker's startup time: 34-38 ms with
+both, 58-66 ms with Valkey only, as reported by `wrangler versions upload`, which is noise at this size. wasm compiles
+lazily.
+
 ## 2026-11-21: shard classes, allocators and rewriters
 
 Production, one account, on builds up to a56cc53, through the bench API unless noted.
