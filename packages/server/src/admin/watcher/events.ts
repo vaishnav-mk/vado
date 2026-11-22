@@ -42,7 +42,8 @@ export interface Changes {
 export class EventLog {
   readonly events: LiveEvent[] = [];
   #fresh: LiveEvent[] = [];
-  #seq = 0;
+  // From the clock, so ids stay unique across Watcher restarts: the page merges events by id.
+  #seq = Date.now();
 
   add(e: EventInput, t = Date.now()): void {
     const last = this.events[0];

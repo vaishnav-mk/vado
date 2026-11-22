@@ -119,13 +119,13 @@ export class Watcher extends DurableObject<Env> {
 
   async #poll(): Promise<void> {
     this.#polling = true;
-    await this.#test.load();
     const watchers = this.ctx.getWebSockets();
 
     if (!watchers.length) return await this.#idle();
     const started = Date.now();
 
     try {
+      await this.#test.load();
       await this.#test.expire(started);
       this.#state = buildState(await this.#read(started, watchers.some(signedIn)));
       const latest = point(this.#state);

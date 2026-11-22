@@ -11,12 +11,15 @@ test("the same text within a minute counts up instead of adding an event", () =>
   log.add({ level: "info", kind: "action", text: "b" }, 3000);
   log.add({ level: "info", kind: "action", text: "b" }, 70_000);
 
-  expect(log.events.map((e) => [e.id, e.text, e.count, e.t])).toEqual([
+  // ids count up from the clock at construction
+  const base = (log.events.at(-1)?.id ?? 0) - 1;
+
+  expect(log.events.map((e) => [e.id - base, e.text, e.count, e.t])).toEqual([
     [3, "b", 1, 70_000],
     [2, "b", 1, 3000],
     [1, "a", 2, 2000],
   ]);
-  expect(log.fresh().map((e) => e.id)).toEqual([1, 1, 2, 3]);
+  expect(log.fresh().map((e) => e.id - base)).toEqual([1, 1, 2, 3]);
   expect(log.fresh()).toEqual([]);
 });
 
