@@ -6,5 +6,6 @@ declare module "cloudflare:workers" {
     ACCESS_AUD: string;
     VALKEY_PASSWORD?: string;
   }
+
   export const env: WorkerEnv;
 }

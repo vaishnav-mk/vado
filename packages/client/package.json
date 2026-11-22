@@ -2,13 +2,13 @@
   "name": "@vado/client",
   "version": "0.0.0",
   "private": true,
-  "type": "module",
-  "license": "Apache-2.0",
   "description": "Reach vado from a Worker (an ioredis connector over a service binding) or from a laptop (a WebSocket-to-TCP shim)",
-  "exports": {
-    ".": "./src/ioredis.js"
-  },
+  "license": "Apache-2.0",
   "bin": {
     "vado-shim": "./ws-shim.mjs"
+  },
+  "type": "module",
+  "exports": {
+    ".": "./src/ioredis.js"
   }
 }

@@ -8,10 +8,14 @@ let keys = null; // the team's signing keys: jose fetches, caches and refreshes 
 
 /** The email of the person `request` is signed in as, or null. */
 export async function accessUser(request, env) {
-  const token = request.headers.get("cf-access-jwt-assertion") ?? /(?:^|;\s*)CF_Authorization=([^;]+)/.exec(request.headers.get("cookie") ?? "")?.[1];
+  const token =
+    request.headers.get("cf-access-jwt-assertion") ??
+    /(?:^|;\s*)CF_Authorization=([^;]+)/.exec(request.headers.get("cookie") ?? "")?.[1];
+
   if (!token) return null;
   const issuer = new URL(env.ACCESS_TEAM_DOMAIN).origin;
   keys ??= createRemoteJWKSet(new URL("/cdn-cgi/access/certs", issuer));
   const verified = await jwtVerify(token, keys, { issuer, audience: env.ACCESS_AUD }).catch(() => null);
+
   return verified?.payload.email ?? null;
 }

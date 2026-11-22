@@ -10,7 +10,11 @@ const MODE = `(()=>{const q=matchMedia("(prefers-color-scheme: dark)"),s=()=>doc
 
 export const Route = createRootRoute({
   head: () => ({
-    meta: [{ charSet: "utf-8" }, { name: "viewport", content: "width=device-width, initial-scale=1" }, { title: "vado" }],
+    meta: [
+      { charSet: "utf-8" },
+      { name: "viewport", content: "width=device-width, initial-scale=1" },
+      { title: "vado" },
+    ],
     links: [{ rel: "stylesheet", href: css }],
   }),
   loader: async () => ({ user: await me() }),
@@ -35,6 +39,7 @@ function Shell({ children }: { children: ReactNode }) {
 
 function Root() {
   const { user } = Route.useLoaderData();
+
   return (
     <SignedIn.Provider value={user}>
       <TooltipProvider>

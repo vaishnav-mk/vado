@@ -2,9 +2,8 @@
   "name": "vado",
   "version": "0.0.0",
   "private": true,
-  "type": "module",
-  "license": "Apache-2.0",
   "description": "Valkey or Redis on Cloudflare Durable Objects: the real servers compiled to wasm, sharded behind a Worker",
+  "license": "Apache-2.0",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/vaishnav-mk/vado.git"
@@ -12,6 +11,7 @@
   "workspaces": [
     "packages/*"
   ],
+  "type": "module",
   "scripts": {
     "dev": "vp dev",
     "build": "vp build",

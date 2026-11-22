@@ -5,7 +5,9 @@ import type { LiveEvent, LiveMessage, LiveState, Point } from "./types";
 
 const HISTORY = 300; // points kept for the charts: five minutes
 const EVENTS = 100;
-const RETRY_MIN = 1_000, RETRY_MAX = 30_000;
+
+const RETRY_MIN = 1_000,
+  RETRY_MAX = 30_000;
 
 export type Connection = "connecting" | "open" | "retrying";
 
@@ -22,17 +24,33 @@ const EMPTY: Live = { state: null, history: [], events: [], connection: "connect
 function mergeEvents(old: LiveEvent[], fresh: LiveEvent[]) {
   if (!fresh.length) return old;
   const byId = new Map(old.map((e) => [e.id, e]));
+
   for (const e of fresh) byId.set(e.id, e);
+
   return [...byId.values()].sort((a, b) => b.t - a.t || b.id - a.id).slice(0, EVENTS);
 }
 
 function apply(live: Live, msg: LiveMessage): Live {
   if (msg.type === "init") {
-    return { state: msg.state ?? null, history: (msg.history ?? []).slice(-HISTORY), events: mergeEvents([], msg.events ?? []), connection: "open" };
+    return {
+      state: msg.state ?? null,
+      history: (msg.history ?? []).slice(-HISTORY),
+      events: mergeEvents([], msg.events ?? []),
+      connection: "open",
+    };
   }
+
   const last = live.history.at(-1);
-  const history = !msg.point || (last && last.t >= msg.point.t) ? live.history : [...live.history.slice(-(HISTORY - 1)), msg.point];
-  return { state: msg.state ?? live.state, history, events: mergeEvents(live.events, msg.events ?? []), connection: "open" };
+
+  const history =
+    !msg.point || (last && last.t >= msg.point.t) ? live.history : [...live.history.slice(-(HISTORY - 1)), msg.point];
+
+  return {
+    state: msg.state ?? live.state,
+    history,
+    events: mergeEvents(live.events, msg.events ?? []),
+    connection: "open",
+  };
 }
 
 /** The live picture of database `name`, or EMPTY until the first message. Reconnects when `signedIn` changes:
@@ -40,8 +58,13 @@ function apply(live: Live, msg: LiveMessage): Live {
 export function useLive(name: string, signedIn = false): Live {
   const [live, setLive] = useState<Live>(EMPTY);
   useEffect(() => {
-    let ws: WebSocket | null = null, timer: ReturnType<typeof setTimeout> | undefined, delay = RETRY_MIN, stopped = false;
+    let ws: WebSocket | null = null,
+      timer: ReturnType<typeof setTimeout> | undefined,
+      delay = RETRY_MIN,
+      stopped = false;
+
     setLive(EMPTY);
+
     const connect = () => {
       const url = new URL(`/live?db=${encodeURIComponent(name)}`, location.href);
       url.protocol = url.protocol === "https:" ? "wss:" : "ws:";
@@ -49,9 +72,16 @@ export function useLive(name: string, signedIn = false): Live {
       ws.onmessage = (m) => {
         delay = RETRY_MIN;
         let msg: LiveMessage;
-        try { msg = JSON.parse(m.data); } catch { return; }
+
+        try {
+          msg = JSON.parse(m.data);
+        } catch {
+          return;
+        }
+
         if (msg?.type === "init" || msg?.type === "tick") setLive((l) => apply(l, msg));
       };
+
       ws.onclose = () => {
         if (stopped) return;
         setLive((l) => ({ ...l, connection: "retrying" }));
@@ -59,8 +89,15 @@ export function useLive(name: string, signedIn = false): Live {
         delay = Math.min(RETRY_MAX, delay * 2);
       };
     };
+
     connect();
-    return () => { stopped = true; clearTimeout(timer); ws?.close(); };
+
+    return () => {
+      stopped = true;
+      clearTimeout(timer);
+      ws?.close();
+    };
   }, [name, signedIn]);
+
   return live;
 }

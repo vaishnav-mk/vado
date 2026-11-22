@@ -13,19 +13,41 @@ import { TestTraffic } from "./TestTraffic";
 import type { Live } from "../lib/live";
 import type { LastCommand } from "../lib/types";
 
-export function Dashboard({ name, live, regions, dark }: { name: string; live: Live; regions: Record<string, string>; dark: boolean }) {
+export function Dashboard({
+  name,
+  live,
+  regions,
+  dark,
+}: {
+  name: string;
+  live: Live;
+  regions: Record<string, string>;
+  dark: boolean;
+}) {
   const { state, history, events } = live;
   const [selected, setSelected] = useState<number | null>(null);
   const [last, setLast] = useState<LastCommand | null>(null);
-  const shards = state?.shards ?? [], t = state?.totals;
-  const reads = (t?.reads ?? 0) + (t?.replicaReads ?? 0), now = state?.at ?? 0;
+
+  const shards = state?.shards ?? [],
+    t = state?.totals;
+
+  const reads = (t?.reads ?? 0) + (t?.replicaReads ?? 0),
+    now = state?.at ?? 0;
+
   return (
     <main className="mx-auto flex max-w-7xl flex-col gap-6 px-6 py-6">
       {state?.error && <Banner variant="error" title="Can't reach the database" description={state.error} />}
       <Stats state={state} />
       <Grid variant="1-2" gap="base">
-        <ShardDial shards={shards} count={state?.db?.shards ?? shards.length} total={reads + (t?.writes ?? 0)} dark={dark}
-          selected={selected} onSelect={setSelected} highlight={last?.shard ?? null} />
+        <ShardDial
+          shards={shards}
+          count={state?.db?.shards ?? shards.length}
+          total={reads + (t?.writes ?? 0)}
+          dark={dark}
+          selected={selected}
+          onSelect={setSelected}
+          highlight={last?.shard ?? null}
+        />
         <Globe key={name} state={state} last={last} dark={dark} />
       </Grid>
       <Grid variant="2up" gap="base">

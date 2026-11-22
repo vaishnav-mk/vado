@@ -6,13 +6,22 @@ import { useLocation } from "@tanstack/react-router";
 import { useSignedIn } from "./Guard";
 
 export function SignIn() {
-  const user = useSignedIn(), here = useLocation().pathname;
+  const user = useSignedIn(),
+    here = useLocation().pathname;
+
   if (user) {
     return (
       <Tooltip content={`Signed in as ${user}`}>
-        <LinkButton href="/cdn-cgi/access/logout" variant="ghost" icon={SignOutIcon}>Sign out</LinkButton>
+        <LinkButton href="/cdn-cgi/access/logout" variant="ghost" icon={SignOutIcon}>
+          Sign out
+        </LinkButton>
       </Tooltip>
     );
   }
-  return <LinkButton href={`/signin?to=${encodeURIComponent(here)}`} variant="secondary" icon={SignInIcon}>Sign in</LinkButton>;
+
+  return (
+    <LinkButton href={`/signin?to=${encodeURIComponent(here)}`} variant="secondary" icon={SignInIcon}>
+      Sign in
+    </LinkButton>
+  );
 }

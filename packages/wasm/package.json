@@ -2,9 +2,9 @@
   "name": "@vado/wasm",
   "version": "0.0.0",
   "private": true,
-  "type": "module",
-  "license": "BSD-3-Clause AND AGPL-3.0-only",
   "description": "Valkey and Redis built to WASI reactors, with the patches and build scripts that make them",
+  "license": "BSD-3-Clause AND AGPL-3.0-only",
+  "type": "module",
   "exports": {
     "./valkey.wasm": "./valkey/valkey.wasm",
     "./redis.wasm": "./redis/redis.wasm"

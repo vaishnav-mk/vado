@@ -4,6 +4,7 @@
 import { worker } from "@vado/server";
 
 export * from "@vado/server/objects.js";
+
 export default worker({
   fetch: async (req: Request) => (await import("@tanstack/react-start/server-entry")).default.fetch(req),
 });

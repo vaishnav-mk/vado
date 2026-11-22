@@ -3,6 +3,7 @@
 
 /** Durable Object location hints. A database may spread its shards over several (`regions`). */
 export const HINTS = new Set(["wnam", "enam", "sam", "weur", "eeur", "apac", "apac-ne", "apac-se", "oc", "afr", "me"]);
+
 /** One shard per region in turn, for a database spread around the world. */
 export const WORLD = ["wnam", "enam", "sam", "weur", "eeur", "me", "afr", "apac", "oc"];
 
@@ -11,7 +12,17 @@ export const WORLD = ["wnam", "enam", "sam", "weur", "eeur", "me", "afr", "apac"
 export const HOSTED_ELSEWHERE = new Set(["sam", "afr", "me"]);
 
 /** What each region is called, for people. */
-export const REGION_NAMES = { wnam: "Western North America", enam: "Eastern North America", sam: "South America", weur: "Western Europe", eeur: "Eastern Europe", me: "Middle East", afr: "Africa", apac: "Asia Pacific", oc: "Oceania" };
+export const REGION_NAMES = {
+  wnam: "Western North America",
+  enam: "Eastern North America",
+  sam: "South America",
+  weur: "Western Europe",
+  eeur: "Eastern Europe",
+  me: "Middle East",
+  afr: "Africa",
+  apac: "Asia Pacific",
+  oc: "Oceania",
+};
 
 // Generated from https://speed.cloudflare.com/locations (region and longitude); unknown colos read from the primary.
 const BY_HINT = {
@@ -25,10 +36,14 @@ const BY_HINT = {
   apac: "AGR AIP AMD BBI BDQ BKK BLR BOM BWN CCU CEB CGK CGP CGY CJB CMB CNN CNX COK CRK DAC DAD DEL DPS DYU FRU FUK GUM HAN HKG HYD ICN ISB IXC JAI JHB JOG JRG KCH KHH KHI KIX KNU KTM KUL LHE LUH MAA MFM MLE MLG MNL NAG NQZ NRT OKA PAT PBH PNH PNQ SGN SIN TEZ TPE UDR ULN URT VTE",
   oc: "ADL AKL BNE CBR CHC HBA MEL NOU PER PPT SUV SYD WLG",
 };
-export const REGION_OF = new Map(Object.entries(BY_HINT).flatMap(([hint, colos]) => colos.split(" ").map((c) => [c, hint])));
+
+export const REGION_OF = new Map(
+  Object.entries(BY_HINT).flatMap(([hint, colos]) => colos.split(" ").map((c) => [c, hint])),
+);
 
 /** The colo this code runs in, from Cloudflare's trace endpoint; null if it can't be reached (offline dev). */
 export async function coloOf() {
   const text = await (await fetch("https://cloudflare.com/cdn-cgi/trace")).text();
+
   return /^colo=(\w+)$/m.exec(text)?.[1] ?? null;
 }

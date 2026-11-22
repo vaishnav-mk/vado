@@ -1,12 +1,45 @@
 // The sharding proxy. One Router per client TCP connection, running in the TCP Worker. It parses
 // each request, routes it by key slot to a shard Durable Object over that shard's upstream
 // connection, and writes replies back in request order. Clients see one ordinary Valkey.
-import { arrayOf, bulk, command, concat, decode, elements, error, frameEnd, integer, lower, request, simple, str } from "../protocol/resp.js";
+import {
+  arrayOf,
+  bulk,
+  command,
+  concat,
+  decode,
+  elements,
+  error,
+  frameEnd,
+  integer,
+  lower,
+  request,
+  simple,
+  str,
+} from "../protocol/resp.js";
 import { keyIndexes } from "../protocol/commands.js";
 import { shardOfSlot, slotOf } from "../protocol/slots.js";
 import { DB_NAME, DB_NAME_RULE } from "../catalog/catalog.js";
 import { sameSecret, secretMatches } from "./secrets.js";
-import { FAN_OUT, GREETING_MS, IDLE_MS, ISOLATE_HIGH, ISOLATE_LOW, MAX_REQUEST, MAX_UNAUTHED, PROBE_AFTER_MS, READ_YOUR_WRITES_MS, REDIAL_MS, REDIALS, REPL_RETRY_MS, RESTARTING, ROUTER_HIGH_WATER, ROUTER_LOW_WATER, RPC_BATCH_BYTES, SOCKET_BUDGET, WATCHDOG_MS } from "../constants.js";
+import {
+  FAN_OUT,
+  GREETING_MS,
+  IDLE_MS,
+  ISOLATE_HIGH,
+  ISOLATE_LOW,
+  MAX_REQUEST,
+  MAX_UNAUTHED,
+  PROBE_AFTER_MS,
+  READ_YOUR_WRITES_MS,
+  REDIAL_MS,
+  REDIALS,
+  REPL_RETRY_MS,
+  RESTARTING,
+  ROUTER_HIGH_WATER,
+  ROUTER_LOW_WATER,
+  RPC_BATCH_BYTES,
+  SOCKET_BUDGET,
+  WATCHDOG_MS,
+} from "../constants.js";
 
 const enc = new TextEncoder();
 const OK = simple("OK");
@@ -19,65 +52,165 @@ const UNWATCH = command(["UNWATCH"]);
 const noop = () => {};
 const DROPPED = /database dropped/; // what a dropped shard's methods throw (ValkeyShard #live)
 const HELLO3 = command(["HELLO", "3"]);
+
 // Sockets this isolate holds to shards. The runtime drops sockets past a few hundred per isolate,
 // so beyond the budget new upstreams carry stateless batches over RPC instead (RpcUpstream).
 let socketsOpen = 0;
+
 // A replica that just failed a read (not ready yet, or reset) isn't tried again for a while, isolate-wide.
 const replicaDown = new Map(); // "<db>/<shard>" -> until (ms)
 let socketBudget = SOCKET_BUDGET;
-export const setSocketBudget = (n) => { socketBudget = n; };
+
+export const setSocketBudget = (n) => {
+  socketBudget = n;
+};
+
 let isolateBytes = 0;
 const waitingRouters = new Set();
+
 function isolateAdd(n) {
   isolateBytes += n;
+
   if (n < 0 && isolateBytes <= ISOLATE_LOW && waitingRouters.size) {
     const all = [...waitingRouters];
     waitingRouters.clear();
+
     for (const r of all) r.wake();
   }
 }
+
 const unsupported = (name) => error(`ERR '${name}' is not supported by the sharded router`);
 const NOAUTH = error("NOAUTH Authentication required.");
-const NULL_ARRAY = new TextEncoder().encode("*-1\r\n"), NULL3 = new TextEncoder().encode("_\r\n"); // EXEC aborted
+
+const NULL_ARRAY = new TextEncoder().encode("*-1\r\n"),
+  NULL3 = new TextEncoder().encode("_\r\n"); // EXEC aborted
+
 const WRONGPASS = error("WRONGPASS invalid username-password pair or user is disabled.");
 const TOO_MANY = error("ERR too many failed AUTH attempts from this address; try again in a minute");
 const SUBSCRIBE = new Set(["subscribe", "psubscribe", "ssubscribe"]);
 const PUBSUB = new Set(["publish", "spublish", "pubsub", "unsubscribe", "punsubscribe", "sunsubscribe", ...SUBSCRIBE]);
+
 // save/bgrewriteaof: the shards schedule their own AOF rewrites (src/shard/shard.js).
 // acl: the router does AUTH itself; a password set on a shard would lock the routers out.
-const UNSUPPORTED = new Set(["monitor", "sync", "psync", "replicaof", "slaveof", "failover", "shutdown", "debug",
-  "migrate", "move", "swapdb", "bgsave", "save", "bgrewriteaof", "acl", "lpush_x"]);
+const UNSUPPORTED = new Set([
+  "monitor",
+  "sync",
+  "psync",
+  "replicaof",
+  "slaveof",
+  "failover",
+  "shutdown",
+  "debug",
+  "migrate",
+  "move",
+  "swapdb",
+  "bgsave",
+  "save",
+  "bgrewriteaof",
+  "acl",
+  "lpush_x",
+]);
+
 // CONFIG SET goes to every shard, so it may change how the database's data behaves, never durability,
 // memory, networking or auth: those belong to the service, and a shard shares its isolate's memory.
-const CONFIG_SET = new Set(["maxmemory-policy", "maxmemory-samples", "notify-keyspace-events", "hash-max-listpack-entries",
-  "hash-max-listpack-value", "hash-max-ziplist-entries", "hash-max-ziplist-value", "list-max-listpack-size", "list-max-ziplist-size",
-  "list-compress-depth", "set-max-intset-entries", "set-max-listpack-entries", "set-max-listpack-value", "zset-max-listpack-entries",
-  "zset-max-listpack-value", "zset-max-ziplist-entries", "zset-max-ziplist-value", "hll-sparse-max-bytes", "stream-node-max-bytes",
-  "stream-node-max-entries", "lfu-log-factor", "lfu-decay-time", "slowlog-log-slower-than", "slowlog-max-len",
-  "latency-monitor-threshold", "busy-reply-threshold", "lua-time-limit", "activerehashing"]);
+const CONFIG_SET = new Set([
+  "maxmemory-policy",
+  "maxmemory-samples",
+  "notify-keyspace-events",
+  "hash-max-listpack-entries",
+  "hash-max-listpack-value",
+  "hash-max-ziplist-entries",
+  "hash-max-ziplist-value",
+  "list-max-listpack-size",
+  "list-max-ziplist-size",
+  "list-compress-depth",
+  "set-max-intset-entries",
+  "set-max-listpack-entries",
+  "set-max-listpack-value",
+  "zset-max-listpack-entries",
+  "zset-max-listpack-value",
+  "zset-max-ziplist-entries",
+  "zset-max-ziplist-value",
+  "hll-sparse-max-bytes",
+  "stream-node-max-bytes",
+  "stream-node-max-entries",
+  "lfu-log-factor",
+  "lfu-decay-time",
+  "slowlog-log-slower-than",
+  "slowlog-max-len",
+  "latency-monitor-threshold",
+  "busy-reply-threshold",
+  "lua-time-limit",
+  "activerehashing",
+]);
+
 // Commands the router answers itself (connection state, fan-out, AUTH): queued in MULTI they would reach one
 // shard's Valkey connection, which may be a pooled one other clients share, so they are refused there.
-const NOT_IN_MULTI = new Set(["select", "client", "hello", "auth", "readonly", "readwrite", "flushall", "flushdb", "dbsize",
-  "keys", "scan", "randomkey", "info", "script", "function", "config", "wait", "waitaof", "cluster"]);
-const BLOCKED_SUB = { client: new Set(["tracking", "caching", "getredir", "trackinginfo", "kill", "pause", "unpause", "unblock", "reply", "list", "no-evict", "no-touch", "capa", "import-source"]) };
+const NOT_IN_MULTI = new Set([
+  "select",
+  "client",
+  "hello",
+  "auth",
+  "readonly",
+  "readwrite",
+  "flushall",
+  "flushdb",
+  "dbsize",
+  "keys",
+  "scan",
+  "randomkey",
+  "info",
+  "script",
+  "function",
+  "config",
+  "wait",
+  "waitaof",
+  "cluster",
+]);
+
+const BLOCKED_SUB = {
+  client: new Set([
+    "tracking",
+    "caching",
+    "getredir",
+    "trackinginfo",
+    "kill",
+    "pause",
+    "unpause",
+    "unblock",
+    "reply",
+    "list",
+    "no-evict",
+    "no-touch",
+    "capa",
+    "import-source",
+  ]),
+};
 
 // Appends a chunk to the unparsed tail `a`. Grows into spare capacity (doubling) so a frame that
 // arrives in many chunks is copied O(size) times, not O(size²). It only writes past the last byte
 // it wrote into buffers it allocated, so views already handed out (argv, frames) never change.
 const written = new WeakMap(); // our ArrayBuffer -> end of written bytes
+
 function append(a, b) {
   if (!a.length) return b;
   const end = a.byteOffset + a.length;
+
   if (written.get(a.buffer) === end && end + b.length <= a.buffer.byteLength) {
     new Uint8Array(a.buffer).set(b, end);
     written.set(a.buffer, end + b.length);
+
     return new Uint8Array(a.buffer, a.byteOffset, a.length + b.length);
   }
+
   // First join is exact-size (the common split-frame case); doubling starts once a frame keeps growing.
-  const n = a.length + b.length, out = new Uint8Array(written.has(a.buffer) ? 2 * n : n);
+  const n = a.length + b.length,
+    out = new Uint8Array(written.has(a.buffer) ? 2 * n : n);
+
   out.set(a);
   out.set(b, a.length);
   written.set(out.buffer, n);
+
   return out.subarray(0, n);
 }
 
@@ -119,12 +252,22 @@ class Upstream {
 
   // Called by the router's watchdog.
   async check(now) {
-    if (this.dead || this.probing || !this.writer || !this.sent.length || now - this.sent[0] < PROBE_AFTER_MS * 2 ** Math.min(this.probes, 4)) return;
+    if (
+      this.dead ||
+      this.probing ||
+      !this.writer ||
+      !this.sent.length ||
+      now - this.sent[0] < PROBE_AFTER_MS * 2 ** Math.min(this.probes, 4)
+    )
+      return;
     this.probing = true;
     const gen = this.gen;
+
     try {
       const current = await this.stub.instance();
+
       if (gen !== this.gen) return;
+
       // No greeting long after sending means no instance ever served this socket.
       if (this.instanceId === null ? now - this.sent[0] > GREETING_MS : current !== this.instanceId) this.#fail();
       else this.probes++;
@@ -132,7 +275,9 @@ class Upstream {
       // Unreachable right now, or a stub of an instance that reset (it stays broken): the next check
       // retries with a fresh one.
       if (gen === this.gen) this.stub = this.router.stubOf(this.index) ?? this.stub;
-    } finally { this.probing = false; }
+    } finally {
+      this.probing = false;
+    }
   }
 
   send(bytes, cb) {
@@ -145,7 +290,15 @@ class Upstream {
 
   // Nothing outstanding and unused for `ms`: the router may close it so the shard can sleep.
   idle(now, ms) {
-    return !this.dead && this.writer && !this.pending.length && !this.out.length && !this.inflight && !this.passthrough && now - this.lastUsed > ms;
+    return (
+      !this.dead &&
+      this.writer &&
+      !this.pending.length &&
+      !this.out.length &&
+      !this.inflight &&
+      !this.passthrough &&
+      now - this.lastUsed > ms
+    );
   }
 
   // Bytes whose replies are not matched to callbacks (RESP3 subscribes, passthrough).
@@ -153,6 +306,7 @@ class Upstream {
     if (this.dead) return;
     this.lastUsed = this.router.now;
     this.out.push(bytes);
+
     if (!this.scheduled) {
       this.scheduled = true;
       queueMicrotask(() => this.#flush());
@@ -161,35 +315,54 @@ class Upstream {
 
   #flush() {
     this.scheduled = false;
+
     if (!this.out.length || this.dead || !this.writer) return; // no writer: dialing again, and #redial resends
     const b = concat(this.out); // copy: request bytes may alias the client's read buffer
     const gen = this.gen;
     this.out = [];
     this.inflight += b.length;
     isolateAdd(b.length);
-    this.writer.write(b).then(() => {
-      isolateAdd(-b.length);
-      if (gen === this.gen) { this.inflight -= b.length; this.router.wake(); }
-    }, () => {
-      // The shard closed the socket. Whether what was pending ran is for the read side to say: it may still
-      // have the shard's restart marker to read. It ends soon after; if it doesn't, the socket is dead.
-      isolateAdd(-b.length);
-      setTimeout(() => { if (gen === this.gen) this.#fail(); }, 2000);
-    });
+    this.writer.write(b).then(
+      () => {
+        isolateAdd(-b.length);
+
+        if (gen === this.gen) {
+          this.inflight -= b.length;
+          this.router.wake();
+        }
+      },
+      () => {
+        // The shard closed the socket. Whether what was pending ran is for the read side to say: it may still
+        // have the shard's restart marker to read. It ends soon after; if it doesn't, the socket is dead.
+        isolateAdd(-b.length);
+        setTimeout(() => {
+          if (gen === this.gen) this.#fail();
+        }, 2000);
+      },
+    );
   }
 
   async #read(socket, gen) {
-    let buf = new Uint8Array(0), start = 0;
+    let buf = new Uint8Array(0),
+      start = 0;
+
     const part = {}; // how far frameEnd() got into a reply that is still arriving
+
     try {
       for await (const chunk of socket.readable) {
         if (gen !== this.gen) return;
         buf = start < buf.length ? append(buf.subarray(start), chunk) : chunk;
         start = 0;
-        for (let e; gen === this.gen && (e = frameEnd(buf, start, buf.length, part)) >= 0; start = e) this.#frame(buf.slice(start, e));
+
+        for (let e; gen === this.gen && (e = frameEnd(buf, start, buf.length, part)) >= 0; start = e)
+          this.#frame(buf.slice(start, e));
       }
-    } catch { /* reset or protocol error: fail below */ }
+    } catch {
+      /* reset or protocol error: fail below */
+    }
+
     if (gen !== this.gen) return;
+
     // Closed before its greeting, an instance never served the socket: nothing here ran.
     if (this.instanceId === null && !this.refused && this.#canRedial()) this.#redial();
     else this.#fail();
@@ -197,28 +370,43 @@ class Upstream {
 
   // Only a primary's socket carries nothing the next one can't be given: a replica that closes before its greeting
   // isn't ready (the router reads from the primary instead), and pub/sub subscriptions live on their socket.
-  #canRedial() { return this.index !== "pubsub" && this.index[0] !== "r" && !this.passthrough; }
+  #canRedial() {
+    return this.index !== "pubsub" && this.index[0] !== "r" && !this.passthrough;
+  }
 
   #frame(f) {
     this.lastUsed = this.router.now;
+
     if (this.instanceId === null) {
-      if (f[0] === 45) { this.refused = true; return; } // a dropped shard's "-ERR database dropped" instead of a greeting
+      if (f[0] === 45) {
+        this.refused = true;
+
+        return;
+      } // a dropped shard's "-ERR database dropped" instead of a greeting
+
       this.instanceId = str(f.subarray(1, f.length - 2)); // the greeting
       this.greeting = f;
       this.redials = 0;
+
       return;
     }
+
     // The greeting again: the shard is restarting (new code), and ran nothing still pending here.
-    if (f.length === this.greeting.length && f.every((x, i) => x === this.greeting[i]) && this.#canRedial()) return this.#redial();
+    if (f.length === this.greeting.length && f.every((x, i) => x === this.greeting[i]) && this.#canRedial())
+      return this.#redial();
+
     // Replies owed to commands sent before the subscribe (CLIENT SETNAME, PUBLISH) come first, in order.
     if (this.passthrough && !this.pending.length) return this.passthrough(f);
+
     if (f[0] === 62) return this.router.push(f); // RESP3 push
     const cb = this.pending.shift();
     this.sent.shift();
     const bytes = this.again.shift();
     this.probes = 0;
+
     if (bytes === MULTI) this.inTx = true;
     else if (bytes === EXEC) this.inTx = false;
+
     if (cb) cb(f);
     else this.router.push(f);
   }
@@ -234,6 +422,7 @@ class Upstream {
     this.instanceId = null;
     this.probes = 0;
     this.router.lostConnection(this); // a WATCH there is gone
+
     // A transaction whose MULTI ran there went with it, EXEC unrun: the rest of it gets LOST, not resent.
     if (this.inTx) {
       const n = this.again.indexOf(EXEC) + 1 || this.again.length;
@@ -241,35 +430,45 @@ class Upstream {
       this.sent.splice(0, n);
       this.again.splice(0, n);
       this.inTx = false;
+
       for (const cb of cbs) cb(LOST);
     }
-    setTimeout(() => {
-      if (this.dead) return;
-      this.stub = this.router.stubOf(this.index); // a stub of the instance that restarted stays broken
-      this.#dial();
-      // The new connection gets this connection's settings (RESP3, client name) first, then everything owed.
-      const setup = this.router.setup();
-      this.pending.unshift(...setup.map(() => noop));
-      this.again.unshift(...setup);
-      this.sent = this.pending.map(() => this.router.now);
-      this.out = [...this.again];
-      this.#flush();
-    }, REDIAL_MS * 2 ** (this.redials - 1));
+
+    setTimeout(
+      () => {
+        if (this.dead) return;
+        this.stub = this.router.stubOf(this.index); // a stub of the instance that restarted stays broken
+        this.#dial();
+        // The new connection gets this connection's settings (RESP3, client name) first, then everything owed.
+        const setup = this.router.setup();
+        this.pending.unshift(...setup.map(() => noop));
+        this.again.unshift(...setup);
+        this.sent = this.pending.map(() => this.router.now);
+        this.out = [...this.again];
+        this.#flush();
+      },
+      REDIAL_MS * 2 ** (this.redials - 1),
+    );
   }
 
   #fail() {
     if (this.dead) return;
     this.dead = true;
     this.gen++;
-    const pending = this.pending, reply = this.refused ? this.router.dropped() : LOST;
+
+    const pending = this.pending,
+      reply = this.refused ? this.router.dropped() : LOST;
+
     this.pending = [];
     this.sent = [];
     this.again = [];
+
     for (const cb of pending) cb(reply);
     this.socket.close().catch(() => {});
     socketsOpen--;
     this.inflight = 0;
     this.router.wake();
+
     if (this.passthrough) this.router.endPassthrough(true);
     this.router.dropUpstream(this);
   }
@@ -284,6 +483,7 @@ class Upstream {
     this.pending = [];
     this.sent = [];
     this.again = [];
+
     for (const cb of pending) cb(LOST);
     this.socket.close().catch(() => {});
   }
@@ -319,52 +519,95 @@ class RpcUpstream {
     isolateAdd(bytes.length);
     this.#schedule();
   }
-  raw(bytes) { this.send(bytes, noop); }
+  raw(bytes) {
+    this.send(bytes, noop);
+  }
   #schedule() {
     if (this.scheduled || this.busy) return;
     this.scheduled = true;
-    queueMicrotask(() => { this.scheduled = false; this.#flush(); });
+    queueMicrotask(() => {
+      this.scheduled = false;
+      this.#flush();
+    });
   }
   #flush() {
     if (this.busy || !this.out.length) return;
+
     // Take whole requests up to the batch cap.
-    let take = 0, bytes = 0;
-    while (take < this.out.length && (take === 0 || bytes + this.out[take].length <= RPC_BATCH_BYTES)) bytes += this.out[take++].length;
-    const cbs = this.pending.splice(0, take), parts = this.out.splice(0, take);
+    let take = 0,
+      bytes = 0;
+
+    while (take < this.out.length && (take === 0 || bytes + this.out[take].length <= RPC_BATCH_BYTES))
+      bytes += this.out[take++].length;
+
+    const cbs = this.pending.splice(0, take),
+      parts = this.out.splice(0, take);
+
     this.outBytes -= bytes;
     const body = concat(parts);
     this.busy = true;
-    const done = () => { this.busy = false; this.inflight -= bytes; isolateAdd(-bytes); this.router.wake(); this.#schedule(); };
-    this.stub.execRaw(body, cbs.length, this.router.proto).then((reply) => {
-      this.retries = 0;
-      let i = 0;
-      for (const cb of cbs) {
-        const e = i < 0 ? -1 : frameEnd(reply, i, reply.length);
-        if (e < 0) { cb(LOST); continue; }
-        cb(reply.slice(i, e));
-        i = e;
-      }
-      done();
-    }, (e) => {
-      // Refused, unrun, by a shard restarting onto new code: again, in order, on its next instance.
-      if (e?.message?.includes(RESTARTING) && ++this.retries <= REDIALS) {
-        this.pending.unshift(...cbs);
-        this.out.unshift(...parts);
-        this.outBytes += bytes;
-        this.stub = this.router.stubOf(this.index); // the old one breaks when the object resets
-        return setTimeout(() => { this.busy = false; this.#flush(); }, REDIAL_MS * 2 ** (this.retries - 1));
-      }
-      // A stub whose object was reset stays broken: drop this upstream so the next command gets a
-      // fresh stub (socket upstreams already do this when their socket fails).
-      this.dead = true;
-      const reply = DROPPED.test(e?.message) ? this.router.dropped() : LOST;
-      for (const cb of cbs) cb(reply);
-      done();
-    });
+
+    const done = () => {
+      this.busy = false;
+      this.inflight -= bytes;
+      isolateAdd(-bytes);
+      this.router.wake();
+      this.#schedule();
+    };
+
+    this.stub.execRaw(body, cbs.length, this.router.proto).then(
+      (reply) => {
+        this.retries = 0;
+        let i = 0;
+
+        for (const cb of cbs) {
+          const e = i < 0 ? -1 : frameEnd(reply, i, reply.length);
+
+          if (e < 0) {
+            cb(LOST);
+            continue;
+          }
+
+          cb(reply.slice(i, e));
+          i = e;
+        }
+
+        done();
+      },
+      (e) => {
+        // Refused, unrun, by a shard restarting onto new code: again, in order, on its next instance.
+        if (e?.message?.includes(RESTARTING) && ++this.retries <= REDIALS) {
+          this.pending.unshift(...cbs);
+          this.out.unshift(...parts);
+          this.outBytes += bytes;
+          this.stub = this.router.stubOf(this.index); // the old one breaks when the object resets
+
+          return setTimeout(
+            () => {
+              this.busy = false;
+              this.#flush();
+            },
+            REDIAL_MS * 2 ** (this.retries - 1),
+          );
+        }
+
+        // A stub whose object was reset stays broken: drop this upstream so the next command gets a
+        // fresh stub (socket upstreams already do this when their socket fails).
+        this.dead = true;
+        const reply = DROPPED.test(e?.message) ? this.router.dropped() : LOST;
+
+        for (const cb of cbs) cb(reply);
+        done();
+      },
+    );
   }
   check() {}
-  idle() { return false; }
-  close() { this.dead = true; }
+  idle() {
+    return false;
+  }
+  close() {
+    this.dead = true;
+  }
 }
 
 export class Router {
@@ -401,15 +644,37 @@ export class Router {
   // reply, this connection reads that shard from its primary, not a replica that may not have it yet.
   #writing = new Map(); // shard -> writes in flight
   #wrote = new Map(); // shard -> when the last write's reply arrived
-  #writeStart(i) { this.#writing.set(i, (this.#writing.get(i) ?? 0) + 1); }
-  #writeDone(i) { this.#writing.set(i, this.#writing.get(i) - 1); this.#wrote.set(i, Date.now()); }
+  #writeStart(i) {
+    this.#writing.set(i, (this.#writing.get(i) ?? 0) + 1);
+  }
+  #writeDone(i) {
+    this.#writing.set(i, this.#writing.get(i) - 1);
+    this.#wrote.set(i, Date.now());
+  }
 
   #onDropped; // (name) => void: forget the cached record of a database found dropped
   #signIns; // { blocked(), failed() } for this client's address, or null (src/router/serve.js)
   #trusted; // a service binding (our own Workers): the shared password opens any database
   #lookup; // (name) => the database's record, or null; never creates one
 
-  constructor(socket, { db, table, shard, pubsub, replica, password, trusted = false, lookup = null, open, onDropped = null, signIns = null, idleMs = IDLE_MS, dial = "router:6379" }) {
+  constructor(
+    socket,
+    {
+      db,
+      table,
+      shard,
+      pubsub,
+      replica,
+      password,
+      trusted = false,
+      lookup = null,
+      open,
+      onDropped = null,
+      signIns = null,
+      idleMs = IDLE_MS,
+      dial = "router:6379",
+    },
+  ) {
     this.socket = socket;
     this.dial = dial; // the address shard sockets dial: "router-<deploy ms>:6379" (see deployedAt in shard.js)
     this.db = db; // { name, created, shards, regions, replicas }
@@ -429,15 +694,29 @@ export class Router {
   }
 
   #blocked() {
-    if (isolateBytes > ISOLATE_HIGH) { waitingRouters.add(this); return true; }
+    if (isolateBytes > ISOLATE_HIGH) {
+      waitingRouters.add(this);
+
+      return true;
+    }
+
     if (this.#inflight > ROUTER_HIGH_WATER) return true;
+
     for (const up of this.#ups.values()) if (up.inflight > ROUTER_HIGH_WATER) return true;
+
     return false;
   }
   wake() {
     if (!this.#waiter) return;
-    if (isolateBytes > ISOLATE_HIGH) { waitingRouters.add(this); return; }
+
+    if (isolateBytes > ISOLATE_HIGH) {
+      waitingRouters.add(this);
+
+      return;
+    }
+
     if (this.#inflight > ROUTER_LOW_WATER) return;
+
     for (const up of this.#ups.values()) if (up.inflight > ROUTER_LOW_WATER) return;
     const w = this.#waiter;
     this.#waiter = null;
@@ -445,43 +724,72 @@ export class Router {
   }
 
   async run() {
-    let buf = new Uint8Array(0), start = 0;
+    let buf = new Uint8Array(0),
+      start = 0;
+
     const reader = this.socket.readable.getReader();
+
     const watchdog = setInterval(() => {
       this.now = Date.now();
+
       for (const [i, up] of this.#ups) {
         up.check(this.now);
+
         // Close shard sockets nobody is using, so idle shards stop being billed and can sleep.
-        if (i !== "pubsub" && i !== this.#watch && !this.#multi && up.idle(this.now, this.#idleMs)) { up.close(); this.#ups.delete(i); }
+        if (i !== "pubsub" && i !== this.#watch && !this.#multi && up.idle(this.now, this.#idleMs)) {
+          up.close();
+          this.#ups.delete(i);
+        }
       }
     }, WATCHDOG_MS);
+
     try {
       for (;;) {
-        while (this.#blocked() && !this.#closed) await new Promise((r) => { this.#waiter = r; });
+        while (this.#blocked() && !this.#closed)
+          await new Promise((r) => {
+            this.#waiter = r;
+          });
         const { value: chunk, done } = await reader.read();
+
         if (done) break;
         buf = start < buf.length ? append(buf.subarray(start), chunk) : chunk;
         start = 0;
+
         for (let r; !this.#closed; start = r.end) {
           if (this.#pending) await this.#pending; // before parsing: an AUTH in flight changes the limit
+
           if (!(r = request(buf, start, buf.length, this.#authed ? MAX_REQUEST : MAX_UNAUTHED, this.#parsing))) break;
+
           if (r.argv.length) this.#handle(r.argv, buf.subarray(start, r.end));
         }
+
         if (this.#closed) break;
       }
     } catch (e) {
       this.#reply(error(`ERR ${e.message}`)); // after the replies to earlier requests, then close
     }
+
     await this.#drain();
     clearInterval(watchdog);
+
     for (const up of this.#ups.values()) up.close();
     await this.#writer.close().catch(() => {});
   }
 
   // ---- output ----
-  #slot() { const s = { b: null }; this.#queue.push(s); return s; }
-  #resolve(s, b) { s.b = b; this.#flush(); }
-  #reply(b) { this.#resolve(this.#slot(), b); }
+  #slot() {
+    const s = { b: null };
+    this.#queue.push(s);
+
+    return s;
+  }
+  #resolve(s, b) {
+    s.b = b;
+    this.#flush();
+  }
+  #reply(b) {
+    this.#resolve(this.#slot(), b);
+  }
   // Replies are written once per microtask, not once per reply: a pipelined batch is one write.
   #flush() {
     if (this.#flushing) return;
@@ -490,11 +798,22 @@ export class Router {
       this.#flushing = false;
       const parts = [];
       let n = 0;
+
       while (n < this.#queue.length && this.#queue[n].b) parts.push(this.#queue[n++].b);
+
       if (n) this.#queue.splice(0, n);
       const wake = this.#onHead.get(this.#queue[0]);
-      if (wake) { this.#onHead.delete(this.#queue[0]); wake(); }
-      if (!this.#queue.length && this.#pushes.length) { parts.push(...this.#pushes); this.#pushes = []; }
+
+      if (wake) {
+        this.#onHead.delete(this.#queue[0]);
+        wake();
+      }
+
+      if (!this.#queue.length && this.#pushes.length) {
+        parts.push(...this.#pushes);
+        this.#pushes = [];
+      }
+
       if (parts.length) this.#write(parts.length === 1 ? parts[0] : concat(parts));
     });
   }
@@ -503,7 +822,16 @@ export class Router {
   // pause every router in the isolate. They're bounded per connection by ROUTER_HIGH_WATER instead.
   #write(b) {
     this.#inflight += b.length;
-    this.#writer.write(b).then(() => { this.#inflight -= b.length; this.wake(); }, () => { this.#closed = true; this.#waiter?.(); });
+    this.#writer.write(b).then(
+      () => {
+        this.#inflight -= b.length;
+        this.wake();
+      },
+      () => {
+        this.#closed = true;
+        this.#waiter?.();
+      },
+    );
   }
   push(f) {
     if (this.#queue.length) this.#pushes.push(f.slice());
@@ -516,11 +844,14 @@ export class Router {
   // ---- upstreams ----
   #up(i, needsSocket = false) {
     let up = this.#ups.get(i);
+
     if (up && !up.dead && (!needsSocket || up instanceof Upstream)) return up;
     const socket = needsSocket || i === "pubsub" || socketsOpen < socketBudget;
     up = socket ? new Upstream(this, i, this.stubOf(i)) : new RpcUpstream(this, i, this.stubOf(i));
     this.#ups.set(i, up);
+
     if (socket) for (const c of this.setup()) up.send(c, noop);
+
     return up;
   }
   stubOf(i) {
@@ -547,10 +878,13 @@ export class Router {
     const from = retryable ? this.#readFrom(i) : (this.#writeStart(i), i);
     this.#up(from).send(raw, (f) => {
       if (!retryable) this.#writeDone(i);
+
       if (f === LOST && copy) {
         if (from !== i) replicaDown.set(`${this.db.name}/${i}`, Date.now() + REPL_RETRY_MS);
+
         return this.#up(i).send(copy, (g) => this.#resolve(s, g));
       }
+
       this.#resolve(s, f);
     });
   }
@@ -558,8 +892,15 @@ export class Router {
   #readFrom(i) {
     if (!this.db.replicas || this.#multi || this.#watch !== null) return i;
     const now = Date.now();
-    if (this.#writing.get(i) > 0 || now - (this.#wrote.get(i) ?? -Infinity) < READ_YOUR_WRITES_MS || (replicaDown.get(`${this.db.name}/${i}`) ?? 0) > now) return i;
+
+    if (
+      this.#writing.get(i) > 0 ||
+      now - (this.#wrote.get(i) ?? -Infinity) < READ_YOUR_WRITES_MS ||
+      (replicaDown.get(`${this.db.name}/${i}`) ?? 0) > now
+    )
+      return i;
     const key = `r${i}`;
+
     return this.#ups.has(key) || this.replicaStub(i) ? key : i;
   }
 
@@ -567,99 +908,182 @@ export class Router {
   #shardsOf(keys) {
     const N = this.db.shards;
     const slot = slotOf(keys[0]);
+
     for (let k = 1; k < keys.length; k++) if (slotOf(keys[k]) !== slot) return -1;
+
     return shardOfSlot(slot, N);
   }
 
   #arity(name, argv) {
     const e = this.table.get(name);
+
     if (!e) {
       // Valkey's own wording (processCommand): original spelling, each arg as '%.*s' plus a space, up to 128 chars.
       let args = "";
-      for (let i = 1; i < argv.length && args.length < 128; i++) args += `'${str(argv[i]).slice(0, 128 - args.length)}' `;
+
+      for (let i = 1; i < argv.length && args.length < 128; i++)
+        args += `'${str(argv[i]).slice(0, 128 - args.length)}' `;
+
       return error(`ERR unknown command '${str(argv[0]).slice(0, 128)}', with args beginning with: ${args}`);
     }
+
     if ((e.arity > 0 && argv.length !== e.arity) || (e.arity < 0 && argv.length < -e.arity)) {
       return error(`ERR wrong number of arguments for '${name}' command`);
     }
+
     return null;
   }
 
   #handle(argv, raw) {
     this.commands++; // read by the live view (src/router/serve.js)
+
     if (this.#pass) return this.#passRequest(argv, raw);
     const name = lower(argv[0]);
+
     if (!this.#authed && name !== "auth" && name !== "hello" && name !== "quit") return this.#reply(NOAUTH);
-    if (this.#multi && !["exec", "discard", "multi", "watch", "quit", "reset"].includes(name)) return this.#queueTx(name, argv, raw);
+
+    if (this.#multi && !["exec", "discard", "multi", "watch", "quit", "reset"].includes(name))
+      return this.#queueTx(name, argv, raw);
+
     switch (name) {
-      case "ping": return this.#reply(argv.length > 1 ? bulk(argv[1]) : simple("PONG"));
-      case "echo": return this.#reply(argv.length === 2 ? bulk(argv[1]) : error("ERR wrong number of arguments for 'echo' command"));
-      case "quit": this.#reply(OK); this.#closed = true; return;
-      case "select": return this.#reply(this.#arity(name, argv) ?? (str(argv[1]) === "0" ? OK : error("ERR DB index is out of range (use one database name per connection address)")));
+      case "ping":
+        return this.#reply(argv.length > 1 ? bulk(argv[1]) : simple("PONG"));
+      case "echo":
+        return this.#reply(
+          argv.length === 2 ? bulk(argv[1]) : error("ERR wrong number of arguments for 'echo' command"),
+        );
+      case "quit":
+        this.#reply(OK);
+        this.#closed = true;
+
+        return;
+      case "select":
+        return this.#reply(
+          this.#arity(name, argv) ??
+            (str(argv[1]) === "0"
+              ? OK
+              : error("ERR DB index is out of range (use one database name per connection address)")),
+        );
       case "auth":
-        if (argv.length !== 2 && argv.length !== 3) return this.#reply(error("ERR wrong number of arguments for 'auth' command"));
+        if (argv.length !== 2 && argv.length !== 3)
+          return this.#reply(error("ERR wrong number of arguments for 'auth' command"));
+
         return this.#login(argv.length === 3 ? str(argv[1]) : null, str(argv[argv.length - 1]), () => this.#reply(OK));
-      case "readonly": case "readwrite": return this.#reply(OK);
-      case "hello": return this.#hello(argv);
-      case "client": return this.#client(argv);
-      case "reset": return this.#reset();
+      case "readonly":
+      case "readwrite":
+        return this.#reply(OK);
+      case "hello":
+        return this.#hello(argv);
+      case "client":
+        return this.#client(argv);
+      case "reset":
+        return this.#reset();
       case "multi":
         if (this.#multi) return this.#reply(error("ERR MULTI calls can not be nested"));
         this.#multi = { cmds: [], shard: this.#watch, watched: this.#watch !== null, failed: false };
+
         return this.#reply(OK);
-      case "exec": return this.#exec();
-      case "discard": return this.#discard();
-      case "watch": return this.#watchCmd(argv, raw);
+      case "exec":
+        return this.#exec();
+      case "discard":
+        return this.#discard();
+      case "watch":
+        return this.#watchCmd(argv, raw);
       case "unwatch":
         if (this.#watch === null) return this.#reply(OK);
-        if (this.#watchBroken) { this.#clearWatch(); return this.#reply(OK); }
+
+        if (this.#watchBroken) {
+          this.#clearWatch();
+
+          return this.#reply(OK);
+        }
+
         this.#forward(this.#watch, raw);
         this.#clearWatch();
+
         return;
-      case "wait": return this.#wait(argv);
-      case "waitaof": return this.#reply(arrayOf([integer(1), integer(0)]));
-      case "cluster": return this.#cluster(argv);
-      case "dbsize": return this.#fanout(argv, (rs) => integer(rs.reduce((n, r) => n + r, 0)));
-      case "keys": return this.#fanoutRaw(argv, (frames) => arrayOf(frames.flatMap((f) => elements(f))));
-      case "flushall": case "flushdb": return this.#fanout(argv, (rs) => rs.find((r) => r?.err) ? error(rs.find((r) => r?.err).err) : OK);
-      case "scan": return this.#scan(argv);
-      case "randomkey": return this.#randomkey();
-      case "info": return this.#info(argv);
-      case "script": return this.#scriptOrFunction(argv, raw);
-      case "function": return this.#scriptOrFunction(argv, raw);
+      case "wait":
+        return this.#wait(argv);
+      case "waitaof":
+        return this.#reply(arrayOf([integer(1), integer(0)]));
+      case "cluster":
+        return this.#cluster(argv);
+      case "dbsize":
+        return this.#fanout(argv, (rs) => integer(rs.reduce((n, r) => n + r, 0)));
+      case "keys":
+        return this.#fanoutRaw(argv, (frames) => arrayOf(frames.flatMap((f) => elements(f))));
+      case "flushall":
+      case "flushdb":
+        return this.#fanout(argv, (rs) => (rs.find((r) => r?.err) ? error(rs.find((r) => r?.err).err) : OK));
+      case "scan":
+        return this.#scan(argv);
+      case "randomkey":
+        return this.#randomkey();
+      case "info":
+        return this.#info(argv);
+      case "script":
+        return this.#scriptOrFunction(argv, raw);
+      case "function":
+        return this.#scriptOrFunction(argv, raw);
       case "config":
         if (lower(argv[1] ?? new Uint8Array()) === "set") {
-          const bad = argv.slice(2).filter((_, i) => i % 2 === 0).map(lower).find((p) => !CONFIG_SET.has(p));
+          const bad = argv
+            .slice(2)
+            .filter((_, i) => i % 2 === 0)
+            .map(lower)
+            .find((p) => !CONFIG_SET.has(p));
+
           if (bad !== undefined) return this.#reply(unsupported(`config set ${bad}`));
         }
+
         if (lower(argv[1] ?? new Uint8Array()) === "set" || lower(argv[1] ?? new Uint8Array()) === "resetstat") {
-          return this.#fanout(argv, (rs) => rs.find((r) => r?.err) ? error(rs.find((r) => r?.err).err) : OK);
+          return this.#fanout(argv, (rs) => (rs.find((r) => r?.err) ? error(rs.find((r) => r?.err).err) : OK));
         }
+
         return this.#forward(0, raw);
     }
+
     if (UNSUPPORTED.has(name)) return this.#reply(unsupported(name));
+
     if (PUBSUB.has(name)) return this.#pubsub(name, argv, raw);
     const bad = this.#arity(name, argv);
+
     if (bad) return this.#reply(bad);
     const idx = keyIndexes(this.table, name, argv);
+
     if (idx === null) return this.#getkeys(name, argv, raw);
-    this.#routeKeys(name, argv, raw, idx.map((i) => argv[i]));
+    this.#routeKeys(
+      name,
+      argv,
+      raw,
+      idx.map((i) => argv[i]),
+    );
   }
 
   #retryable(name) {
     const f = this.table.get(name)?.flags;
+
     return !!f && f.has("readonly") && !f.has("blocking") && !this.#multi && this.#watch === null;
   }
 
   #routeKeys(name, argv, raw, keys) {
     if (!keys.length || this.db.shards === 1) return this.#forward(0, raw, this.#retryable(name));
     const shard = this.#shardsOf(keys);
+
     if (shard >= 0) return this.#forward(shard, raw, this.#retryable(name));
+
     switch (name) {
-      case "mget": return this.#mget(argv);
-      case "mset": return this.#mset(argv);
-      case "del": case "unlink": case "exists": case "touch": return this.#sumSplit(name, argv);
+      case "mget":
+        return this.#mget(argv);
+      case "mset":
+        return this.#mset(argv);
+      case "del":
+      case "unlink":
+      case "exists":
+      case "touch":
+        return this.#sumSplit(name, argv);
     }
+
     this.#reply(CROSSSLOT);
   }
 
@@ -668,33 +1092,52 @@ export class Router {
     const s = this.#slot();
     const copy = raw.slice();
     // Later requests wait until this one is sent, so it runs before them on its shard.
-    this.#hold(this.shardStub(0).run([["COMMAND", "GETKEYS", ...argv.map(str)]]).then(([keys]) => {
-      if (keys?.err) return this.#resolve(s, error(keys.err));
-      const ks = (keys ?? []).map((k) => enc.encode(k));
-      const shard = !ks.length || this.db.shards === 1 ? 0 : this.#shardsOf(ks);
-      if (shard < 0) return this.#resolve(s, CROSSSLOT);
-      this.#forward(shard, copy, this.#retryable(name), s);
-    }, this.#lost(s)));
+    this.#hold(
+      this.shardStub(0)
+        .run([["COMMAND", "GETKEYS", ...argv.map(str)]])
+        .then(([keys]) => {
+          if (keys?.err) return this.#resolve(s, error(keys.err));
+          const ks = (keys ?? []).map((k) => enc.encode(k));
+          const shard = !ks.length || this.db.shards === 1 ? 0 : this.#shardsOf(ks);
+
+          if (shard < 0) return this.#resolve(s, CROSSSLOT);
+          this.#forward(shard, copy, this.#retryable(name), s);
+        }, this.#lost(s)),
+    );
   }
 
   #groups(keys, step = 1) {
-    const N = this.db.shards, groups = new Map();
+    const N = this.db.shards,
+      groups = new Map();
+
     for (let i = 0; i < keys.length; i += step) {
       const g = shardOfSlot(slotOf(keys[i]), N);
       let list = groups.get(g);
+
       if (!list) groups.set(g, (list = []));
       list.push(i);
     }
+
     return groups;
   }
 
   #mget(argv) {
-    const keys = argv.slice(1), s = this.#slot(), out = Array.from({ length: keys.length }), groups = this.#groups(keys);
-    let left = groups.size, failed = null;
+    const keys = argv.slice(1),
+      s = this.#slot(),
+      out = Array.from({ length: keys.length }),
+      groups = this.#groups(keys);
+
+    let left = groups.size,
+      failed = null;
+
     for (const [g, idx] of groups) {
       this.#up(g).send(command(["MGET", ...idx.map((i) => keys[i])]), (f) => {
         if (f[0] === 45) failed ??= f;
-        else elements(f).forEach((e, k) => { out[idx[k]] = e; });
+        else
+          elements(f).forEach((e, k) => {
+            out[idx[k]] = e;
+          });
+
         if (--left === 0) this.#resolve(s, failed ?? arrayOf(out));
       });
     }
@@ -702,29 +1145,46 @@ export class Router {
 
   #mset(argv) {
     const args = argv.slice(1);
+
     if (args.length % 2) return this.#reply(error("ERR wrong number of arguments for 'mset' command"));
-    const s = this.#slot(), groups = this.#groups(args, 2);
-    let left = groups.size, failed = null;
+
+    const s = this.#slot(),
+      groups = this.#groups(args, 2);
+
+    let left = groups.size,
+      failed = null;
+
     for (const [g, idx] of groups) {
       this.#writeStart(g);
       this.#up(g).send(command(["MSET", ...idx.flatMap((i) => [args[i], args[i + 1]])]), (f) => {
         this.#writeDone(g);
+
         if (f[0] === 45) failed ??= f;
+
         if (--left === 0) this.#resolve(s, failed ?? OK);
       });
     }
   }
 
   #sumSplit(name, argv) {
-    const keys = argv.slice(1), s = this.#slot(), groups = this.#groups(keys);
-    let left = groups.size, sum = 0, failed = null;
+    const keys = argv.slice(1),
+      s = this.#slot(),
+      groups = this.#groups(keys);
+
+    let left = groups.size,
+      sum = 0,
+      failed = null;
+
     for (const [g, idx] of groups) {
       const writes = name !== "exists";
+
       if (writes) this.#writeStart(g);
       this.#up(g).send(command([name.toUpperCase(), ...idx.map((i) => keys[i])]), (f) => {
         if (writes) this.#writeDone(g);
+
         if (f[0] === 45) failed ??= f;
         else sum += decode(f)[0];
+
         if (--left === 0) this.#resolve(s, failed ?? integer(sum));
       });
     }
@@ -734,15 +1194,39 @@ export class Router {
   #queueTx(name, argv, raw) {
     const m = this.#multi;
     const bad = this.#arity(name, argv);
-    if (bad) { m.failed = true; return this.#reply(bad); }
-    if (PUBSUB.has(name) || UNSUPPORTED.has(name) || NOT_IN_MULTI.has(name)) { m.failed = true; return this.#reply(unsupported(`${name} in MULTI`)); }
+
+    if (bad) {
+      m.failed = true;
+
+      return this.#reply(bad);
+    }
+
+    if (PUBSUB.has(name) || UNSUPPORTED.has(name) || NOT_IN_MULTI.has(name)) {
+      m.failed = true;
+
+      return this.#reply(unsupported(`${name} in MULTI`));
+    }
+
     const idx = keyIndexes(this.table, name, argv);
-    if (idx === null) { m.failed = true; return this.#reply(unsupported(`${name} in MULTI`)); }
+
+    if (idx === null) {
+      m.failed = true;
+
+      return this.#reply(unsupported(`${name} in MULTI`));
+    }
+
     if (idx.length && this.db.shards > 1) {
       const shard = this.#shardsOf(idx.map((i) => argv[i]));
-      if (shard < 0 || (m.shard !== null && m.shard !== shard)) { m.failed = true; return this.#reply(CROSSSLOT); }
+
+      if (shard < 0 || (m.shard !== null && m.shard !== shard)) {
+        m.failed = true;
+
+        return this.#reply(CROSSSLOT);
+      }
+
       m.shard = shard;
     }
+
     m.cmds.push(raw.slice());
     this.#reply(QUEUED);
   }
@@ -755,21 +1239,35 @@ export class Router {
 
   #exec() {
     const m = this.#multi;
+
     if (!m) return this.#reply(error("ERR EXEC without MULTI"));
     this.#multi = null;
-    const watchUp = this.#watchUp, broken = m.watched && (this.#watchBroken || !watchUp || watchUp.dead);
+
+    const watchUp = this.#watchUp,
+      broken = m.watched && (this.#watchBroken || !watchUp || watchUp.dead);
+
     this.#clearWatch();
+
     if (m.failed) return this.#reply(error("EXECABORT Transaction discarded because of previous errors."));
+
     if (broken) return this.#reply(this.proto === 3 ? NULL3 : NULL_ARRAY);
-    const s = this.#slot(), i = m.shard ?? 0;
+
+    const s = this.#slot(),
+      i = m.shard ?? 0;
+
     const send = () => {
       // On a connection of its own: an RPC batch could end between MULTI and EXEC, on a pooled client.
       const up = m.watched ? watchUp : this.#up(i, true);
       this.#writeStart(up.index);
       up.send(MULTI, noop);
+
       for (const c of m.cmds) up.send(c, noop);
-      up.send(EXEC, (f) => { this.#writeDone(up.index); this.#resolve(s, f); });
+      up.send(EXEC, (f) => {
+        this.#writeDone(up.index);
+        this.#resolve(s, f);
+      });
     };
+
     // Earlier requests to the shard by RPC have no order with a socket: run the transaction after them.
     if (!m.watched && this.#ups.get(i) instanceof RpcUpstream) this.#hold(this.#afterEarlierReplies(s).then(send));
     else send();
@@ -778,6 +1276,7 @@ export class Router {
   #discard() {
     if (!this.#multi) return this.#reply(error("ERR DISCARD without MULTI"));
     this.#multi = null;
+
     if (this.#watch !== null && !this.#watchBroken) this.#up(this.#watch).send(UNWATCH, noop);
     this.#clearWatch();
     this.#reply(OK);
@@ -785,11 +1284,16 @@ export class Router {
 
   #watchCmd(argv, raw) {
     if (this.#multi) return this.#reply(error("ERR WATCH inside MULTI is not allowed"));
+
     if (argv.length < 2) return this.#reply(error("ERR wrong number of arguments for 'watch' command"));
     const shard = this.db.shards === 1 ? 0 : this.#shardsOf(argv.slice(1));
+
     if (shard < 0 || (this.#watch !== null && this.#watch !== shard)) return this.#reply(CROSSSLOT);
     this.#watch = shard;
-    const s = this.#slot(), up = this.#up(shard, true);
+
+    const s = this.#slot(),
+      up = this.#up(shard, true);
+
     if (this.#watchUp && this.#watchUp !== up) this.#watchBroken = true; // earlier keys were watched on a connection that died
     this.#watchUp = up;
     up.send(raw, (f) => this.#resolve(s, f));
@@ -799,28 +1303,49 @@ export class Router {
   #pubsub(name, argv, raw) {
     if (!SUBSCRIBE.has(name) && !name.endsWith("unsubscribe")) return this.#forward("pubsub", raw);
     const up = this.#up("pubsub");
+
     if (this.proto === 3) return up.raw(raw.slice()); // confirmations and messages arrive as pushes
+
     // Not subscribed: Valkey answers once per channel named, or once if none is.
-    if (name.endsWith("unsubscribe")) return this.#reply(concat((argv.length > 1 ? argv.slice(1) : [null]).map((c) => arrayOf([bulk(name), bulk(c), integer(0)]))));
+    if (name.endsWith("unsubscribe"))
+      return this.#reply(
+        concat((argv.length > 1 ? argv.slice(1) : [null]).map((c) => arrayOf([bulk(name), bulk(c), integer(0)]))),
+      );
     // RESP2: the connection becomes a pipe to the pubsub object until it unsubscribes from everything.
     this.#pass = up;
     up.passthrough = (f) => {
       this.push(f);
+
       if (f[0] === 43 && str(f).startsWith("+RESET")) return this.endPassthrough(false);
+
       if (f[0] !== 42) return;
       const [v] = decode(f);
+
       // Not only pushes: RESP3 subscribers run other commands too, whose replies can start with null or a number.
       if (Array.isArray(v) && String(v[0]).endsWith("unsubscribe") && v[2] === 0) this.endPassthrough(false);
     };
+
     up.raw(raw.slice());
   }
 
   #passRequest(argv, raw) {
     const name = lower(argv[0]);
+
     if (!PUBSUB.has(name) && !["ping", "quit", "reset"].includes(name)) {
-      return this.push(error(`ERR Can't execute '${name}': only (P|S)SUBSCRIBE / (P|S)UNSUBSCRIBE / PING / QUIT / RESET are allowed in this context`));
+      return this.push(
+        error(
+          `ERR Can't execute '${name}': only (P|S)SUBSCRIBE / (P|S)UNSUBSCRIBE / PING / QUIT / RESET are allowed in this context`,
+        ),
+      );
     }
-    if (name === "quit") { this.push(OK); this.#closed = true; return; }
+
+    if (name === "quit") {
+      this.push(OK);
+      this.#closed = true;
+
+      return;
+    }
+
     this.#pass.raw(raw.slice());
   }
 
@@ -828,24 +1353,42 @@ export class Router {
     if (!this.#pass) return;
     this.#pass.passthrough = null;
     this.#pass = null;
+
     if (lost) this.push(LOST);
   }
 
   // ---- connection state ----
   #hello(argv) {
     let proto = this.proto;
+
     if (argv.length > 1) {
       proto = Number(str(argv[1]));
+
       if (proto !== 2 && proto !== 3) return this.#reply(error("NOPROTO unsupported protocol version"));
     }
-    let user = null, pass = null, setname = null;
+
+    let user = null,
+      pass = null,
+      setname = null;
+
     for (let i = 2; i < argv.length; i++) {
       const opt = lower(argv[i]);
-      if (opt === "auth") { user = str(argv[i + 1] ?? new Uint8Array()); pass = str(argv[i + 2] ?? new Uint8Array()); i += 2; }
-      else if (opt === "setname") setname = str(argv[++i] ?? new Uint8Array());
+
+      if (opt === "auth") {
+        user = str(argv[i + 1] ?? new Uint8Array());
+        pass = str(argv[i + 2] ?? new Uint8Array());
+        i += 2;
+      } else if (opt === "setname") setname = str(argv[++i] ?? new Uint8Array());
     }
+
     if (pass !== null) return this.#login(user, pass, () => this.#helloAs(proto, setname));
-    if (!this.#authed) return this.#reply(error("NOAUTH HELLO must be called with the client already authenticated, otherwise the HELLO <proto> AUTH <user> <pass> option can be used to authenticate the client and select the RESP protocol version at the same time"));
+
+    if (!this.#authed)
+      return this.#reply(
+        error(
+          "NOAUTH HELLO must be called with the client already authenticated, otherwise the HELLO <proto> AUTH <user> <pass> option can be used to authenticate the client and select the RESP protocol version at the same time",
+        ),
+      );
     this.#helloAs(proto, setname);
   }
 
@@ -853,6 +1396,7 @@ export class Router {
     if (setname !== null) this.#name = setname;
     const changed = proto !== this.proto;
     this.proto = proto;
+
     if (changed) for (const [i, up] of this.#ups) if (i !== 0) up.send(command(["HELLO", String(proto)]), noop);
     this.#forward(0, command(["HELLO", String(proto)]));
   }
@@ -863,69 +1407,116 @@ export class Router {
   // requests after this wait (run() awaits #pending) to keep order.
   #login(user, pass, then) {
     const name = !user || user === "default" ? this.db.name : user;
+
     if (!DB_NAME.test(name)) return this.#reply(error(`ERR ${DB_NAME_RULE}`));
+
     if (this.#signIns?.blocked()) return this.#reply(TOO_MANY);
     const shared = () => this.#password === undefined || sameSecret(pass, this.#password);
-    const wrong = () => { this.#signIns?.failed(); return this.#reply(WRONGPASS); };
+
+    const wrong = () => {
+      this.#signIns?.failed();
+
+      return this.#reply(WRONGPASS);
+    };
+
     if (name === this.db.name && !(this.db.secret && !this.#trusted)) {
       if (!shared()) return wrong();
       this.#authed = true;
+
       return then();
     }
+
     this.#pending = (async () => {
       const known = name === this.db.name ? this.db : await this.#lookup?.(name);
+
       if (known?.dropped) return shared() ? this.#reply(error(`ERR database ${name} was dropped`)) : wrong(); // no names to guessers
       const ok = known?.secret && !this.#trusted ? await secretMatches(known.secret, pass) : shared();
+
       if (!ok) return wrong();
+
       if (name !== this.db.name) {
         const next = await this.#open(name);
         await this.#afterAll(); // earlier requests went to the old database's upstreams
+
         for (const up of this.#ups.values()) up.close();
         this.#ups.clear();
         this.#clearWatch();
         this.endPassthrough(false);
-        Object.assign(this, { db: next.db, table: next.table, shardStub: next.shard, pubsubStub: next.pubsub, replicaStub: next.replica });
+        Object.assign(this, {
+          db: next.db,
+          table: next.table,
+          shardStub: next.shard,
+          pubsubStub: next.pubsub,
+          replicaStub: next.replica,
+        });
       }
+
       this.#authed = true;
       then();
-    })().catch((e) => this.#reply(error(`ERR ${e.message}`))).finally(() => { this.#pending = null; });
+    })()
+      .catch((e) => this.#reply(error(`ERR ${e.message}`)))
+      .finally(() => {
+        this.#pending = null;
+      });
   }
 
   #client(argv) {
     const sub = lower(argv[1] ?? new Uint8Array());
+
     switch (sub) {
       case "setname":
         this.#name = str(argv[2] ?? new Uint8Array());
+
         for (const up of this.#ups.values()) up.send(command(["CLIENT", "SETNAME", this.#name]), noop);
+
         return this.#reply(OK);
-      case "getname": return this.#reply(bulk(this.#name));
-      case "id": return this.#reply(integer(this.#id));
-      case "setinfo": return this.#reply(OK);
-      case "info": return this.#reply(bulk(`id=${this.#id} name=${this.#name ?? ""} db=0 resp=${this.proto} router=1 shards=${this.db.shards}\n`));
+      case "getname":
+        return this.#reply(bulk(this.#name));
+      case "id":
+        return this.#reply(integer(this.#id));
+      case "setinfo":
+        return this.#reply(OK);
+      case "info":
+        return this.#reply(
+          bulk(`id=${this.#id} name=${this.#name ?? ""} db=0 resp=${this.proto} router=1 shards=${this.db.shards}\n`),
+        );
     }
+
     if (BLOCKED_SUB.client.has(sub)) return this.#reply(unsupported(`client ${sub}`));
+
     // Valkey's wording (addReplySubcommandSyntaxError), with the subcommand as the client spelled it.
-    return this.#reply(error(`ERR unknown subcommand or wrong number of arguments for '${str(argv[1] ?? new Uint8Array()).slice(0, 128)}'. Try CLIENT HELP.`));
+    return this.#reply(
+      error(
+        `ERR unknown subcommand or wrong number of arguments for '${str(argv[1] ?? new Uint8Array()).slice(0, 128)}'. Try CLIENT HELP.`,
+      ),
+    );
   }
 
   #reset() {
     const s = this.#slot();
-    this.#hold(this.#afterEarlierReplies(s).then(() => { // closing upstreams first would lose earlier replies
-      this.#multi = null;
-      this.#clearWatch();
-      this.#name = null;
-      this.proto = 2;
-      this.endPassthrough(false);
-      for (const up of this.#ups.values()) up.close();
-      this.#ups.clear();
-      this.#resolve(s, simple("RESET"));
-    }));
+    this.#hold(
+      this.#afterEarlierReplies(s).then(() => {
+        // closing upstreams first would lose earlier replies
+        this.#multi = null;
+        this.#clearWatch();
+        this.#name = null;
+        this.proto = 2;
+        this.endPassthrough(false);
+
+        for (const up of this.#ups.values()) up.close();
+        this.#ups.clear();
+        this.#resolve(s, simple("RESET"));
+      }),
+    );
   }
 
   #cluster(argv) {
     const sub = lower(argv[1] ?? new Uint8Array());
+
     if (sub === "keyslot" && argv[2]) return this.#reply(integer(slotOf(argv[2])));
+
     if (sub === "info") return this.#reply(bulk(`cluster_enabled:0\r\nrouter_shards:${this.db.shards}\r\n`));
+
     return this.#reply(error("ERR This instance has cluster support disabled (sharding is done by the router)"));
   }
 
@@ -939,121 +1530,206 @@ export class Router {
   // Resolves once every request so far has its reply.
   #afterAll() {
     const s = this.#slot();
+
     return this.#afterEarlierReplies(s).then(() => this.#resolve(s, new Uint8Array(0)));
   }
   // An RPC rejects only when its shard can't answer (Valkey errors come back as values), so the
   // command may or may not have run: say so, as the socket path does.
-  #lost(s) { return (e) => this.#resolve(s, DROPPED.test(e?.message) ? this.dropped() : LOST); }
+  #lost(s) {
+    return (e) => this.#resolve(s, DROPPED.test(e?.message) ? this.dropped() : LOST);
+  }
   /** A shard refused because the database was dropped after this isolate cached its record: forget the record,
    *  so the next connection is refused at AUTH, and say so. */
   dropped() {
     this.#onDropped?.(this.db.name);
+
     return error(`ERR database ${this.db.name} was dropped`);
   }
   #hold(p) {
-    const held = p.catch(() => {}).finally(() => { if (this.#pending === held) this.#pending = null; });
+    const held = p
+      .catch(() => {})
+      .finally(() => {
+        if (this.#pending === held) this.#pending = null;
+      });
+
     this.#pending = held;
   }
 
   // ---- fan-out over every shard, via RPC (no upstream connections held) ----
   // At most FAN_OUT shards at a time, answers in shard order.
   async #all(cmds, raw) {
-    const N = this.db.shards, out = Array.from({ length: N });
+    const N = this.db.shards,
+      out = Array.from({ length: N });
+
     let next = 0;
+
     const worker = async () => {
-      for (let i = next++; i < N; i = next++) out[i] = await (raw ? this.shardStub(i).runRaw(cmds) : this.shardStub(i).run(cmds));
+      for (let i = next++; i < N; i = next++)
+        out[i] = await (raw ? this.shardStub(i).runRaw(cmds) : this.shardStub(i).run(cmds));
     };
+
     await Promise.all(Array.from({ length: Math.min(FAN_OUT, N) }, worker));
+
     return out;
   }
   // WAIT numreplicas timeout: how many replicas have every write this connection made, i.e. the fewest for any
   // shard it wrote to. Each shard counts its own replicas after the earlier replies (the writes) are back.
   #wait(argv) {
     const [n, ms] = argv.slice(1).map((a) => Number(str(a)));
-    if (argv.length !== 3 || !Number.isSafeInteger(n) || !Number.isSafeInteger(ms) || ms < 0) return this.#reply(error("ERR value is not an integer or out of range"));
+
+    if (argv.length !== 3 || !Number.isSafeInteger(n) || !Number.isSafeInteger(ms) || ms < 0)
+      return this.#reply(error("ERR value is not an integer or out of range"));
+
     if (!this.db.replicas) return this.#reply(integer(0));
-    const s = this.#slot(), wrote = [...new Set([...this.#wrote.keys(), ...this.#writing.keys()])];
-    this.#hold(this.#afterEarlierReplies(s)
-      .then(() => (wrote.length ? Promise.all(wrote.map((i) => this.shardStub(i).waitReplicas(n, ms))) : [this.db.replicas.length]))
-      .then((counts) => this.#resolve(s, integer(Math.min(...counts))), this.#lost(s)));
+
+    const s = this.#slot(),
+      wrote = [...new Set([...this.#wrote.keys(), ...this.#writing.keys()])];
+
+    this.#hold(
+      this.#afterEarlierReplies(s)
+        .then(() =>
+          wrote.length
+            ? Promise.all(wrote.map((i) => this.shardStub(i).waitReplicas(n, ms)))
+            : [this.db.replicas.length],
+        )
+        .then((counts) => this.#resolve(s, integer(Math.min(...counts))), this.#lost(s)),
+    );
   }
 
   // A fan-out that may write (FLUSHALL, FUNCTION LOAD) counts as a write to every shard: read-your-writes and WAIT.
   #wroteAll(argv) {
     if (this.table.get(lower(argv[0]))?.flags.has("readonly")) return;
+
     for (let i = 0; i < this.db.shards; i++) this.#wrote.set(i, Date.now());
   }
   #fanout(argv, merge) {
     const s = this.#slot();
-    this.#hold(this.#afterEarlierReplies(s).then(() => this.#all([argv.map(str)], false))
-      .then((rs) => { this.#wroteAll(argv); this.#resolve(s, merge(rs.map((r) => r[0]))); }, this.#lost(s)));
+    this.#hold(
+      this.#afterEarlierReplies(s)
+        .then(() => this.#all([argv.map(str)], false))
+        .then((rs) => {
+          this.#wroteAll(argv);
+          this.#resolve(s, merge(rs.map((r) => r[0])));
+        }, this.#lost(s)),
+    );
   }
   #fanoutRaw(argv, merge) {
     const s = this.#slot();
-    this.#hold(this.#afterEarlierReplies(s).then(() => this.#all([argv.map(str)], true)).then((rs) => {
-      this.#wroteAll(argv);
-      const bad = rs.find((r) => r[0] === 45);
-      this.#resolve(s, bad ?? merge(rs));
-    }, this.#lost(s)));
+    this.#hold(
+      this.#afterEarlierReplies(s)
+        .then(() => this.#all([argv.map(str)], true))
+        .then((rs) => {
+          this.#wroteAll(argv);
+          const bad = rs.find((r) => r[0] === 45);
+          this.#resolve(s, bad ?? merge(rs));
+        }, this.#lost(s)),
+    );
   }
 
   // SCAN cursor = inner cursor * shards + shard index, so it stays one integer.
   #scan(argv) {
     const N = BigInt(this.db.shards);
     let cursor;
-    try { cursor = BigInt(str(argv[1] ?? new Uint8Array())); } catch { cursor = -1n; }
+
+    try {
+      cursor = BigInt(str(argv[1] ?? new Uint8Array()));
+    } catch {
+      cursor = -1n;
+    }
+
     if (cursor < 0n) return this.#reply(error("ERR invalid cursor"));
-    const shard = Number(cursor % N), inner = cursor / N;
+
+    const shard = Number(cursor % N),
+      inner = cursor / N;
+
     const s = this.#slot();
-    this.#hold(this.#afterEarlierReplies(s).then(() => this.shardStub(shard).runRaw([["SCAN", inner.toString(), ...argv.slice(2).map(str)]])).then((f) => {
-      if (f[0] === 45) return this.#resolve(s, f);
-      const [next, keys] = elements(f);
-      const innerNext = BigInt(decode(next)[0]);
-      const composite = innerNext !== 0n ? innerNext * N + BigInt(shard) : BigInt(shard + 1) < N ? BigInt(shard + 1) : 0n;
-      this.#resolve(s, arrayOf([bulk(composite.toString()), keys]));
-    }, this.#lost(s)));
+    this.#hold(
+      this.#afterEarlierReplies(s)
+        .then(() => this.shardStub(shard).runRaw([["SCAN", inner.toString(), ...argv.slice(2).map(str)]]))
+        .then((f) => {
+          if (f[0] === 45) return this.#resolve(s, f);
+          const [next, keys] = elements(f);
+          const innerNext = BigInt(decode(next)[0]);
+
+          const composite =
+            innerNext !== 0n ? innerNext * N + BigInt(shard) : BigInt(shard + 1) < N ? BigInt(shard + 1) : 0n;
+
+          this.#resolve(s, arrayOf([bulk(composite.toString()), keys]));
+        }, this.#lost(s)),
+    );
   }
 
   #randomkey() {
-    const s = this.#slot(), N = this.db.shards, start = Math.floor(Math.random() * N);
+    const s = this.#slot(),
+      N = this.db.shards,
+      start = Math.floor(Math.random() * N);
+
     const tryShard = async (k) => {
       for (; k < N; k++) {
         const [key] = await this.shardStub((start + k) % N).run([["RANDOMKEY"]]);
+
         if (key !== null) return this.#resolve(s, bulk(key));
       }
+
       this.#resolve(s, bulk(null));
     };
-    this.#hold(this.#afterEarlierReplies(s).then(() => tryShard(0)).catch(this.#lost(s)));
+
+    this.#hold(
+      this.#afterEarlierReplies(s)
+        .then(() => tryShard(0))
+        .catch(this.#lost(s)),
+    );
   }
 
   #info(argv) {
     const s = this.#slot();
     const section = argv.slice(1).map(str);
-    this.#hold(this.#afterEarlierReplies(s).then(() => Promise.all([this.shardStub(0).run([["INFO", ...section]]), this.#all([["INFO", "keyspace"]], false)])).then(([[head], spaces]) => {
-      let keys = 0, expires = 0;
-      for (const [txt] of spaces) {
-        const m = /db0:keys=(\d+),expires=(\d+)/.exec(txt ?? "");
-        if (m) { keys += Number(m[1]); expires += Number(m[2]); }
-      }
-      const body = String(head ?? "").replace(/# Keyspace\r\n(db\d+:[^\r]*\r\n)*/, "") +
-        `# Keyspace\r\n${keys ? `db0:keys=${keys},expires=${expires},avg_ttl=0\r\n` : ""}` +
-        `\r\n# Router\r\nrouter_db:${this.db.name}\r\nrouter_shards:${this.db.shards}\r\n`;
-      this.#resolve(s, bulk(body));
-    }, this.#lost(s)));
+    this.#hold(
+      this.#afterEarlierReplies(s)
+        .then(() =>
+          Promise.all([this.shardStub(0).run([["INFO", ...section]]), this.#all([["INFO", "keyspace"]], false)]),
+        )
+        .then(([[head], spaces]) => {
+          let keys = 0,
+            expires = 0;
+
+          for (const [txt] of spaces) {
+            const m = /db0:keys=(\d+),expires=(\d+)/.exec(txt ?? "");
+
+            if (m) {
+              keys += Number(m[1]);
+              expires += Number(m[2]);
+            }
+          }
+
+          const body =
+            String(head ?? "").replace(/# Keyspace\r\n(db\d+:[^\r]*\r\n)*/, "") +
+            `# Keyspace\r\n${keys ? `db0:keys=${keys},expires=${expires},avg_ttl=0\r\n` : ""}` +
+            `\r\n# Router\r\nrouter_db:${this.db.name}\r\nrouter_shards:${this.db.shards}\r\n`;
+
+          this.#resolve(s, bulk(body));
+        }, this.#lost(s)),
+    );
   }
 
   // SCRIPT LOAD/FLUSH and FUNCTION LOAD/DELETE/FLUSH/RESTORE go to every shard, so EVALSHA and
   // FCALL work wherever their keys land. SCRIPT EXISTS is true only if every shard has the script.
   #scriptOrFunction(argv, raw) {
     const sub = lower(argv[1] ?? new Uint8Array());
-    const everywhere = argv[0] && lower(argv[0]) === "script" ? ["load", "flush"] : ["load", "delete", "flush", "restore"];
+
+    const everywhere =
+      argv[0] && lower(argv[0]) === "script" ? ["load", "flush"] : ["load", "delete", "flush", "restore"];
+
     if (lower(argv[0]) === "script" && sub === "exists") {
       return this.#fanout(argv, (rs) => {
         const bad = rs.find((r) => r?.err);
+
         if (bad) return error(bad.err);
+
         return arrayOf(rs[0].map((_, i) => integer(rs.every((r) => r[i] === 1) ? 1 : 0)));
       });
     }
+
     if (!everywhere.includes(sub)) return this.#forward(0, raw);
     this.#fanoutRaw(argv, (frames) => frames[0]);
   }

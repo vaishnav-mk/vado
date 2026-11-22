@@ -10,6 +10,7 @@ import tailwindcss from "@tailwindcss/vite";
 const redis = process.env.VADO_REDIS === "1";
 
 const GENERATED = ["src/routeTree.gen.ts", "packages/server/src/replication/colos.js"];
+
 // Vendored code, and agent tooling that isn't the project's source.
 const NOT_OURS = ["tools/oxlint/anti-slop/**", ".agents/**", ".claude/**", ".pi/**"];
 
@@ -17,8 +18,14 @@ export default defineConfig({
   // The repo root is the app: one Worker with the dashboard and the database (packages/server).
   defaultPackage: ".",
   // The tests are plain Node, without the Worker.
-  plugins: process.env.VITEST ? [] : [cloudflare({ viteEnvironment: { name: "ssr" } }), tanstackStart(), react(), tailwindcss()],
-  resolve: { alias: redis ? {} : { "@vado/wasm/redis.wasm": fileURLToPath(new URL("packages/wasm/no-redis.js", import.meta.url)) } },
+  plugins: process.env.VITEST
+    ? []
+    : [cloudflare({ viteEnvironment: { name: "ssr" } }), tanstackStart(), react(), tailwindcss()],
+  resolve: {
+    alias: redis
+      ? {}
+      : { "@vado/wasm/redis.wasm": fileURLToPath(new URL("packages/wasm/no-redis.js", import.meta.url)) },
+  },
   test: { include: ["src/**/*.test.ts", "packages/*/src/**/*.test.js"] },
   lint: {
     ignorePatterns: [...GENERATED, ...NOT_OURS],

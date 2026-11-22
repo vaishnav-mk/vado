@@ -6,8 +6,17 @@ export const SignedIn = createContext<string | null>(null);
 export const useSignedIn = () => useContext(SignedIn);
 
 /** Renders `children(disabled)`; when signed out, disabled and with a "Sign in to <action>" tooltip. */
-export function Guard({ action, className = "inline-flex", children }: { action: string; className?: string; children: (disabled: boolean) => ReactElement }) {
+export function Guard({
+  action,
+  className = "inline-flex",
+  children,
+}: {
+  action: string;
+  className?: string;
+  children: (disabled: boolean) => ReactElement;
+}) {
   if (useSignedIn()) return children(false);
+
   // A disabled button gets no pointer events, so the tooltip hangs on a wrapper.
   return (
     <Tooltip content={`Sign in to ${action}`} render={<span className={className} tabIndex={0} />}>

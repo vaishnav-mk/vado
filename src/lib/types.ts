@@ -38,6 +38,7 @@ export interface Point {
 }
 
 export type EventLevel = "info" | "success" | "warning" | "error";
+
 export type EventKind = "action" | "test" | "deploy" | "restart" | "replica" | "rewrite" | "memory";
 
 /** A timeline entry. A repeat comes again with the same id, a later t and a higher count. */
@@ -72,7 +73,12 @@ export interface ShardUp extends Place {
   keys: number;
   memory: { used: number; max: number; wasm: number };
   clients: number;
-  log: { base: number; size: number; rewriting: boolean; lastRewrite: { at?: number; ms?: number; error?: string; baseBytes?: number } | null };
+  log: {
+    base: number;
+    size: number;
+    rewriting: boolean;
+    lastRewrite: { at?: number; ms?: number; error?: string; baseBytes?: number } | null;
+  };
   replicas: Replica[];
   reads: number;
   writes: number;

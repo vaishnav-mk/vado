@@ -2,9 +2,9 @@
   "name": "@vado/server",
   "version": "0.0.0",
   "private": true,
-  "type": "module",
-  "license": "Apache-2.0",
   "description": "The database: a sharding router, Durable Objects running Valkey or Redis, read replicas and the catalog",
+  "license": "Apache-2.0",
+  "type": "module",
   "exports": {
     ".": "./src/index.js",
     "./*": "./src/*"

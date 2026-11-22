@@ -5,7 +5,12 @@ import { z } from "zod";
 
 export const Route = createFileRoute("/signin")({
   // Only a path on this site ("/...", not "//host"), so a link can't send someone elsewhere after signing in.
-  validateSearch: z.object({ to: z.string().regex(/^\/(?!\/)/).catch("/") }),
+  validateSearch: z.object({
+    to: z
+      .string()
+      .regex(/^\/(?!\/)/)
+      .catch("/"),
+  }),
   loaderDeps: ({ search }) => search,
   loader: ({ deps }) => {
     throw redirect({ href: deps.to });

@@ -8,26 +8,48 @@ import { replicaBinding, replicaName } from "../replication/replication.js";
 const dbs = new Map(); // name -> Promise<db>; a database's record never changes once created
 
 export const objectOptions = (env, hint = env.LOCATION_HINT) => (HINTS.has(hint) ? { locationHint: hint } : {});
+
 // A Redis database's objects have a "redis" segment in their names, so each one knows what to boot (flavourOf in
 // src/shard/shard.js); database names have no dots, so no database name can look like it.
 const shardName = (db, i) => `${db.name}.${db.created.toString(36)}${db.flavour === "redis" ? ".redis" : ""}.${i}`;
+
 // Shard i uses class k = i % db.classes, so shards less than db.classes apart never share an isolate.
 // Databases from before classes have none: all their shards are ValkeyShard (k = 0). Pub/sub stays there too.
 const classOf = (db, i) => (i !== "pubsub" && db.classes > 1 ? i % db.classes : 0);
 const shardNs = (env, db, i) => (classOf(db, i) ? env[`SHARD${classOf(db, i)}`] : env.SHARD);
+
 // A spread database places data shard i in regions[i % n]; its pub/sub shard stays at LOCATION_HINT.
 export const shardStub = (env, db, i) =>
-  shardNs(env, db, i).getByName(shardName(db, i), objectOptions(env, i !== "pubsub" && db.regions ? db.regions[i % db.regions.length] : env.LOCATION_HINT));
+  shardNs(env, db, i).getByName(
+    shardName(db, i),
+    objectOptions(env, i !== "pubsub" && db.regions ? db.regions[i % db.regions.length] : env.LOCATION_HINT),
+  );
+
 // Its read replicas use class 8 + k (replicaBinding), so a replica never shares an isolate with a primary.
-export const replicaStub = (env, db, i, region) => env[replicaBinding(classOf(db, i))].getByName(replicaName(shardName(db, i), region), objectOptions(env, region));
+export const replicaStub = (env, db, i, region) =>
+  env[replicaBinding(classOf(db, i))].getByName(replicaName(shardName(db, i), region), objectOptions(env, region));
 
 // Which replica (if any) a router in `colo` reads from: one in its region, else a neighbouring one. The home
 // region has a replica too: the primary's replies wait for its storage commits, a replica's don't.
-const NEAR = { wnam: ["enam"], enam: ["wnam"], sam: ["enam", "wnam"], weur: ["eeur"], eeur: ["weur"], me: ["eeur", "weur"], afr: ["weur", "eeur"], apac: ["oc"], oc: ["apac"] };
+const NEAR = {
+  wnam: ["enam"],
+  enam: ["wnam"],
+  sam: ["enam", "wnam"],
+  weur: ["eeur"],
+  eeur: ["weur"],
+  me: ["eeur", "weur"],
+  afr: ["weur", "eeur"],
+  apac: ["oc"],
+  oc: ["apac"],
+};
+
 export function replicaRegion(db, colo) {
   const mine = db.replicas && REGION_OF.get(colo);
+
   if (!mine) return null;
+
   for (const r of [mine, ...NEAR[mine]]) if (db.replicas.includes(r)) return r;
+
   return null;
 }
 
@@ -38,11 +60,13 @@ export const configureReplicas = (env, db) =>
 /** The database's record, created with these settings if it doesn't exist yet. */
 export function database(env, name, shards, regions, replicas, classes, secret, flavour) {
   let db = dbs.get(name);
+
   if (!db) {
     db = env.CATALOG.getByName("catalog").get(name, shards, regions, replicas, classes, secret, flavour);
     db.catch(() => dbs.delete(name));
     dbs.set(name, db);
   }
+
   return db;
 }
 
@@ -56,5 +80,6 @@ export const current = (env, name) => env.CATALOG.getByName("catalog").find(name
 /** The database's record if it exists (null if not): unlike database(), never creates one. */
 export async function lookup(env, name) {
   const cached = dbs.get(name);
+
   return cached ? await cached : await current(env, name);
 }

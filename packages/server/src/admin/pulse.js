@@ -14,7 +14,9 @@ export class Pulse extends DurableObject {
 
   snapshot() {
     const now = Date.now();
+
     for (const [k, r] of this.#isolates) if (now - r.at > STALE_MS) this.#isolates.delete(k);
+
     return { at: now, isolates: [...this.#isolates.values()] };
   }
 }

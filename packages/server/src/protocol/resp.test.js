@@ -9,31 +9,56 @@ const dec = new TextDecoder();
 // Feeds `bytes` in `size`-byte chunks the way the router does: each time, the unparsed tail starts a new buffer
 // (here a view, so the test itself stays linear), and the same resume object goes with the frame until it is whole.
 function chunked(bytes, size, parse) {
-  const out = [], resume = {};
+  const out = [],
+    resume = {};
+
   let base = 0;
+
   for (let top = Math.min(size, bytes.length); ; top = Math.min(top + size, bytes.length)) {
     const buf = bytes.subarray(base, top);
     let start = 0;
+
     for (let r; (r = parse(buf, start, resume)); start = r.end) out.push(r.value);
     base += start;
+
     if (top === bytes.length) break;
   }
+
   expect(base, "everything parsed").toBe(bytes.length);
+
   return out;
 }
-const req = (b, i, resume) => { const r = request(b, i, b.length, Infinity, resume); return r && { end: r.end, value: r.argv.map((a) => dec.decode(a)) }; };
-const frame = (b, i, resume) => { const e = frameEnd(b, i, b.length, resume); return e >= 0 && { end: e, value: dec.decode(b.subarray(i, e)) }; };
+
+const req = (b, i, resume) => {
+  const r = request(b, i, b.length, Infinity, resume);
+
+  return r && { end: r.end, value: r.argv.map((a) => dec.decode(a)) };
+};
+
+const frame = (b, i, resume) => {
+  const e = frameEnd(b, i, b.length, resume);
+
+  return e >= 0 && { end: e, value: dec.decode(b.subarray(i, e)) };
+};
 
 test("requests in pieces of every size", () => {
   const big = ["MSET", ...Array.from({ length: 2000 }, (_, i) => [`k${i}`, `v${i}`]).flat()];
   const cmds = [["PING"], ["SET", "a", "x".repeat(5000)], big, ["GET", "a"]];
   const pipeline = concat(cmds.map(command));
+
   for (const size of [1, 7, 100, 4096, pipeline.length]) expect(chunked(pipeline, size, req)).toEqual(cmds);
 });
 
 test("replies of every RESP type in pieces", () => {
-  const replies = ["*3\r\n:1\r\n*2\r\n$1\r\na\r\n$-1\r\n+OK\r\n", "%2\r\n+k\r\n:1\r\n+j\r\n*1\r\n:2\r\n", "|1\r\n+ttl\r\n:3\r\n$2\r\nhi\r\n", `*500\r\n${"$3\r\nabc\r\n".repeat(500)}`];
+  const replies = [
+    "*3\r\n:1\r\n*2\r\n$1\r\na\r\n$-1\r\n+OK\r\n",
+    "%2\r\n+k\r\n:1\r\n+j\r\n*1\r\n:2\r\n",
+    "|1\r\n+ttl\r\n:3\r\n$2\r\nhi\r\n",
+    `*500\r\n${"$3\r\nabc\r\n".repeat(500)}`,
+  ];
+
   const bytes = enc.encode(replies.join(""));
+
   for (const size of [1, 5, 64, bytes.length]) expect(chunked(bytes, size, frame)).toEqual(replies);
 });
 
@@ -46,7 +71,12 @@ test("decodeTyped keeps each RESP2 reply's type", () => {
   expect(typed("$-1\r\n")).toEqual({ type: "nil" });
   expect(typed("*-1\r\n")).toEqual({ type: "nil" });
   expect(typed("*3\r\n$0\r\n\r\n*2\r\n:1\r\n$-1\r\n+QUEUED\r\n")).toEqual({
-    type: "array", value: [{ type: "bulk", value: "" }, { type: "array", value: [{ type: "integer", value: 1 }, { type: "nil" }] }, { type: "status", value: "QUEUED" }],
+    type: "array",
+    value: [
+      { type: "bulk", value: "" },
+      { type: "array", value: [{ type: "integer", value: 1 }, { type: "nil" }] },
+      { type: "status", value: "QUEUED" },
+    ],
   });
   expect(decodeTyped(enc.encode("$2\r\nhi\r\n:1\r\n"))[1], "the next frame's offset").toBe(8);
   expect(() => typed("%1\r\n+k\r\n:1\r\n")).toThrow(/RESP2/);
@@ -55,7 +85,9 @@ test("decodeTyped keeps each RESP2 reply's type", () => {
 // Without resuming, each 1 KB piece re-parses everything before it (about 30 s).
 test("200k arguments and a 200k-element reply parse in linear time", () => {
   let t = performance.now();
-  expect(chunked(command(["MSET", ...Array.from({ length: 200_000 }, (_, i) => String(i))]), 1024, req)[0]).toHaveLength(200_001);
+  expect(
+    chunked(command(["MSET", ...Array.from({ length: 200_000 }, (_, i) => String(i))]), 1024, req)[0],
+  ).toHaveLength(200_001);
   expect(performance.now() - t).toBeLessThan(3000);
   t = performance.now();
   expect(chunked(enc.encode(`*200000\r\n${":1\r\n".repeat(200_000)}`), 1024, frame)).toHaveLength(1);

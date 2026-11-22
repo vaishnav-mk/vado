@@ -7,9 +7,12 @@ const one = (stub) => stub.snapshot().catch((e) => ({ down: e.message }));
 
 /** Each primary's snapshot() (or { down }), with `replicaSnapshots` from its ready replicas. */
 export const shardSnapshots = (env, db) =>
-  Promise.all(Array.from({ length: db.shards }, async (_, i) => {
-    const primary = await one(shardStub(env, db, i));
-    const ready = (primary.replicas ?? []).filter((r) => r.state === "ready").map((r) => r.region);
-    const copies = await Promise.all(ready.map((r) => one(replicaStub(env, db, i, r))));
-    return { ...primary, replicaSnapshots: copies.map((c, k) => ({ region: ready[k], ...c })) };
-  }));
+  Promise.all(
+    Array.from({ length: db.shards }, async (_, i) => {
+      const primary = await one(shardStub(env, db, i));
+      const ready = (primary.replicas ?? []).filter((r) => r.state === "ready").map((r) => r.region);
+      const copies = await Promise.all(ready.map((r) => one(replicaStub(env, db, i, r))));
+
+      return { ...primary, replicaSnapshots: copies.map((c, k) => ({ region: ready[k], ...c })) };
+    }),
+  );

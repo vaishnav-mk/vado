@@ -3,27 +3,48 @@
 import { plural } from "./format";
 import type { Shard } from "./types";
 
-export interface ReplicaCounts { total: number; ready: number; waking: number; asleep: number; lost: number }
+export interface ReplicaCounts {
+  total: number;
+  ready: number;
+  waking: number;
+  asleep: number;
+  lost: number;
+}
 
 export function replicaCounts(shards: Shard[] | undefined): ReplicaCounts {
   const c = { total: 0, ready: 0, waking: 0, asleep: 0, lost: 0 };
-  for (const s of shards ?? []) for (const r of s.replicas ?? []) {
-    c.total++;
-    if (r.state === "ready") c.ready++;
-    else if (r.state === "asleep") c.asleep++;
-    else if (r.state === "idle") c.lost++;
-    else c.waking++;
-  }
+
+  for (const s of shards ?? [])
+    for (const r of s.replicas ?? []) {
+      c.total++;
+
+      if (r.state === "ready") c.ready++;
+      else if (r.state === "asleep") c.asleep++;
+      else if (r.state === "idle") c.lost++;
+      else c.waking++;
+    }
+
   return c;
 }
 
 /** One short line ("9 serving, 567 asleep") and a badge variant for it. */
 export function replicaLine(c: ReplicaCounts) {
   if (c.ready === c.total) return { text: `${plural(c.total, "replica")} serving`, variant: "success" } as const;
+
   if (c.asleep === c.total) return { text: `${plural(c.total, "replica")} asleep`, variant: "neutral" } as const;
-  const parts = [c.ready && `${c.ready.toLocaleString("en")} serving`, c.waking && `${c.waking.toLocaleString("en")} copying`,
-    c.lost && `${c.lost.toLocaleString("en")} reconnecting`, c.asleep && `${c.asleep.toLocaleString("en")} asleep`].filter(Boolean);
-  return { text: `Replicas: ${parts.join(", ")}`, variant: c.lost ? "error" : c.waking ? "warning" : "success" } as const;
+
+  const parts = [
+    c.ready && `${c.ready.toLocaleString("en")} serving`,
+    c.waking && `${c.waking.toLocaleString("en")} copying`,
+    c.lost && `${c.lost.toLocaleString("en")} reconnecting`,
+    c.asleep && `${c.asleep.toLocaleString("en")} asleep`,
+  ].filter(Boolean);
+
+  return {
+    text: `Replicas: ${parts.join(", ")}`,
+    variant: c.lost ? "error" : c.waking ? "warning" : "success",
+  } as const;
 }
 
-export const SLEEP_NOTE = "A shard's replicas sleep after 10 minutes without traffic to that shard, and its next read or write wakes them in a few seconds.";
+export const SLEEP_NOTE =
+  "A shard's replicas sleep after 10 minutes without traffic to that shard, and its next read or write wakes them in a few seconds.";

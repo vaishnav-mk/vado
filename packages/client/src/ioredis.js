@@ -21,6 +21,7 @@ export function bindingConnector(binding, db) {
       stream.setKeepAlive = () => stream;
       stream.setTimeout = () => stream;
       this.stream = stream;
+
       return stream;
     }
     disconnect() {
