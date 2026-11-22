@@ -221,7 +221,7 @@ export class Replicator {
 
       for (const [path, size] of parts)
         for (let pos = 0; pos < size && link.phase === "copying"; pos += COPY_CHUNK)
-          await writer.write(this.#chunk(path, pos));
+          await writer.write(this.#chunk(path, pos, Math.min(COPY_CHUNK, size - pos)));
       link.marks.push({ at: Date.now(), ready: true });
       await writer.write(MARK);
 
@@ -238,8 +238,9 @@ export class Replicator {
     }
   }
 
-  #chunk(path: string, pos: number): Uint8Array {
-    const bytes = this.#host.readFile(path, pos, COPY_CHUNK);
+  // Never past the size taken when the copy began: bytes appended since are in the queue, and would run twice.
+  #chunk(path: string, pos: number, length: number): Uint8Array {
+    const bytes = this.#host.readFile(path, pos, length);
 
     if (!bytes) throw new Error(`${path} is gone`);
 
