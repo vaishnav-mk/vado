@@ -82,7 +82,9 @@ For a 35.6 MB RDB base, a helper rewrite took 5.2-5.9 s end to end while PINGs t
 
 ## When a shard resets
 
-A shard can reset for a deploy, a crash, an exceeded limit, or because the runtime moved it.
+A shard can reset for a deploy, a crash, an exceeded limit, or because the runtime moved it. It also resets
+itself if Valkey throws mid-command (a wasm trap, or a storage error while writing its AOF): Valkey's memory can't be
+trusted after that, and what was committed can.
 
 - **Acknowledged writes are kept.** The object restarts, Valkey boots, and it replays its AOF from SQLite before it
   serves anything.
@@ -109,21 +111,29 @@ have (`src/replication/replication.js`).
   Appends that arrive while a write to a replica is in flight go out together in the next one.
 - **The starting copy.** The primary turns the RDB preamble off, waits for a rewrite in progress to finish (it would
   replace the files mid-copy) and, if its base file is RDB, rewrites it as commands, since a replica runs the files
-  as commands. If the base is still RDB because that rewrite failed, it drops the copy and tries again later. It then dials the replica (`connect("repl:6379")`), sends
-  `CLIENT REPLY OFF` and `FLUSHALL`, the base and incr files in 1 MB chunks, then the appends that arrived during
-  the copy. Once no copy is running, the base goes back to RDB at the next rewrite check (the next quiet moment, if
+  as commands. If the base is still RDB because that rewrite failed, it drops the copy and tries again later. It
+  then dials the replica (`connect("repl:6379")`), sends `CLIENT REPLY OFF`, `CLIENT IMPORT-SOURCE ON` and
+  `FLUSHALL`, the base and incr files in 1 MB chunks, then the appends that arrived during the copy.
+  A copy still running after 5 minutes (`REPL_COPY_MS`) is dropped and tried again. Once no copy is running, the base goes back to RDB at the next rewrite check (the next quiet moment, if
   rewriting inline): RDB is about 6x smaller, so each later rewrite has about 6x less to write.
 - **Ready to serve.** After the copy the primary sends a marker (`CLIENT REPLY ON`, `PING`, `CLIENT REPLY OFF`).
   Its `+PONG` means the replica has run everything before it, and only then does the replica serve reads. A marker
   every 2 s (`REPL_TICK_MS`) measures each replica's lag. A replica that receives a new copy stops serving reads
   until it has all of it.
+- **A replica only follows.** Replicas run with Valkey's `import-mode` and no memory limit, so they never expire or
+  evict keys of their own; reads still hide expired keys, and the primary's stream deletes them, as with Valkey's own
+  replicas. A replica can't lose a key its primary still has, and a streamed write can't fail on the replica's
+  memory limit, where with replies off nobody would see it.
+- **A replica's stream ends.** However it ends (the primary dropped it, reset or went to sleep), the replica resets
+  too: it never serves data that has stopped updating, and commands left unread from the old stream can't run after
+  the next copy's `FLUSHALL`.
 - **A replica resets.** It starts empty and refuses reads. The primary sees the socket close, waits 5 s
   (`REPL_RETRY_MS`) and copies it again. Routers read from the primary meanwhile.
 - **A replica falls behind.** Replication bytes not yet sent or acknowledged count toward the primary's 16 MB input
   budget (`SHARD_HIGH_WATER`), so replicas that lag slow the writes down. A replica more than 8 MB behind
   (`REPL_BACKLOG`), or one that hasn't answered a marker for 60 s (`REPL_STUCK_MS`), is dropped and copied again.
-- **The primary resets.** Its acknowledged writes are in its AOF. Its replicas keep serving what they have, which
-  may miss the last writes before the reset, until the restarted primary copies them again.
+- **The primary resets.** Its acknowledged writes are in its AOF. Its replicas' streams end, so they reset, and
+  routers read from the primary until the restarted primary has copied them again, a few seconds.
 - **The database goes idle.** After 10 minutes (`REPL_IDLE_MS`) with no writes, no client activity on the primary and
   no reads on any replica, the primary retires its replicas (they stop serving reads), closes the streams and stops
   its alarm, so every object can be evicted. It checks once more after asking the replicas, so a write during the

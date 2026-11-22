@@ -58,7 +58,7 @@ over minutes. Wait at least 5 minutes after a deploy before you measure anything
 | `BENCH_TOKEN` (secret) | unset | Bearer token for the bench API (`src/bench/bench.js`); unset disables it |
 | `SHARD_EPOCHS` | `[{"from":0,"shards":16}]` | Shard count by database creation time, `[{ from, shards }]` in ms. Append, never edit |
 | `LOCATION_HINT` | unset | Region for new shard objects (`apac`, `weur`, `enam`...) of databases without a `regions` list, and for every pub/sub shard |
-| `VALKEY_MAXMEMORY` | `64mb` | Per shard and per replica. The isolate has 128 MB, so keep it at or under 64 MB |
+| `VALKEY_MAXMEMORY` | `64mb` | Per shard; replicas follow their primary and have no limit of their own. The isolate has 128 MB, so keep it at or under 64 MB |
 | `VALKEY_MAXMEMORY_POLICY` | `noeviction` | `allkeys-lru` for a cache |
 | `VALKEY_LOGLEVEL` | `warning` | Valkey's log level, written to the Worker's logs |
 | `ROUTER_IDLE_MS` | `30000` | Idle shard sockets close after this |
@@ -97,12 +97,13 @@ times, bytes, any error and `doneMs`.
 
 The dashboard is the Worker's own URL: `https://<your-worker>.workers.dev/db/<name>`. It shows one database at a
 time: health, commands per second (replica reads included), response time, keys, memory and the saved log, the
-shard dial, a spinning globe with the shards, their replicas and where traffic enters, a grid of every replica's
-state and lag, each shard's details, and a timeline of restarts, deploys, log compactions and replica changes.
+shard dial, a spinning globe with the shards, their replicas and where traffic enters, a board of every replica by
+region and shard with its state and lag, each shard's details, and a timeline of restarts, deploys, log compactions and replica changes.
 Anyone can watch. Signed in with the bench token, you can also create databases (1, 4, 16 or 64 shards, in one
 region or around the world, with or without replicas in every region), run a command and see which shard and
-replica handled it, restart a shard, and start test traffic from Sender objects in one region or all (it stops by
-itself after 10 minutes).
+replica handled it, restart a shard, and start test traffic from Sender objects in one region or all. Test traffic
+stops by itself after 10 minutes, and its keys are sized to the database (50,000 per shard, `TEST_KEYS_PER_SHARD`),
+so it never fills a small one.
 
 How it fits together:
 

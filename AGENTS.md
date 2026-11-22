@@ -13,8 +13,13 @@ Rules for anyone, human or agent, changing this repo.
 - **Replicas get only committed writes, and a connection reads its own writes.** The replication stream
   (`Vfs.onAppend`) leaves through the primary's output gate; never send it any other way. A router path that writes
   must bracket the send with `#writeStart`/`#writeDone`, so that connection reads the shard from its primary until
-  `READ_YOUR_WRITES_MS` after the reply. Only retryable reads (read-only, non-blocking, outside MULTI/WATCH) may go
-  to a replica, so a failed replica read can go again to the primary.
+  `READ_YOUR_WRITES_MS` after the reply; a fan-out that writes counts for every shard (`#wroteAll`). Only
+  retryable reads (read-only, non-blocking, outside MULTI/WATCH) may go to a replica, so a failed replica read can
+  go again to the primary.
+- **A replica serves only while its stream lasts.** When its stream from the primary ends, the replica resets, so
+  it never serves data that has stopped updating and routers' open sockets to it close. Replicas run with
+  `import-mode` and no memory limit, and the stream is the import source: only the primary decides which keys
+  expire or go.
 - **A replica copy sees files that only grow.** No AOF rewrite may start while a copy runs (`Replicator.copying`), a
   copy waits for a rewrite that is running (`host.rewriting`), and a copy refuses an RDB base: it needs commands.
   Replica copies must never overlap a rewrite.
@@ -28,8 +33,9 @@ Rules for anyone, human or agent, changing this repo.
   deleted file stay in `vfs_chunk`, with the key in `vfs_trash`, until the host's sweep removes them. Chunk keys are
   a one-way change: code from before them can't read files written since.
 - **A dropped database stays dropped.** Its catalog row keeps `dropped`, so the name and its shards' names are never
-  reused, and each of its shards keeps a `dropped` table and never boots Valkey. Keep that check first in the
-  `ValkeyShard` constructor, and make every new entry point refuse a dropped shard (`#live()`).
+  reused, and each of its shards keeps a `dropped` table and never boots Valkey. The tombstone is stored before
+  anything is deleted. Keep that check first in the `ValkeyShard` constructor, and make every new entry point
+  refuse a dropped shard (`#live()`).
 - **Idle replication sleeps.** A primary retires its replicas after `REPL_IDLE_MS` with no client activity, so every
   new client entry point on `ValkeyShard` must count as activity (`#active()`), or the database can sleep under
   traffic that only reaches the new path. Retired replicas never serve reads.
@@ -40,7 +46,11 @@ Rules for anyone, human or agent, changing this repo.
   through `hold`/`release` on the host, so they count toward `SHARD_HIGH_WATER`, and a replica past `REPL_BACKLOG`
   is dropped. No unbounded queue, however unlikely its growth looks.
 - **A failure says what it knows.** When a shard resets mid-command, the client gets `LOST` ("may or may not have
-  run"), never a guess. Only read-only commands retry. A WATCH lost to a reset makes EXEC abort.
+  run"), never a guess. Only read-only commands retry. A WATCH lost to a reset makes EXEC abort. If Valkey throws
+  mid-command, the shard resets (`fatal` on `ValkeyHost`) rather than run on with memory it can't trust.
+- **One server, as clients see it.** Commands the router answers itself (connection state, fan-out, AUTH) are
+  refused inside MULTI (`NOT_IN_MULTI`), since queued they would reach one shard's connection, which may be a pooled
+  one. A new command the router handles itself goes in that set too. A transaction always runs on a socket.
 - **Clients can't tell the router from Valkey.** Errors and replies the router writes itself match Valkey
   byte-for-byte (`test/differential.mjs` compares 1 shard against N shards). Copy Valkey's wording from its source.
 

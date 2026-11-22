@@ -25,7 +25,11 @@ Where a database's shards go is fixed when it is created, like its shard count:
   `weur`, `eeur`, `me`, `afr`, `apac` and `oc`. The pub/sub shard stays at `LOCATION_HINT`.
 - Without one, shards are created in the `LOCATION_HINT` region, if one is set, instead of near their first caller.
 
-A location hint applies when an object is created; a shard that exists keeps its place. The router runs wherever
+A location hint applies when an object is created; a shard that exists keeps its place. Cloudflare has no Durable
+Objects in South America, Africa or the Middle East yet, so objects hinted to `sam`, `afr` or `me` run in a nearby
+region instead (eastern North America, western and eastern Europe), and replicas there sit next to that region's
+own ([Cloudflare's data location docs](https://developers.cloudflare.com/durable-objects/reference/data-location/)).
+The dashboard shows where each one actually runs. The router runs wherever
 the client's connection lands, so latency is the client's hop to the Worker plus the Worker's hop to the shard,
 plus one storage commit for a write ([measurements](measurements.md)).
 
