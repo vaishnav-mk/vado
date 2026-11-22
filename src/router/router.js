@@ -646,11 +646,18 @@ export class Router {
     this.#clearWatch();
     if (m.failed) return this.#reply(error("EXECABORT Transaction discarded because of previous errors."));
     if (broken) return this.#reply(this.proto === 3 ? NULL3 : NULL_ARRAY);
-    const s = this.#slot(), up = m.watched ? watchUp : this.#up(m.shard ?? 0);
-    this.#writeStart(up.index);
-    up.send(MULTI, noop);
-    for (const c of m.cmds) up.send(c, noop);
-    up.send(EXEC, (f) => { this.#writeDone(up.index); this.#resolve(s, f); });
+    const s = this.#slot(), i = m.shard ?? 0;
+    const send = () => {
+      // On a connection of its own: an RPC batch could end between MULTI and EXEC, on a pooled client.
+      const up = m.watched ? watchUp : this.#up(i, true);
+      this.#writeStart(up.index);
+      up.send(MULTI, noop);
+      for (const c of m.cmds) up.send(c, noop);
+      up.send(EXEC, (f) => { this.#writeDone(up.index); this.#resolve(s, f); });
+    };
+    // Earlier requests to the shard by RPC have no order with a socket: run the transaction after them.
+    if (!m.watched && this.#ups.get(i) instanceof RpcUpstream) this.#hold(this.#afterEarlierReplies(s).then(send));
+    else send();
   }
 
   #discard() {
