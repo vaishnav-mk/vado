@@ -1,16 +1,15 @@
 import { RespClient } from "../protocol/resp-client";
 import { serve } from "./serve";
+import { socketPair } from "./socket-pair";
 import type { ClientSocket } from "./types";
 
 /** A connection to database `name` through a Router in this isolate, as a service binding's would be (our own
  *  code: the shared password opens any database). */
 export function connectLocal(env: Env, name: string): ClientSocket {
-  const up = new TransformStream<Uint8Array, Uint8Array>(),
-    down = new TransformStream<Uint8Array, Uint8Array>();
+  const [client, server] = socketPair();
+  void serve(server, env, name, "binding");
 
-  void serve({ readable: up.readable, writable: down.writable }, env, name, "binding");
-
-  return { readable: down.readable, writable: up.writable };
+  return client;
 }
 
 /** A RespClient on database `name` through a Router in this isolate, signed in. */

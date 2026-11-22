@@ -72,6 +72,8 @@ async function serveRouter(socket: ClientSocket, env: Env, name: string, conn: L
     const w = socket.writable.getWriter();
     await w.write(enc.encode(`-ERR ${messageOf(cause)}\r\n`)).catch(noop);
     await w.close().catch(noop);
+    // Nothing reads the client's commands now; cancelling fails their writes instead of leaving them waiting.
+    await socket.readable.cancel().catch(noop);
 
     return;
   }
