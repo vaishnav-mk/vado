@@ -158,7 +158,8 @@ class Upstream {
   #frame(f) {
     this.lastUsed = this.router.now;
     if (this.instanceId === null) { this.instanceId = str(f.subarray(1, f.length - 2)); return; } // the greeting
-    if (this.passthrough) return this.passthrough(f);
+    // Replies owed to commands sent before the subscribe (CLIENT SETNAME, PUBLISH) come first, in order.
+    if (this.passthrough && !this.pending.length) return this.passthrough(f);
     if (f[0] === 62) return this.router.push(f); // RESP3 push
     const cb = this.pending.shift();
     this.sent.shift();
