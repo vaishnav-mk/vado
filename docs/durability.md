@@ -3,7 +3,7 @@
 ## How a write is stored
 
 Valkey runs with `appendonly yes` and `appendfsync always`. Its files live in a WASI filesystem backed by the shard
-object's SQLite (`src/shard/vfs.js`):
+object's SQLite (`packages/server/src/shard/vfs.js`):
 
 - A file is a set of rows of at most 1 MB (`VFS_CHUNK`, under SQLite's row cap).
 - Appends to the AOF are written to SQLite synchronously, by the write or the fsync that follows it
@@ -36,7 +36,7 @@ about 0.26 to 0.008 ([measurements](measurements.md)).
 ## AOF rewrites
 
 Valkey's own rewrite trigger is off (`auto-aof-rewrite-percentage 0`), and the shard picks the moment
-(`src/shard/shard.js`):
+(`packages/server/src/shard/shard.js`):
 
 - A rewrite is due once the incr file is at least 8 MB (`AOF_REWRITE_MIN`) and at least as big as the base, as
   Valkey's default rule.
@@ -47,8 +47,8 @@ Valkey's own rewrite trigger is off (`auto-aof-rewrite-percentage 0`), and the s
 - A shard that is appending checks its AOF every 2 s (`AOF_CHECK_MS`). No rewrite starts while a replica copy or
   another rewrite runs.
 
-wasm has no `fork()`, so the rewrite runs in a rewriter object instead of a child process (`src/shard/rewriter.js`,
-`wasm/patches/0004-host-aof-rewrite.patch`):
+wasm has no `fork()`, so the rewrite runs in a rewriter object instead of a child process (`packages/server/src/shard/rewriter.js`,
+`packages/wasm/valkey/patches/0004-host-aof-rewrite.patch`):
 
 1. Valkey opens a new incr file, as it does before forking, and offers the rewrite to the host. It offers it only
    while the AOF is on.
@@ -106,7 +106,7 @@ Pub/sub messages are not stored, as in Valkey. A message published while a subsc
 ## Read replicas
 
 Replicas hold nothing durable. A write is acknowledged once the primary has committed it, whatever its replicas
-have (`src/replication/replication.js`).
+have (`packages/server/src/replication/replication.js`).
 
 - **What a replica receives.** Every append to the primary's AOF incr file, in order (`Vfs.onAppend`). The stream
   leaves through the primary's output gate like its replies, so a replica only receives committed writes.
@@ -122,7 +122,7 @@ have (`src/replication/replication.js`).
   Its `+PONG` means the replica has run everything before it, and only then does the replica serve reads. A marker
   every 2 s (`REPL_TICK_MS`) measures each replica's lag. A replica that receives a new copy stops serving reads
   until it has all of it.
-- **A replica only follows.** Replicas run with `import-mode` (Redis gets it from `wasm/redis/patches/0005`) and no
+- **A replica only follows.** Replicas run with `import-mode` (Redis gets it from `packages/wasm/redis/patches/0005`) and no
   memory limit, so they never expire or
   evict keys of their own; reads still hide expired keys, and the primary's stream deletes them, as with Valkey's own
   replicas. A replica can't lose a key its primary still has, and a streamed write can't fail on the replica's
@@ -194,7 +194,6 @@ to notice. So a shard doesn't wait for it: it restarts itself as soon as it sees
 
 | Test | What must hold |
 | --- | --- |
-| `test/kill9.mjs` | `kill -9` of the runtime mid-write keeps every acknowledged write |
 | `test/watch-reset.mjs` | A reset between WATCH and EXEC aborts the transaction |
 | `test/hammer.mjs` with `CHAOS=1` | With shards aborted underneath: exact INCR counts, conserved WATCH/MULTI transfers, a lossless reliable queue, atomic Lua, and pipelines whose only failures are `LOST`. Anything that failed may or may not have run, so counts are bounded by acknowledged and acknowledged-plus-failed |
 | `durability` in the bench API | 20k acknowledged SETs (`n=` for more), abort every shard, read every key back |

@@ -38,7 +38,7 @@ every shard.
   `zset-max-listpack-entries`, `zset-max-listpack-value`, `zset-max-ziplist-entries`, `zset-max-ziplist-value`,
   `hll-sparse-max-bytes`, `stream-node-max-bytes`, `stream-node-max-entries`), `lfu-log-factor`, `lfu-decay-time`,
   `slowlog-log-slower-than`, `slowlog-max-len`, `latency-monitor-threshold`, `busy-reply-threshold`,
-  `lua-time-limit` and `activerehashing` (`CONFIG_SET` in `src/router/router.js`). Any other setting gets
+  `lua-time-limit` and `activerehashing` (`CONFIG_SET` in `packages/server/src/router/router.js`). Any other setting gets
   `ERR 'config set <name>' is not supported by the sharded router`. An allowed one goes to every primary shard, not
   to replicas or the pub/sub shard, and lasts until that shard restarts and boots with the Worker's settings again.
 - **`CONFIG` inside MULTI is refused.**
@@ -70,7 +70,7 @@ every shard.
 
 ## The bench API
 
-The Worker's HTTP API (`src/bench/bench.js`) needs `Authorization: Bearer <BENCH_TOKEN>` and is refused without
+The Worker's HTTP API (`packages/server/src/bench/bench.js`) needs `Authorization: Bearer <BENCH_TOKEN>` and is refused without
 `BENCH_TOKEN` set. With the token, anyone can:
 
 - list every database (`dbs`), create databases, and choose their placement and replica regions (`db`);
@@ -95,14 +95,14 @@ The dashboard is public to watch and needs signing in to change anything.
   shard and ready replica a second. The Watcher's response-time probe reads one key a second, which is client
   traffic, so that key's shard stays awake while watched. It writes the key only while someone signed in watches:
   anonymous viewers never write to a database.
-- **Signing in** takes `BENCH_TOKEN`. The dashboard sends it to `Admin.session()` and keeps only what comes back: an
-  expiring session string signed with the token (HMAC-SHA256, seven days), in an `HttpOnly`, `Secure`,
-  `SameSite=Strict` cookie. The token itself is never stored, and changing it signs everyone out.
-- **Changing things** (creating a database, running a command, restarting a shard, test traffic) checks the session
-  with `Admin.authorized()` on every call. A signed-in person can do what the bench token allows through these
-  paths, and the router's own checks still apply to commands. The dashboard refuses KEYS (it returns every key at
-  once), FLUSHALL and FLUSHDB, which belong in a client.
-- **`Admin`** is an RPC entrypoint, so only Workers on the account with a service binding to it can call it. It
+- **Signing in** is Cloudflare Access. An Access application on the Worker's `/signin` path does the login; the
+  Worker then verifies the Access JWT (the `Cf-Access-Jwt-Assertion` header, or the `CF_Authorization` cookie on
+  other paths) against the team's signing keys, `ACCESS_TEAM_DOMAIN` as issuer and `ACCESS_AUD` as audience.
+  Signing out is Access's `/cdn-cgi/access/logout`.
+- **Changing things** (creating a database, running a command, restarting a shard, test traffic) verifies the JWT
+  on every call, in the server function, before it reaches `Admin`. The router's own checks still apply to
+  commands. The dashboard refuses KEYS (it returns every key at once), FLUSHALL and FLUSHDB, which belong in a client.
+- **`Admin`** runs in the same Worker and has no URL of its own: only the dashboard's server functions call it. It
   returns no password hashes. Test traffic it starts stops by itself after ten minutes (`TEST_TRAFFIC_MS`), or when
   nobody is watching that database any more.
 

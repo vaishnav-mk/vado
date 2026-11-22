@@ -4,123 +4,93 @@ Valkey, or Redis, on Cloudflare Durable Objects.
 
 Each shard is a Durable Object running real Valkey 9.1, compiled to WebAssembly, with its append-only file in the
 object's SQLite. A router in the Worker spreads keys over the shards by hash slot, so `valkey-cli`, ioredis and
-`valkey-benchmark` see one ordinary Valkey server. A database can run Redis 8.12 instead, built the same way.
+`valkey-benchmark` see one ordinary server. One Worker carries the database and a live dashboard.
 
 Experimental. An independent project, not an official Cloudflare or Valkey product.
+
+[![Deploy to Cloudflare](https://deploy.workers.cloudflare.com/button)](https://deploy.workers.cloudflare.com/?url=https://github.com/vaishnav-mk/vado)
 
 ![The dashboard watching a 64-shard database with a read replica of every shard in every region](docs/images/dashboard.jpg)
 
 ## What you get
 
-- Real Valkey: commands, replies and errors are Valkey's own. Clients connect over TCP, a WebSocket or a service
-  binding. Or real Redis: each database is created with one or the other, and everything below works on both.
-- Durable writes. A reply leaves only after its AOF entry is committed to SQLite, and under load many writes share
-  one commit.
-- Shards in the regions you pick, each with read replicas in other regions if you want them. Routers read from the
-  nearest copy, a connection always reads its own writes, and `WAIT` counts the replicas that have them.
-- AOF rewrites in a helper object, so a shard keeps serving while Valkey compacts its log.
-- Deploys that fail no commands. Busy shards restart onto the new code within about 30 s, after answering what they
-  have read, and routers send the rest again.
+- Real Valkey: its commands, replies and errors. Clients connect over TCP, a WebSocket or a service binding.
+- Durable writes: a reply leaves only after its AOF entry is committed to SQLite.
+- Shards in the regions you pick, with read replicas in other regions if you want them. A connection always reads
+  its own writes, and `WAIT` counts the replicas that have them.
+- Deploys that fail no commands: shards restart onto new code after answering what they have read.
 - A password per database, and databases that can be dropped for good.
-- A live dashboard at the Worker's URL: shards, replicas on a spinning globe, where traffic enters, response times
-  and a timeline. Anyone can watch. Signing in lets you create databases, run commands, restart shards and send
-  test traffic.
+- A dashboard at the Worker's URL: shards, replicas on a globe, where traffic enters, response times and a timeline.
+  Anyone can watch; people you let in through Cloudflare Access can create databases, run commands and restart shards.
 
-## How it works
+## Set up
 
-```mermaid
-flowchart LR
-  client["Client"] -- "RESP over TCP,<br/>WebSocket or binding" --> router["Router<br/>(one per connection)"]
-  router -- "by hash slot" --> shards["Shards<br/>valkey.wasm, AOF in SQLite"]
-  shards -- "AOF appends" --> replicas["Read replicas<br/>(memory only)"]
-  shards -- "AOF rewrites" --> rewriters["Rewriters"]
-  router -- "nearby reads" --> replicas
-  router -- "which database, how many shards" --> catalog["Catalog"]
-```
+First create the Access application ([sign in](#sign-in)). Then press **Deploy to Cloudflare** above: it copies this
+repo into your GitHub account, asks for `VALKEY_PASSWORD`, `ACCESS_TEAM_DOMAIN` and `ACCESS_AUD`, builds and deploys.
+The Worker's URL is the dashboard.
 
-Each client connection gets a router. It parses RESP, finds the hash slot of each key, and sends the command to
-the shard that owns it, or to a nearby replica for a read that can go there. A shard runs Valkey with
-`appendfsync always`. Its files live in SQLite, so the Durable Object's output gate holds each reply until the write
-under it is stored. Replicas are sent the shard's AOF as a starting copy, then every append, and keep it all in
-memory. More in [architecture](docs/architecture.md) and [life of a command](docs/lifecycle.md).
-
-## Quick start
-
-Requires Node and `wrangler`. Run it locally on `workerd`:
+Or from a checkout:
 
 ```sh
 npm install
-scripts/local.sh fresh                  # TCP 127.0.0.1:6380, HTTP 127.0.0.1:8787
-valkey-cli -p 6380 SET hello world
-scripts/test-local.sh                   # the local suite
+npx wrangler secret put VALKEY_PASSWORD   # what clients send with AUTH <database> <password>
+npm run deploy -- --var ACCESS_TEAM_DOMAIN:https://<team>.cloudflareaccess.com --var ACCESS_AUD:<tag>
 ```
 
-Deploy it:
+Locally, `cp .dev.vars.example .dev.vars && npm run dev` serves it at http://localhost:5173.
+
+## Connect
+
+The username picks the database; a new one is created on first use.
 
 ```sh
-npm --prefix dashboard install
-wrangler secret put VALKEY_PASSWORD
-wrangler secret put BENCH_TOKEN         # optional: the bench API and dashboard sign-in
-npm run deploy                          # this Worker, then the dashboard
+npx vado-shim wss://<your-worker>.workers.dev/ws 6379          # from a checkout: a local TCP port for any client
+valkey-cli -p 6379 --user mydb --pass "$VALKEY_PASSWORD"
 ```
 
-On a new account the two Workers bind to each other, so the first deploy goes in three steps
-([operations](docs/operations.md#watch-it-live)). Then connect a stock client:
+From another Worker, bind this one (`"services": [{ "binding": "VALKEY", "service": "vado" }]`) and call
+`env.VALKEY.connect("mydb:6379")`, or use ioredis with `bindingConnector` from [`packages/client`](packages/client).
+For raw TCP from outside Cloudflare, put [Spectrum](docs/operations.md#tcp) in front.
 
-```sh
-node scripts/ws-shim.mjs wss://<your-worker>.workers.dev/ws 6379
-valkey-cli -p 6379 --user mydb --pass "$VALKEY_PASSWORD"     # the username picks the database
-```
+## Sign in
 
-For raw TCP, put a TCP Worker or Spectrum in front. From another Worker, use a service binding and
-`env.VALKEY.connect("mydb:6379")`, or ioredis with `bindingConnector` from `src/client/ioredis.js`. Details in
-[build, deploy and operate](docs/operations.md).
+Watching is public; changes need signing in with [Cloudflare Access](https://developers.cloudflare.com/cloudflare-one/access-controls/policies/).
+In Zero Trust, add a **self-hosted** application for the Worker's hostname with the path `signin`, and a policy that
+allows you. Its audience tag is `ACCESS_AUD`; your team domain (`https://<team>.cloudflareaccess.com`) is
+`ACCESS_TEAM_DOMAIN`. Protecting only `/signin` keeps the WebSockets (`/live`, `/ws`) open; the Worker checks the
+Access JWT on every change.
+
+## Redis
+
+A database can run Redis 8.12 instead of Valkey, chosen when it is created. Redis's wasm doubles the upload and is
+distributed under the AGPLv3, so it is in the build only with `VADO_REDIS=1 npm run deploy`.
 
 ## Limits
 
-- **Size.** 64 MB of data per shard and about 8 MB per request. A database's shard count, regions and replicas are
-  fixed when it is created, and a shard's wasm memory never shrinks after deletes. See
-  [shards and limits](docs/scaling.md).
-- **Auth.** There is one shared password (`VALKEY_PASSWORD`), plus an optional password per database, and no ACLs.
-  Set the password before exposing a TCP Worker, and use TLS. `CONFIG SET` takes only settings that change how data
-  behaves; `SAVE`, `BGREWRITEAOF` and `ACL` are refused. See [security](docs/security.md).
-- **Failures.** A command in flight when its shard resets gets `ERR shard connection lost; the command may or may
-  not have run`. Only read-only commands retry. See [durability and failures](docs/durability.md).
-- **Cluster rules.** Multi-key commands across slots get `CROSSSLOT`, as in Valkey Cluster, except MGET, MSET, DEL,
-  UNLINK, EXISTS and TOUCH, which the router splits. Use `{hashtags}`, or a 1-shard database.
-- **Replicas.** A read from a replica can miss another connection's write for up to one replication lag, unless the
-  writer `WAIT`s. Each replica also costs its primary write throughput: about 50k SET/s per shard with 9 replicas,
-  against about 130k with none. See [read replicas](docs/durability.md#read-replicas).
-- **Latency.** It is the client's hop to the Worker, plus the Worker's hop to the shard, plus a storage commit for a
-  write. Put shards near your clients with `LOCATION_HINT` or a database's regions. See
-  [measurements](docs/measurements.md).
+- 64 MB of data per shard and about 8 MB per request. Shard count, regions and replicas are fixed at creation.
+- Multi-key commands across slots get `CROSSSLOT`, as in Valkey Cluster, except MGET, MSET, DEL, UNLINK, EXISTS and
+  TOUCH, which the router splits. Use `{hashtags}`, or a 1-shard database.
+- A command in flight when its shard resets gets `ERR shard connection lost; the command may or may not have run`.
+- A replica read can miss another connection's write for one replication lag, unless the writer `WAIT`s.
+- No ACLs; `CONFIG SET` takes only settings that change how data behaves.
+
+More in [scaling](docs/scaling.md), [durability](docs/durability.md) and [security](docs/security.md).
 
 ## Repository
 
 | Path | What |
 | --- | --- |
-| [`src/`](src) | The Worker: router, shards, replication, catalog, the dashboard's backend, and the bench API |
-| [`dashboard/`](dashboard) | The dashboard Worker (TanStack Start, React, Kumo) |
-| [`wasm/`](wasm) | The Valkey and Redis builds: patches, the shared WASI shim and the committed `valkey.wasm` and `redis/redis.wasm`, which CI rebuilds and checks |
-| [`test/`](test) | Client-level tests: ioredis, RESP3, 1 vs N shards, `kill -9` durability and a concurrency hammer |
-| [`scripts/`](scripts) | Local runs, the WebSocket-to-TCP shim and the colo table generator |
-| [`docs/`](docs) | How it works, how to run it, and what it measured |
+| [`src/`](src) | The Worker's entry (`server.ts`) and the dashboard (TanStack Start, React, Kumo) |
+| [`packages/server`](packages/server) | The database: router, shards, replication, catalog, the dashboard's backend and the bench API |
+| [`packages/client`](packages/client) | ioredis over a service binding, and the WebSocket-to-TCP shim |
+| [`packages/wasm`](packages/wasm) | Valkey and Redis built to wasm: patches, build scripts and the committed binaries CI rebuilds |
+| [`test/`](test) | End-to-end tests against a running Worker |
+| [`docs/`](docs) | [Architecture](docs/architecture.md), [life of a command](docs/lifecycle.md), [operations](docs/operations.md), [measurements](docs/measurements.md) |
 
-Rules for changing the code are in [AGENTS.md](AGENTS.md).
-
-## Docs
-
-- [Architecture](docs/architecture.md)
-- [Life of a command](docs/lifecycle.md)
-- [Durability and failures](docs/durability.md)
-- [Shards, placement and limits](docs/scaling.md)
-- [Security](docs/security.md)
-- [Build, deploy and operate](docs/operations.md)
-- [Measurements](docs/measurements.md)
+`npm run check` lints, formats and type-checks; `npm test` runs the unit tests. Rules for changing the code are in
+[AGENTS.md](AGENTS.md).
 
 ## License
 
-[Apache-2.0](LICENSE). `wasm/valkey.wasm` is a build of Valkey and valkey-wasm, both BSD-3-Clause; see
-[NOTICE](NOTICE) and [wasm/](wasm/README.md). `wasm/redis/redis.wasm` is a build of Redis 8, which is not BSD: it is
-distributed under the AGPLv3, which applies to anyone who runs the Redis flavour for others
-([wasm/redis/](wasm/redis/README.md)).
+[Apache-2.0](LICENSE). `valkey.wasm` is a build of Valkey and valkey-wasm, both BSD-3-Clause; `redis.wasm` is a build
+of Redis 8, distributed under the AGPLv3. See [NOTICE](NOTICE).
