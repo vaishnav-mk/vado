@@ -42,6 +42,7 @@ export class Replicator {
   get configured() { return this.#targets.size > 0; }
   get copying() { return this.#copying > 0; }
   rdbDue = false; // copies are done: the next quiet moment should rewrite the base back to RDB
+  #basing = null; // the rewrite to a command base that copies starting now wait for (#commandBase)
 
   /** Sets the regions this shard keeps replicas in, remembered across restarts. */
   configure(regions) {
@@ -153,16 +154,25 @@ export class Replicator {
 
   #files() { return aofFiles(this.#host); }
 
+  // Commands, not RDB, in the base file (a replica runs the files as commands), and no rewrite while a copy
+  // runs: the files only grow. Once no copy is running the base goes back to RDB, which is ~6x smaller, so
+  // each later rewrite (one commit that holds every reply) blocks the shard ~6x less. Shared: copies to every
+  // replica start together, and one rewrite serves them all (each starting its own, all but the first found
+  // one already running, gave up, and retried into the next RDB rewrite).
+  #commandBase() {
+    this.#basing ??= (async () => {
+      await this.#host.execBatch(command(["CONFIG", "SET", "aof-use-rdb-preamble", "no"]), 1);
+      await this.#host.rewriting; // a rewrite that is running would replace the files mid-copy
+      if (this.#files().base?.endsWith(".rdb")) { await this.#host.execBatch(command(["BGREWRITEAOF"]), 1); await this.#host.rewriting; }
+    })().finally(() => { this.#basing = null; });
+    return this.#basing;
+  }
+
   async #sync(t) {
     Object.assign(t, { phase: "copying", since: Date.now(), queue: [], queued: 0, inflight: 0, out: [], writing: false, marks: [], ready: false, error: null });
     this.#copying++;
     try {
-      // Commands, not RDB, in the base file (a replica runs the files as commands), and no rewrite while the
-      // copy runs: the files only grow. Once no copy is running the base goes back to RDB, which is ~6x
-      // smaller, so each later rewrite (one commit that holds every reply) blocks the shard ~6x less.
-      await this.#host.execBatch(command(["CONFIG", "SET", "aof-use-rdb-preamble", "no"]), 1);
-      await this.#host.rewriting; // a rewrite that is running would replace the files mid-copy
-      if (this.#files().base?.endsWith(".rdb")) { await this.#host.execBatch(command(["BGREWRITEAOF"]), 1); await this.#host.rewriting; }
+      await this.#commandBase();
       if (t.phase !== "copying") return;
       if (this.#files().base?.endsWith(".rdb")) throw new Error("the base is still RDB (its rewrite failed)");
       // Sizes now, synchronously: appends from here on are queued for this replica.
