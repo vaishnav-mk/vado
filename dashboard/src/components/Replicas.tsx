@@ -4,6 +4,7 @@ import { memo } from "react";
 import { Badge, LayerCard, Text, Tooltip } from "@cloudflare/kumo";
 import { Legend } from "./Legend";
 import { REPLICA, REPLICA_WORDS, replicaColor, replicaWords } from "../lib/colors";
+import { SLEEP_NOTE } from "../lib/replicas";
 import { ms, num, plural } from "../lib/format";
 import { REGION_NAMES, WORLD } from "../lib/places";
 import type { LiveState, Replica, ReplicaState } from "../lib/types";
@@ -41,7 +42,7 @@ export function Replicas({ state, reads }: { state: LiveState | null; reads: num
       <LayerCard.Primary className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_auto]">
         <div className="flex min-w-0 flex-col gap-4">
           <div className="grid grid-cols-3 gap-3">
-            <div><div className="text-xl font-semibold tabular-nums">{ready} of {all.length}</div><Text variant="secondary" size="sm">ready</Text></div>
+            <div><div className="text-xl font-semibold tabular-nums">{ready} of {all.length}</div><Text variant="secondary" size="sm">serving reads</Text></div>
             <div><div className="text-xl font-semibold tabular-nums">{ready ? ms(worst) : "–"}</div><Text variant="secondary" size="sm">behind, at most</Text></div>
             <div><div className="text-xl font-semibold tabular-nums">{reads ? `${Math.min(100, Math.round((100 * served) / reads))}%` : "–"}</div><Text variant="secondary" size="sm">of reads served by replicas</Text></div>
           </div>
@@ -58,6 +59,7 @@ export function Replicas({ state, reads }: { state: LiveState | null; reads: num
           </div>
           <Text variant="secondary" size="sm">
             {plural(all.length, "replica")}: a copy of every shard in {plural(regions.length, "region")}. Reads go to the nearest copy; writes go to the shard and are streamed out.
+            {counts.asleep ? ` ${SLEEP_NOTE}` : ""}
           </Text>
         </div>
         <div className="max-h-80 overflow-auto lg:max-h-96">

@@ -4,6 +4,7 @@ import { NewDatabase } from "./NewDatabase";
 import { SignIn } from "./SignIn";
 import { plural } from "../lib/format";
 import type { Connection } from "../lib/live";
+import { replicaCounts, replicaLine } from "../lib/replicas";
 import type { Database, LiveState } from "../lib/types";
 
 function describe(d: Database) {
@@ -21,11 +22,11 @@ function Health({ state, connection }: { state: LiveState | null; connection: Co
     starting: ["neutral", "Starting"],
   } as const;
   const [variant, label] = health[state.health] ?? health.starting;
-  const t = state.totals;
+  const reps = replicaCounts(state.shards), line = replicaLine(reps);
   return (
     <div className="flex flex-wrap items-center gap-2">
       <Badge variant={variant} appearance="dot">{label}</Badge>
-      {t?.replicas > 0 && <Badge variant={t.replicasReady === t.replicas ? "success" : "warning"} appearance="dot">{t.replicasReady} of {plural(t.replicas, "replica")} ready</Badge>}
+      {reps.total > 0 && <Badge variant={line.variant} appearance="dot">{line.text}</Badge>}
       {state.test && <Badge variant="neutral" appearance="dot">Test traffic on</Badge>}
     </div>
   );
