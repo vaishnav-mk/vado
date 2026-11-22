@@ -15,12 +15,7 @@ async function open(env, q, stallMs) {
     const db = await database(env, name);
     return new RespClient(shardStub(env, db, Number(q.get("shard") ?? 0)).connect("valkey:6379"), stallMs);
   }
-  const c = new RespClient(env.SELF.connect(`${name}:6379`), stallMs);
-  if (env.VALKEY_PASSWORD) {
-    const [r] = await c.call(["AUTH", env.VALKEY_PASSWORD]);
-    if (r?.err) throw new Error(`AUTH: ${r.err}`);
-  }
-  return c;
+  return RespClient.open(env, name, stallMs);
 }
 
 const info = async (c, section) =>

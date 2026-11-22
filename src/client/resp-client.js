@@ -36,4 +36,14 @@ export class RespClient {
   }
 
   close() { this.#w.close().catch(() => {}); }
+
+  /** A connection to database `name` through this Worker's own router (the SELF binding), signed in. */
+  static async open(env, name, stallMs) {
+    const c = new RespClient(env.SELF.connect(`${name}:6379`), stallMs);
+    if (env.VALKEY_PASSWORD) {
+      const [r] = await c.call(["AUTH", env.VALKEY_PASSWORD]);
+      if (r?.err) { c.close(); throw new Error(`AUTH: ${r.err}`); }
+    }
+    return c;
+  }
 }
