@@ -2,7 +2,7 @@
 // the commands that redo it. So a replica is sent the AOF files as a starting copy, then every append
 // as it happens, over one socket per replica. Replicas keep their data in memory only; one that
 // resets starts empty, and its primary copies it again.
-import { REPL_BACKLOG, REPL_IDLE_MS, REPL_RETRY_MS, REPL_STUCK_MS, REPL_TICK_MS } from "../constants.js";
+import { REPL_BACKLOG, REPL_COPY_MS, REPL_IDLE_MS, REPL_RETRY_MS, REPL_STUCK_MS, REPL_TICK_MS } from "../constants.js";
 import { command, concat } from "../protocol/resp.js";
 
 const REPLY_OFF = command(["CLIENT", "REPLY", "OFF"]);
@@ -85,19 +85,20 @@ export class Replicator {
     return true;
   }
 
-  /** Called from the shard's alarm: starts copies for replicas that need one, and measures the others. */
+  /** Called from the shard's alarm: starts copies for replicas that need one, and measures the others. Copies
+   *  run on after it returns, so one slow copy doesn't hold up the others' markers or the next alarm. */
   async tick() {
-    const now = Date.now(), copies = [];
+    const now = Date.now();
     if (this.#asleep || (this.#targets.size && (await this.#sleepIfIdle(now)))) return;
     for (const t of this.#targets.values()) {
-      if (t.phase === "idle" && now >= t.retryAt) copies.push(this.#sync(t));
+      if (t.phase === "idle" && now >= t.retryAt) this.#sync(t).catch((e) => console.log(`replica ${this.#name} -> ${t.region} copy: ${e.message}`));
+      else if (t.phase === "copying" && now - t.since > REPL_COPY_MS) this.#drop(t, "the copy took too long");
       else if (t.phase === "live") {
         if (t.marks.length && now - t.marks[0].at > REPL_STUCK_MS) { this.#drop(t, "stopped answering"); continue; }
         if (!t.marks.length) { t.marks.push({ at: now }); this.#send(t, MARK); }
       }
     }
     if (this.#targets.size) await this.#ctx.storage.setAlarm(Date.now() + REPL_TICK_MS);
-    await Promise.all(copies);
   }
 
   /** How many replicas have applied every append so far: a marker goes behind everything already sent to each

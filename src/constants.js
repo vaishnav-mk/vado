@@ -109,6 +109,9 @@ export const REPL_TICK_MS = 2_000;
 export const REPL_RETRY_MS = 5_000;
 /** A marker unanswered this long means the replica is stuck; it is dropped and copied again. */
 export const REPL_STUCK_MS = 60_000;
+/** A copy still running after this long is dropped and tried again: a replica that stopped reading would
+ *  otherwise hold it, and the AOF rewrites that wait for copies, forever. A 64 MB copy takes seconds. */
+export const REPL_COPY_MS = 5 * 60_000;
 // A primary with no client activity or writes for this long, whose replicas haven't been read for this long
 // either, retires its replicas and stops its alarm, so an idle replicated database sleeps. Activity wakes it.
 export const REPL_IDLE_MS = 10 * 60_000;
