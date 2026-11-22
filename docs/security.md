@@ -38,7 +38,7 @@ every shard.
   `zset-max-listpack-entries`, `zset-max-listpack-value`, `zset-max-ziplist-entries`, `zset-max-ziplist-value`,
   `hll-sparse-max-bytes`, `stream-node-max-bytes`, `stream-node-max-entries`), `lfu-log-factor`, `lfu-decay-time`,
   `slowlog-log-slower-than`, `slowlog-max-len`, `latency-monitor-threshold`, `busy-reply-threshold`,
-  `lua-time-limit` and `activerehashing` (`CONFIG_SET` in `packages/server/src/router/router.js`). Any other setting gets
+  `lua-time-limit` and `activerehashing` (`CONFIG_SET` in `packages/server/src/router/command-sets.ts`). Any other setting gets
   `ERR 'config set <name>' is not supported by the sharded router`. An allowed one goes to every primary shard, not
   to replicas or the pub/sub shard, and lasts until that shard restarts and boots with the Worker's settings again.
 - **`CONFIG` inside MULTI is refused.**
@@ -70,18 +70,16 @@ every shard.
 
 ## The bench API
 
-The Worker's HTTP API (`packages/server/src/bench/bench.js`) needs `Authorization: Bearer <BENCH_TOKEN>` and is refused without
+The Worker's HTTP API (`packages/server/src/bench/bench.ts`) needs `Authorization: Bearer <BENCH_TOKEN>` and is refused without
 `BENCH_TOKEN` set. With the token, anyone can:
 
-- list every database (`dbs`), create databases, and choose their placement and replica regions (`db`);
+- create databases, and choose their placement and replica regions (`db`), or drop them for good (`drop`);
 - read every shard's and replica's stats and Valkey INFO (`stats`, `shards`), and run any command (`run`), straight
   to a shard with `via=shard`, past the router's checks above;
 - fill or flush shards (`fill`, `frag`), abort shards or replicas (`abort`, `durability`), and repoint replication
   (`replicate`);
-- run load from many invocations and from Sender objects in any region (`loadgen`, `send`), which you pay for;
-- read what each isolate reported to the Pulse object (`pulse`): every open connection's database and command
-  count, plus the client's remote address when the socket reports one, and for WebSocket clients the approximate
-  location Cloudflare attaches to the request (city, country, coordinates). Pulse keeps this in memory only.
+- run load, from the Worker or from Sender objects in any region (`throughput`, `latency`, `churn`, `send`), which
+  you pay for.
 
 Treat the token like the password, or leave `BENCH_TOKEN` unset in a deployment you care about.
 

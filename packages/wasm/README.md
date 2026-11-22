@@ -1,27 +1,27 @@
-# wasm/
+# @vado/wasm
 
 Builds `valkey.wasm`, Valkey compiled to WebAssembly (WASI preview1, reactor model), from pristine upstream source.
 [`redis/`](redis/README.md) builds `redis.wasm` from Redis the same way, with the same shims.
 
 ```sh
-WASI_SDK=/path/to/wasi-sdk-34.0 wasm/build.sh                      # writes wasm/build/valkey.wasm
-WASI_SDK=/path/to/wasi-sdk-34.0 ALLOCATOR=mimalloc wasm/build.sh
+WASI_SDK=/path/to/wasi-sdk-34.0 packages/wasm/valkey/build.sh   # writes packages/wasm/valkey/build/valkey.wasm
+WASI_SDK=/path/to/wasi-sdk-34.0 packages/wasm/redis/build.sh    # writes packages/wasm/redis/build/redis.wasm
 ```
 
-Needs wasi-sdk 34, binaryen's `wasm-opt` on `PATH`, `curl`, `tar` and `patch`. The script downloads Valkey 9.1.1 (and
-mimalloc, if selected) into `wasm/.cache/`, checks the sha256, extracts a fresh tree, applies the patches in order,
+Needs wasi-sdk 34, binaryen's `wasm-opt` on `PATH`, `curl`, `tar` and `patch`. The script downloads Valkey 9.1.1 into
+`packages/wasm/.cache/`, checks the sha256, extracts a fresh tree, applies the patches in order,
 compiles Valkey with the shims in `wasi/`, links, and runs `wasm-opt`. Every run starts clean.
 
 | Variable    | Default    | Meaning                                              |
 | ----------- | ---------- | ---------------------------------------------------- |
 | `WASI_SDK`  | (required) | wasi-sdk install directory                           |
-| `ALLOCATOR` | `libc`     | `libc` or `mimalloc`                                 |
 | `OPT`       | `-O3`      | one optimization level, passed to clang and wasm-opt |
 
 ## Layout
 
-- `build.sh` pins the Valkey and mimalloc versions and their checksums.
-- `patches/` is applied to every build:
+- `common.sh` holds the steps both builds share: the pinned download and its sha256 check, compiler flags, compile,
+  link and `wasm-opt`. `valkey/build.sh` pins the Valkey version and checksum.
+- `valkey/patches/` is applied in order:
   - `0001-ae-wasi-backend.patch`: with `HAVE_WASI_AE`, `ae.c` includes `wasi/ae_wasi.c`, a poll backend over the host's
     `poll` import that never blocks.
   - `0002-reactor-main.patch`: `main()` returns after init instead of entering `aeMain`. The host runs the event loop
@@ -38,53 +38,25 @@ compiles Valkey with the shims in `wasi/`, links, and runs `wasm-opt`. Every run
     appears to exit by itself, and `kill()` fail with `ESRCH`, so killing the rewrite doesn't wait for a process.
   - `0005-utc-log-times.patch`: log lines in UTC. WASI has no time zones, and Valkey read its offset from a
     `gettimeofday()` argument WASI never fills in, so log dates came out as garbage.
-- `patches/mimalloc/` is applied only with `ALLOCATOR=mimalloc`:
-  - `0001-zmalloc-mimalloc.patch`: a `USE_MIMALLOC` branch in zmalloc. It calls `mi_malloc`, `mi_calloc`,
-    `mi_realloc` and `mi_free`, sizes blocks with `mi_usable_size`, and INFO shows `mem_allocator:mimalloc-3.7.0`.
 - `wasi/` holds the shims: sockets over host imports (`sock_shim.c`, `host.h`), the reactor exports (`reactor.c`),
-  synchronous bio and io-threads plus other missing libc pieces (`stubs.c`), setjmp/longjmp for Lua (`wasm_sjlj.c`),
-  and headers the WASI sysroot lacks. Their comments call the JS side "the bridge"; here that is `src/shard/valkey-host.js`.
+  synchronous bio and io-threads plus other missing libc pieces (`valkey/stubs.c`), setjmp/longjmp for Lua (`wasm_sjlj.c`),
+  and headers the WASI sysroot lacks. Their comments call the JS side "the bridge"; here that is `packages/server/src/shard/host/`.
 
-## Allocators
+## Allocator
 
-`libc` uses wasi-libc's dlmalloc. zmalloc asks it for `malloc_usable_size` instead of keeping an 8-byte size prefix
-per allocation. `wasm/valkey.wasm` is this build.
+The build uses wasi-libc's dlmalloc. zmalloc asks it for `malloc_usable_size` instead of keeping an 8-byte size prefix
+per allocation.
 
-`mimalloc` links mimalloc 3.7.0 as one object (`src/static.c`) built with `MI_MALLOC_OVERRIDE`, so it also defines
-`malloc`, `free`, `calloc`, `realloc`, `posix_memalign`, `aligned_alloc`, `malloc_usable_size` and the `__libc_*`
-entry points. wasi-libc's dlmalloc is never linked: Lua (which allocates with `realloc` and `free`), libc and Valkey
-share one heap, and only mimalloc grows linear memory. It is built with:
-
-- `MI_SECURE=0 MI_DEBUG=0 MI_STATS=0 MI_PADDING=0 MI_GUARDED=0 MI_PROFILE=0`: no hardening, assertions, statistics,
-  block padding, guard pages or sampling. (3.x spells `MI_STAT` as `MI_STATS`.)
-- `MI_DEFAULT_ARENA_RESERVE=65536` (KiB). mimalloc grows memory an arena at a time. wasm can't reserve address space
-  without committing it, so mimalloc takes a quarter of this value, and a wasm32 arena is at least 16 MiB (256 slices
-  of 64 KiB). The default would give 32 MiB arenas, which can overshoot a 64 to 96 MB heap by up to 32 MiB; this
-  gives 16 MiB. Smaller arenas would need a different bitmap geometry (`MI_BCHUNK_BITS_SHIFT`), less tested on
-  32-bit.
-
-The mimalloc build adds one import, `wasi_snapshot_preview1.random_get` (it seeds mimalloc's keys), which the host
-provides. Its exports match the libc build's.
-
-What to watch when trying it:
-
-- Linear memory starts larger, since allocations come from arenas of at least 16 MiB: 34 MB at boot in production,
-  against 2.6 MB with dlmalloc.
-- wasm memory never shrinks. Freed arena space is reused, but an allocation that fits no arena reserves a new one of
-  its size plus up to 16 MiB: a 20 MiB hashtable resize that misses gets a 48 MiB arena.
-- `mi_usable_size` returns the whole size-class block (classes are 12.5% apart), and zmalloc counts that, so
-  `used_memory` and maxmemory accounting read higher than with dlmalloc for the same data. Partly empty pages aren't
-  counted at all; the real footprint is the wasm memory size.
-
-Measured in production with the bench `frag` probe ([measurements](../docs/measurements.md)), linear memory was
-1.08-1.29x Valkey's `used_memory` with dlmalloc, flat across rounds of deleting and rewriting half the keys, and
-1.6-4.3x with mimalloc. So `wasm/valkey.wasm` stays on dlmalloc.
+A mimalloc build was tried and measured in production with the bench `frag` probe
+([measurements](../../docs/measurements.md)): linear memory was 1.6-4.3x Valkey's `used_memory` with mimalloc, against
+1.08-1.29x with dlmalloc (flat across rounds of deleting and rewriting half the keys), and it started at 34 MB instead
+of 2.6 MB because it allocates in arenas of at least 16 MiB. wasm memory never shrinks, so the option was removed.
 
 ## Reproducibility
 
 The downloads are pinned by sha256, the link order uses the C collation, and assertion file names (`__FILE__`) are
 relative to the Valkey tree, so the same wasi-sdk and binaryen give the same bytes on any machine.
-`wasm/valkey.wasm` is this script's `ALLOCATOR=libc` output, and a fresh build reproduces it byte for byte.
+`valkey/valkey.wasm` is this script's output, and a fresh build reproduces it byte for byte.
 
 Checked with wasi-sdk 34 and binaryen 133 on three hosts: macOS arm64 (wasi-sdk release, Homebrew binaryen), and
 Linux arm64 and x86_64 in `ubuntu:24.04` (both projects' release builds). All gave the committed file then;
@@ -92,13 +64,13 @@ the current one is 1,940,632 bytes, sha256 `aa27bd1b67b77fd4e8f8ef8fdfe7dd1bf6d6
 
 ## Pipeline
 
-`.github/workflows/wasm.yml` runs on pushes and pull requests that touch `wasm/` or the workflow, once for Valkey and once
-for Redis (`wasm/redis/`, the same checks against its own files). On ubuntu-latest it installs
+`.github/workflows/wasm.yml` runs on pushes and pull requests that touch `packages/wasm/` or the workflow, once for Valkey and once
+for Redis (`packages/wasm/redis/`, the same checks against its own files). On ubuntu-latest it installs
 wasi-sdk 34 and binaryen `version_133` (sha256-pinned, `.github/actions/wasm-toolchain`), runs `build.sh`, and fails
 unless:
 
-- `wasm/build/valkey.wasm` is byte-identical to the committed `wasm/valkey.wasm`, and
-- its imports and exports match `interface.txt`, the list of what the JS host (`src/shard/valkey-host.js`) must
+- `packages/wasm/valkey/build/valkey.wasm` is byte-identical to the committed `packages/wasm/valkey/valkey.wasm`, and
+- its imports and exports match `interface.txt`, the list of what the host (`packages/server/src/shard/host/`) must
   provide and may call. A patch that changes that contract shows up as a diff of names, not only as new bytes.
 
 On failure it prints the interface diff and uploads the build as the `valkey-wasm` artifact.
@@ -106,8 +78,8 @@ On failure it prints the interface diff and uploads the build as the `valkey-was
 `interface.mjs` prints the list for a module, or compares it (Node, no dependencies):
 
 ```sh
-node wasm/interface.mjs [file.wasm] > wasm/interface.txt   # default file: wasm/valkey.wasm
-node wasm/interface.mjs wasm/build/valkey.wasm --check wasm/interface.txt
+node packages/wasm/interface.mjs [file.wasm] > packages/wasm/valkey/interface.txt   # default file: packages/wasm/valkey/valkey.wasm
+node packages/wasm/interface.mjs packages/wasm/valkey/build/valkey.wasm --check packages/wasm/valkey/interface.txt
 ```
 
 `.github/workflows/valkey-release.yml` runs weekly. If Valkey has a release newer than `build.sh` pins, it runs
@@ -117,16 +89,16 @@ change. It doesn't commit or open a PR.
 To bump Valkey:
 
 ```sh
-wasm/update.sh 9.2.0          # rewrites VALKEY_VERSION/VALKEY_SHA256, dry-runs every patch
-# fix any patch that fails, against the tree in wasm/.cache/valkey-9.2.0
-WASI_SDK=/path/to/wasi-sdk-34.0 wasm/build.sh
-cp wasm/build/valkey.wasm wasm/valkey.wasm
-node wasm/interface.mjs > wasm/interface.txt
+packages/wasm/valkey/update.sh 9.2.0          # rewrites VALKEY_VERSION/VALKEY_SHA256, dry-runs every patch
+# fix any patch that fails, against the tree in packages/wasm/.cache/valkey-9.2.0
+WASI_SDK=/path/to/wasi-sdk-34.0 packages/wasm/valkey/build.sh
+cp packages/wasm/valkey/build/valkey.wasm packages/wasm/valkey/valkey.wasm
+node packages/wasm/interface.mjs > packages/wasm/valkey/interface.txt
 ```
 
 If `interface.txt` changed, update the host to match.
 
 ## License
 
-`wasm/` is derived from valkey-wasm and is under its BSD 3-Clause license (`LICENSE`). Valkey is BSD 3-Clause too. A
-build with `ALLOCATOR=mimalloc` also contains mimalloc (MIT), whose license must ship with it.
+The Valkey build is derived from valkey-wasm and is under its BSD 3-Clause license (`LICENSE`). Valkey is BSD 3-Clause
+too. The Redis build is AGPL-3.0 ([`redis/README.md`](redis/README.md)).

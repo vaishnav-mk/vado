@@ -84,11 +84,33 @@ More in [scaling](docs/scaling.md), [durability](docs/durability.md) and [securi
 | [`packages/server`](packages/server) | The database: router, shards, replication, catalog, the dashboard's backend and the bench API |
 | [`packages/client`](packages/client) | ioredis over a service binding, and the WebSocket-to-TCP shim |
 | [`packages/wasm`](packages/wasm) | Valkey and Redis built to wasm: patches, build scripts and the committed binaries CI rebuilds |
-| [`test/`](test) | End-to-end tests against a running Worker |
+| [`test/`](test) | End-to-end tests against a deployed Worker; `test/e2e.sh` runs them all |
 | [`docs/`](docs) | [Architecture](docs/architecture.md), [life of a command](docs/lifecycle.md), [operations](docs/operations.md), [measurements](docs/measurements.md) |
 
-`npm run check` lints, formats and type-checks; `npm test` runs the unit tests. Rules for changing the code are in
-[AGENTS.md](AGENTS.md).
+## Develop and test
+
+```sh
+npm run check   # format, lint and type-check
+npm test        # unit tests, in plain Node
+npm run build   # build the Worker
+```
+
+`test/e2e.sh` runs every end-to-end test against a deployed Worker, on fresh databases:
+
+```sh
+npx vado-shim wss://<your-worker>.workers.dev/ws 6379 &
+BASE=https://<your-worker>.workers.dev TOKEN=<BENCH_TOKEN> PW=<VALKEY_PASSWORD> test/e2e.sh
+```
+
+`FLAVOUR=redis` runs it on Redis, if the Worker carries it. `HOST` and `PORT` point it at another TCP address.
+
+GitHub Actions runs `.github/workflows/ci.yml` (check, unit tests and a build) on every push and pull request.
+`.github/workflows/e2e.yml` deploys each push to `main` to a throwaway Worker, `vado-e2e`, and runs `test/e2e.sh` on
+Valkey and Redis. It is off until the repository has the secrets `CLOUDFLARE_API_TOKEN` (Workers Scripts: Edit)
+and `CLOUDFLARE_ACCOUNT_ID` and the variable `E2E=on`. Delete that Worker with `npx wrangler delete --name vado-e2e`.
+
+Rules for changing the code are in [AGENTS.md](AGENTS.md); building, testing and running it in
+[operations](docs/operations.md).
 
 ## License
 

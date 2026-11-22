@@ -29,17 +29,17 @@ is a call path, not a statement about which machine or data center runs it.
 
 | Component | Where | Holds |
 | --- | --- | --- |
-| Worker (`src/server.ts`, `packages/server/src/index.js`) | Wherever the client's connection lands | Nothing durable. A `connect()` handler, `/ws`, `/live` and a token-protected bench API. Other requests go to the dashboard |
-| Router (`packages/server/src/router/router.js`) | In the Worker, one per client connection | Per-connection state: the database, AUTH, MULTI/WATCH, recent writes per shard, its upstreams |
+| Worker (`src/server.ts`, `packages/server/src/index.ts`) | Wherever the client's connection lands | Nothing durable. A `connect()` handler, `/ws`, `/live` and a token-protected bench API. Other requests go to the dashboard |
+| Router (`packages/server/src/router/`, `Router` in `router.ts`) | In the Worker, one per client connection | Per-connection state: the database, AUTH, MULTI/WATCH, recent writes per shard, its upstreams |
 | Shards (`ValkeyShard` to `ValkeyShard7`, bindings `SHARD` to `SHARD7`) | Durable Objects named `<db>.<created>.<i>`, in class `i % 8`, placed by the database's `regions` or `LOCATION_HINT` | One Valkey process each, owning a contiguous range of the 16,384 slots. Its AOF lives in the object's SQLite |
-| Read replicas (`packages/server/src/replication/replication.js`) | Class `8 + k` for a primary of class `k` (`ValkeyShard8` to `ValkeyShard15`), named `<db>.<created>.<i>.r.<region>`, one per shard per replica region | A copy of one shard's data, in memory only, kept current from the shard's AOF |
-| Rewriters (`packages/server/src/shard/rewriter.js`, `ValkeyRewriter` to `ValkeyRewriter7`, bindings `REWRITER` to `REWRITER7`) | Durable Objects named like their shard, in the rewriter class with the shard's class number | During a rewrite, a copy of the shard's AOF files and the new base. Nothing after it |
+| Read replicas (`packages/server/src/replication/replicator.ts`, `packages/server/src/shard/replica.ts`) | Class `8 + k` for a primary of class `k` (`ValkeyShard8` to `ValkeyShard15`), named `<db>.<created>.<i>.r.<region>`, one per shard per replica region | A copy of one shard's data, in memory only, kept current from the shard's AOF |
+| Rewriters (`packages/server/src/shard/rewriter/rewriter.ts`, `ValkeyRewriter` to `ValkeyRewriter7`, bindings `REWRITER` to `REWRITER7`) | Durable Objects named like their shard, in the rewriter class with the shard's class number | During a rewrite, a copy of the shard's AOF files and the new base. Nothing after it |
 | Pub/sub shard | `ValkeyShard` named `<db>.<created>.pubsub` | Every channel of one database |
 | `__meta` shard | `ValkeyShard` named `__meta` | Nothing. It answers `COMMAND`, which gives the router every command's key positions |
 | Catalog (`Catalog`, `CATALOG` binding) | One Durable Object named `catalog` | Each database's name, creation time, shard count, its `regions` and `replicas` lists, and how many shard classes its shards rotate over |
-| Pulse (`packages/server/src/admin/pulse.js`, `PULSE` binding) | One Durable Object named `pulse` | In memory only: each isolate's latest report of its open connections |
-| Senders (`packages/server/src/bench/sender.js`, `SENDER` binding) | Durable Objects named `<region>` or `<region>/<k>`, placed in that region | Only while the dashboard's test traffic runs: its database and deadline, one round per alarm. They run bench tests, so test traffic starts in a chosen region |
-| Watchers (`packages/server/src/admin/watcher.js`, `WATCHER` binding) | One Durable Object per database being watched, named after it, placed near its first viewer | In memory only: five minutes of history, recent events, and two probe connections. Polls the database's shards and ready replicas once a second while anyone has `/live` open, and stops when nobody does |
+| Pulse (`packages/server/src/admin/pulse.ts`, `PULSE` binding) | One Durable Object named `pulse` | In memory only: each isolate's latest report of its open connections |
+| Senders (`packages/server/src/bench/sender.ts`, `SENDER` binding) | Durable Objects named `<region>` or `<region>/<k>`, placed in that region | Only while the dashboard's test traffic runs: its database and deadline, one round per alarm. They run bench tests, so test traffic starts in a chosen region |
+| Watchers (`packages/server/src/admin/watcher/watcher.ts`, `WATCHER` binding) | One Durable Object per database being watched, named after it, placed near its first viewer | In memory only: five minutes of history, recent events, and two probe connections. Polls the database's shards and ready replicas once a second while anyone has `/live` open, and stops when nobody does |
 | Dashboard (`src/`) | In the same Worker, loaded on the first page request | Nothing. A TanStack Start app: pages, and server functions that call `Admin` in-process after checking Cloudflare Access |
 
 You don't run a server or a cluster manager. Cloudflare runs the objects; you still own the shard counts, the
@@ -141,10 +141,10 @@ table with it.
   (database, how each arrived, commands so far) every 2 s (`PULSE_MS`), from each connection's own timer.
 - **Why needed:** routers run in many isolates in many places and share nothing, so nothing else knows where
   traffic enters.
-- **How it helps:** the bench `pulse` endpoint, and the dashboard's globe, show connections and commands per
-  second by location.
-- **Trade-off:** in memory only, so a reset loses one report interval. An isolate silent for 10 s drops out. Reports
-  are sent only when a `PULSE` binding exists.
+- **How it helps:** the Watcher reads it, so the dashboard's globe shows connections and commands per second by
+  location.
+- **Trade-off:** in memory only, so a reset loses one report interval. An isolate silent for 10 s (`PULSE_STALE_MS`)
+  drops out.
 
 ### WebSocket ingress
 

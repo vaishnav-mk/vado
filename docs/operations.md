@@ -8,8 +8,9 @@ Needs Node 22 or later.
 npm install
 cp .dev.vars.example .dev.vars
 npm run dev                 # the Worker on http://localhost:5173 (vp dev: Vite with the Cloudflare plugin)
-npm run check               # lint, format and type-check (vp check)
+npm run check               # format, lint, type-check (vp check, then tsrs --noEmit --fast)
 npm test                    # unit tests (vp test)
+npm run build               # the Worker (vp build)
 ```
 
 The root is the Worker: `src/server.ts` is its entry and `vite.config.ts` builds it. The database is the
@@ -20,8 +21,9 @@ The root is the Worker: `src/server.ts` is its entry and `vite.config.ts` builds
 
 | Test | What must hold |
 | --- | --- |
-| `packages/server/src/protocol/resp.test.js` | The RESP parser: requests and replies in pieces parse as whole ones, and 200k arguments in 1 KB pieces stay linear |
-| `packages/server/src/admin/access.test.js` | Only a valid Cloudflare Access JWT for the configured team and audience signs in |
+| `packages/server/src/protocol/resp.test.ts` | The RESP parser: requests and replies in pieces parse as whole ones, and 200k arguments in 1 KB pieces stay linear |
+| `packages/server/src/admin/access.test.ts` | Only a valid Cloudflare Access JWT for the configured team and audience signs in |
+| Other `packages/server/src/**/*.test.ts` | The VFS and its WASI calls, the shard host, reply order and the router's own replies, key slots, epochs, placement and replica names, the catalog's old-table upgrade, the isolate cache, and the Watcher's events and state |
 | `src/lib/lib.test.ts` | The page's command parsing and reply display |
 | `test/ioredis.mjs` | Stock ioredis: MULTI, Lua, BLPOP, streams, pub/sub, pipelining, expiry |
 | `test/resp3.mjs` | HELLO 3, maps and pushes |
@@ -30,8 +32,10 @@ The root is the Worker: `src/server.ts` is its entry and `vite.config.ts` builds
 | `test/differential.mjs` | The same random command stream gives identical replies on a 1-shard and an N-shard database |
 | `test/deploy.mjs` | Connections kept busy through a deploy lose no acknowledged write |
 
-The first three are unit tests (`npm test`). The `test/` ones run against a Worker: `HOST` and `PORT` (default
+The first four rows are unit tests (`npm test`). The `test/` ones run against a Worker: `HOST` and `PORT` (default
 127.0.0.1:6379, a `vado-shim` port), `PW` and `DB`, and `BASE` and `TOKEN` for the ones that use the bench API.
+`test/e2e.sh` runs them all on fresh databases, with the bench durability, replica and drop checks; its header
+lists the variables. CI runs it on every push to `main` once it is turned on ([README](../README.md#develop-and-test)).
 
 `test/hammer.mjs` checks concurrency invariants (exact INCR, conserved WATCH/MULTI transfers, a lossless queue,
 Lua atomicity, ordered pub/sub, large values, expiry, a 20k-command pipeline, connection churn), optionally with
@@ -57,7 +61,7 @@ idle ones get it when they next start. Wait a minute after a deploy before you m
 | Var | Default | Meaning |
 | --- | --- | --- |
 | `VALKEY_PASSWORD` (secret) | unset | Makes AUTH mandatory and enables `/ws` |
-| `BENCH_TOKEN` (secret) | unset | Bearer token for the bench API (`packages/server/src/bench/bench.js`); unset disables it |
+| `BENCH_TOKEN` (secret) | unset | Bearer token for the bench API (`packages/server/src/bench/bench.ts`); unset disables it |
 | `ACCESS_TEAM_DOMAIN`, `ACCESS_AUD` | required | Sign-in to the dashboard with Cloudflare Access: the team domain and the application's audience tag ([README](../README.md#sign-in)) |
 | `SHARD_EPOCHS` | `[{"from":0,"shards":1}]` | Shard count by database creation time, `[{ from, shards }]` in ms. Append, never edit |
 | `LOCATION_HINT` | unset | Region for new shard objects (`apac`, `weur`, `enam`...) of databases without a `regions` list, and for every pub/sub shard |
@@ -68,16 +72,16 @@ idle ones get it when they next start. Wait a minute after a deploy before you m
 | `ROUTER_SOCKET_BUDGET` | `128` | Shard and replica sockets per isolate before the router uses RPC batches |
 
 Durable Object bindings, in `wrangler.jsonc`: `SHARD` to `SHARD7` (the eight shard classes, with pub/sub and
-`__meta` in `SHARD`), `SHARD8` to `SHARD15` (read replicas: `SHARD{8 + k}` holds the replicas of class `k`), `REWRITER` to `REWRITER7` (a shard class without its
-rewriter binding rewrites its AOF inline, blocking), `CATALOG`, `PULSE` (optional: without it, routers don't report
-activity and bench `pulse` returns nothing) and `SENDER` (needed only by bench `send`). `AUTH_LIMIT` is a rate
-limiting binding for failed AUTHs per client address ([security](security.md#authentication)); without it, AUTH
-isn't rate limited.
+`__meta` in `SHARD`), `SHARD8` to `SHARD15` (read replicas: `SHARD{8 + k}` holds the replicas of class `k`), `REWRITER` to `REWRITER7` (shard class `k` uses
+`REWRITER<k>`), `CATALOG`, `PULSE` (routers report their open connections to it, and Watchers read it), `WATCHER`
+(`/live`) and `SENDER` (bench `send` and the dashboard's test traffic). `AUTH_LIMIT` is a rate limiting binding for
+failed AUTHs per client address ([security](security.md#authentication)). All of them are required.
 
 AOF rewrite thresholds (`AOF_REWRITE_MIN`, `AOF_REWRITE_IDLE_MS`, `AOF_REWRITE_CAP`), rewriter timeout and fallback
 (`AOF_HELPER_TIMEOUT_MS`, `AOF_HELPER_RETRY_MS`), group commit (`SHARD_COMMITS`), shard classes (`SHARD_CLASSES`),
 storage (`VFS_CHUNK`, `VFS_TAIL`, `VFS_SWEEP_BYTES`, `VFS_SWEEP_MS`), replication (`REPL_*`, `READ_YOUR_WRITES_MS`)
-and the other tunables are in `packages/server/src/constants.js`.
+and the other tunables are in each directory's `config.ts` under `packages/server/src/`: `router/`, `shard/`,
+`shard/host/`, `shard/vfs/`, `replication/` and `admin/`.
 
 ## Create a database with placement and replicas
 
@@ -117,11 +121,11 @@ How it fits together:
 - The dashboard (`src/`: TanStack Start, React, `@cloudflare/kumo`) serves every request that isn't TCP, `/ws`,
   `/live` or a bench call. It loads on the first page request, so shards and replicas never start it.
 - The page's live numbers come from `/live?db=<name>`, a WebSocket from that database's Watcher object
-  (`packages/server/src/admin/watcher.js`). It polls every shard and ready replica once a second while anyone watches,
+  (`packages/server/src/admin/watcher/watcher.ts`). It polls every shard and ready replica once a second while anyone watches,
   measures response time on connections of its own (from wherever the Watcher runs, which the page says), and stops
   when nobody watches.
-- Everything else goes through the dashboard's server functions to `Admin` (`packages/server/src/admin/admin.js`) in
-  the same Worker. Every change first checks the Access JWT (`packages/server/src/admin/access.js`).
+- Everything else goes through the dashboard's server functions to `Admin` (`packages/server/src/admin/admin.ts`) in
+  the same Worker. Every change first checks the Access JWT (`packages/server/src/admin/access.ts`).
 
 ## The bench API
 
@@ -131,11 +135,12 @@ How it fits together:
 | Test | What it does |
 | --- | --- |
 | `db` | Create a database, or return its record: `shards`, `regions`, `replicas`, `classes`, and `password=new` to give a new database its own password (returned once, in `password`) |
-| `dbs` | Every database's record |
 | `stats`, `shards` | Each shard's host stats, files and replica states; `shards` adds Valkey's INFO for every shard and each ready replica |
-| `pulse` | Each isolate's open connections, as last reported to the Pulse object |
 | `throughput` | Pipelined SETs (`op=get` reads them back) over `conns` connections: `n`, `batch`, `value`, `keys=<m>` to reuse m keys per connection |
-| `latency`, `conns`, `soak`, `fill`, `cpu`, `cpuSoak`, `idle`, `repeat`, `run`, `ioredis` | Latency, connection count, sustained load, memory, CPU and functional probes |
+| `latency` | One PING, then `n` GETs (default 200) one at a time: the first reply and p50, p99 and max |
+| `fill` | Writes `value`-byte strings (default 64 KB) until Valkey refuses with OOM or a connection dies |
+| `run` | Runs the commands in a POSTed JSON array, such as `[["SET","k","v"],["GET","k"]]` |
+| `ioredis` | Stock ioredis inside the Worker, through `bindingConnector` to a router in the same isolate |
 | `send` | Runs `test` (default `throughput`) from a Sender object in `region`; `sender=<k>` picks one of several there |
 | `durability`, `write`, `verify` | Write known keys, abort every shard (or deploy between `write` and `verify`), read them back |
 | `abort` | Hard-reset one shard (`shard=<i>`) or all; `replica=<region>` resets that region's replicas instead |
@@ -146,7 +151,7 @@ How it fits together:
 | `rpcbatch` | One RPC batch of `k` SETs straight to shard 0 (`par` at once); checks every reply came back |
 | `frag` | Memory fragmentation on shard 0; run it with `via=shard`. Starts with FLUSHALL, writes `n` keys (default 150,000) with value sizes from `min` to `max` bytes (16-512), then `rounds` times (6) deletes a random half and writes it again with sizes from `min2` to `max2`. `seed` seeds the sizes, `type=hash` stores the values as fields of small hashes, `rand=1` makes them incompressible. Reports Valkey's `used_memory` and the wasm linear memory after each round |
 | `rewrite` | BGREWRITEAOF on shard 0 while another connection PINGs it (`via=shard` PINGs the shard directly): the reply and total time, PING p50, p99 and max, the PINGs over 150 ms, the base file's size, and the shard's `lastRewrite` |
-| `drop` | Drop a database for good. The catalog marks it dropped, so its name (and its shards' names) is never reused and it leaves `dbs`; every shard and the pub/sub shard deletes its storage and keeps only a tombstone that refuses to boot, and the primaries retire their replicas. A router that cached the database's record gets `ERR database <name> was dropped` from its shards, never an empty database, and forgets the record, so its next connection is refused at AUTH |
+| `drop` | Drop a database for good. The catalog marks it dropped, so its name (and its shards' names) is never reused; every shard and the pub/sub shard deletes its storage and keeps only a tombstone that refuses to boot, and the primaries retire their replicas. A router that cached the database's record gets `ERR database <name> was dropped` from its shards, never an empty database, and forgets the record, so its next connection is refused at AUTH |
 | `churn` | Connection churn from inside Cloudflare, through the router's own connect handler with no TCP ingress in between: `n` connections (default 2,000), `par` at a time (50), each AUTH, SET, GET and close. Reports failures with their errors |
 | `vfs` | Writes two `mb` MB files (default 32) to shard 0's storage, then deletes the first, now in the middle of the database, and then the second, at its end, with each step's storage commit time |
 
@@ -165,12 +170,13 @@ longer feeds keeps serving its last data until it resets. Don't use it on a data
 
 ## Upgrade safely
 
-- Keep Durable Object RPC methods (`ValkeyShard`, `Catalog`, `Pulse`, `Sender`) and the rewriter's socket protocol
+- Keep Durable Object RPC methods (`ValkeyShard`, `Catalog`, `Pulse`, `Sender`, `Watcher`) and the rewriter's socket protocol
   stable. During a deploy, old routers call new objects, old primaries stream to new replicas, and old shards send
   rewrites to new rewriters.
 - Change capacity by appending an epoch to `SHARD_EPOCHS`. Existing databases keep their shard count.
-- The catalog adds its `regions` and `replicas` columns on startup when they are missing. Add later columns the same
-  way, never by rewriting the table.
+- Each object's tables come from its `migrations.ts` list, applied on startup and recorded in
+  `durability_migrations`. Add a column with a new migration, never by editing a shipped one or rewriting the table,
+  and never rename a table or column.
 - New Durable Object classes need a new migration tag in `wrangler.jsonc`.
 - Never remove a shard class. A database keeps shard `i` in class `i % classes` for life, and a build from before
   shard classes (df14748) sends every shard to `ValkeyShard`, where shards of newer databases outside class 0
