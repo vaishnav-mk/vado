@@ -138,3 +138,5 @@ export const WATCH_HISTORY = 300;
 export const WATCH_RATE_POLLS = 5;
 /** Test traffic stops by itself after this long, so a forgotten test doesn't run up a bill. */
 export const TEST_TRAFFIC_MS = 10 * 60_000;
+/** Test keys per shard, shared by all of a test's senders: about 8 MB of a shard's 64 MB. */
+export const TEST_KEYS_PER_SHARD = 50_000;

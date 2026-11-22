@@ -13,7 +13,7 @@ import { current } from "../catalog/databases.js";
 import { RespClient } from "../client/resp-client.js";
 import { commands } from "../router/serve.js";
 import { coloOf, REGION_NAMES, WORLD } from "../replication/regions.js";
-import { TEST_TRAFFIC_MS, WATCH_HISTORY, WATCH_MS, WATCH_RATE_POLLS } from "../constants.js";
+import { TEST_KEYS_PER_SHARD, TEST_TRAFFIC_MS, WATCH_HISTORY, WATCH_MS, WATCH_RATE_POLLS } from "../constants.js";
 import { shardSnapshots } from "./snapshot.js";
 import { dbView, place, shardView } from "./views.js";
 
@@ -87,9 +87,14 @@ export class Watcher extends DurableObject {
     if (from !== "everywhere" && !WORLD.includes(from)) throw new Error("from is everywhere or a region");
     this.#name ??= this.ctx.id.name;
     await this.stopTest(false);
-    const since = Date.now(), until = since + TEST_TRAFFIC_MS;
-    this.#test = { level, from, since, until, senders: this.#senders(level, from) };
-    await Promise.all(this.#test.senders.map(({ region, k }) => this.#sender(region, k).loop(this.#name, `test-${region}${k}-`, until)));
+    const record = await current(this.env, this.#name);
+    if (!record || record.dropped) throw new Error(`There is no database named ${this.#name}`);
+    const since = Date.now(), until = since + TEST_TRAFFIC_MS, senders = this.#senders(level, from);
+    // Each sender writes its own keys, so share a budget that grows with the shards: a 1-shard database stays
+    // well inside its memory however many senders there are.
+    const keys = Math.max(100, Math.floor((record.shards * TEST_KEYS_PER_SHARD) / senders.length));
+    this.#test = { level, from, since, until, senders };
+    await Promise.all(senders.map(({ region, k }) => this.#sender(region, k).loop(this.#name, `test-${region}${k}-`, until, keys)));
     this.#event("info", "test", `Test traffic started: ${level}, from ${from === "everywhere" ? "everywhere" : REGION_NAMES[from]}`);
     return this.#testView();
   }
