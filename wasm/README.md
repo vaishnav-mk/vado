@@ -83,6 +83,45 @@ The downloads are pinned by sha256, the link order uses the C collation, and ass
 relative to the Valkey tree, so the same wasi-sdk and binaryen give the same bytes on any machine.
 `wasm/valkey.wasm` is this script's `ALLOCATOR=libc` output, and a fresh build reproduces it byte for byte.
 
+Checked with wasi-sdk 34 and binaryen 133 on three hosts: macOS arm64 (wasi-sdk release, Homebrew binaryen), and
+Linux arm64 and x86_64 in `ubuntu:24.04` (both projects' release builds). All give the committed file: 1,940,664
+bytes, sha256 `55624fa36ae4f3e9fd8ec32f6757fe1360535f46e92a846d4428102f8756a78e`.
+
+## Pipeline
+
+`.github/workflows/wasm.yml` runs on pushes and pull requests that touch `wasm/` or the workflow. On ubuntu-latest it installs
+wasi-sdk 34 and binaryen `version_133` (sha256-pinned, `.github/actions/wasm-toolchain`), runs `build.sh`, and fails
+unless:
+
+- `wasm/build/valkey.wasm` is byte-identical to the committed `wasm/valkey.wasm`, and
+- its imports and exports match `interface.txt`, the list of what the JS host (`src/shard/valkey-host.js`) must
+  provide and may call. A patch that changes that contract shows up as a diff of names, not only as new bytes.
+
+On failure it prints the interface diff and uploads the build as the `valkey-wasm` artifact.
+
+`interface.mjs` prints the list for a module, or compares it (Node, no dependencies):
+
+```sh
+node wasm/interface.mjs [file.wasm] > wasm/interface.txt   # default file: wasm/valkey.wasm
+node wasm/interface.mjs wasm/build/valkey.wasm --check wasm/interface.txt
+```
+
+`.github/workflows/valkey-release.yml` runs weekly. If Valkey has a release newer than `build.sh` pins, it runs
+`update.sh`, builds, checks the interface, and opens an issue "Valkey X.Y.Z is out" with the results and the size
+change. It doesn't commit or open a PR.
+
+To bump Valkey:
+
+```sh
+wasm/update.sh 9.2.0          # rewrites VALKEY_VERSION/VALKEY_SHA256, dry-runs every patch
+# fix any patch that fails, against the tree in wasm/.cache/valkey-9.2.0
+WASI_SDK=/path/to/wasi-sdk-34.0 wasm/build.sh
+cp wasm/build/valkey.wasm wasm/valkey.wasm
+node wasm/interface.mjs > wasm/interface.txt
+```
+
+If `interface.txt` changed, update the host to match.
+
 ## License
 
 `wasm/` is derived from valkey-wasm and is under its BSD 3-Clause license (`LICENSE`). Valkey is BSD 3-Clause too. A
