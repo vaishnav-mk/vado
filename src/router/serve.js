@@ -8,7 +8,7 @@ import { IDLE_MS, PULSE_MS } from "../constants.js";
 
 let table = null; // Promise<command table>, per isolate
 
-function commands(env) {
+export function commands(env) {
   // Any Valkey answers COMMAND the same way; a dedicated object keeps it off data shards. Cached as a
   // promise: hundreds of connections landing on a cold isolate would otherwise all ask at once.
   if (!table) {

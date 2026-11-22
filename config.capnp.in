@@ -47,6 +47,8 @@ const worker :Workerd.Worker = (
     (className = "ValkeyRewriter7", uniqueKey = "valkey-rewriter-7", enableSql = true),
     (className = "Catalog", uniqueKey = "catalog", enableSql = true),
     (className = "Pulse", uniqueKey = "pulse", enableSql = true),
+    (className = "Sender", uniqueKey = "sender", enableSql = true),
+    (className = "Watcher", uniqueKey = "watcher", enableSql = true),
   ],
   durableObjectStorage = (localDisk = "disk"),
   bindings = [
@@ -76,6 +78,8 @@ const worker :Workerd.Worker = (
     (name = "REWRITER7", durableObjectNamespace = "ValkeyRewriter7"),
     (name = "CATALOG", durableObjectNamespace = "Catalog"),
     (name = "PULSE", durableObjectNamespace = "Pulse"),
+    (name = "SENDER", durableObjectNamespace = "Sender"),
+    (name = "WATCHER", durableObjectNamespace = "Watcher"),
     (name = "SELF", service = "main"),
     (name = "BENCH_TOKEN", text = "@BENCH_TOKEN@"),
     (name = "SHARD_EPOCHS", text = "[{\"from\":0,\"shards\":4}]"),
