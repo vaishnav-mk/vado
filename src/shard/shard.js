@@ -69,7 +69,7 @@ export class ValkeyShard extends DurableObject {
   #armCheck() {
     this.#checkArmed = true;
     // The replicator's own tick (every REPL_TICK_MS) also runs the check, so only arm without it.
-    if (!this.#repl.configured) queueMicrotask(() => this.ctx.storage.setAlarm(Date.now() + AOF_CHECK_MS));
+    if (!this.#repl.configured) queueMicrotask(() => this.ctx.storage.setAlarm(Date.now() + AOF_CHECK_MS).catch(() => { this.#checkArmed = false; }));
   }
 
   // This shard's rewriter namespace: REWRITER for class SHARD, REWRITERk for SHARDk.

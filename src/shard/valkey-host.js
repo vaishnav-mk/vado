@@ -178,7 +178,7 @@ export class ValkeyHost {
             this.rewriting = null;
             this.#schedule();
           }
-        })();
+        })().catch((e) => this.#log(`rewrite finish: ${e?.stack ?? e}`)); // awaited by copies; must not reject
         return 1;
       },
       poll: (interestPtr, count, firedPtr, max) => {
