@@ -42,7 +42,9 @@ export function shardView(s, i, table) {
     replicas: (s.replicas ?? []).map((r) => {
       const c = copies.get(r.region);
       return {
-        region: r.region, regionName: REGION_NAMES[r.region] ?? r.region, state: r.state, lagMs: r.lagMs ?? null,
+        // "idle" without an error hasn't copied yet (the primary starts it on its next tick), so it's copying
+        // as far as a person is concerned; with one, it lost its stream and copies again soon.
+        region: r.region, regionName: REGION_NAMES[r.region] ?? r.region, state: r.state === "idle" && !r.error ? "copying" : r.state, lagMs: r.lagMs ?? null,
         behindBytes: r.behindBytes ?? 0, error: r.error ?? null, ...place(r.colo ?? c?.colo), instance: c?.instance ?? null,
         reads: c ? calls(c.info, table).reads : 0,
       };
