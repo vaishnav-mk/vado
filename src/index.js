@@ -5,7 +5,7 @@
 import { serve, live } from "./router/serve.js";
 import { wsSocket } from "./router/websocket.js";
 import { bench } from "./bench/bench.js";
-import { lookup } from "./catalog/databases.js";
+import { current } from "./catalog/databases.js";
 import { DB_NAME } from "./catalog/catalog.js";
 
 export { ValkeyShard, ValkeyShard1, ValkeyShard2, ValkeyShard3, ValkeyShard4, ValkeyShard5, ValkeyShard6, ValkeyShard7 } from "./shard/shard.js";
@@ -43,7 +43,7 @@ async function watch(req, env) {
   const name = new URL(req.url).searchParams.get("db") ?? "";
   if (req.headers.get("upgrade")?.toLowerCase() !== "websocket") return new Response("expected a WebSocket upgrade", { status: 426 });
   if (!DB_NAME.test(name)) return new Response("no such database", { status: 404 });
-  const db = await lookup(env, name).catch(() => null);
+  const db = await current(env, name).catch(() => null);
   if (!db || db.dropped) return new Response("no such database", { status: 404 });
   return env.WATCHER.getByName(name).fetch(req);
 }

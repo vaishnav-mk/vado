@@ -9,7 +9,7 @@
 //   { type: "tick", point: Point, events: Event[], state: State }               every poll
 // The shapes are documented on #state(), #point() and #event() below.
 import { DurableObject } from "cloudflare:workers";
-import { lookup } from "../catalog/databases.js";
+import { current } from "../catalog/databases.js";
 import { RespClient } from "../client/resp-client.js";
 import { commands } from "../router/serve.js";
 import { coloOf, REGION_NAMES, WORLD } from "../replication/regions.js";
@@ -128,7 +128,7 @@ export class Watcher extends DurableObject {
     if (this.#test && at >= this.#test.until) { this.#test = null; this.#event("info", "test", "Test traffic stopped after 10 minutes"); } // the senders stop themselves
     let error = null, shards = this.#state?.shards ?? [], entries = this.#state?.map.entries ?? [], db = this.#state?.db ?? null, here = this.#state?.watcher ?? null;
     try {
-      const record = await lookup(this.env, this.#name);
+      const record = await current(this.env, this.#name);
       if (!record || record.dropped) throw new Error(`There is no database named ${this.#name}`);
       db = dbView(record);
       const [snaps, table, pulse, colo] = await Promise.all([

@@ -4,7 +4,7 @@
 // hash or a client's address. Signing in is by BENCH_TOKEN: session() trades it for a signed, expiring
 // session string, so the dashboard never stores the token, and authorized() checks one.
 import { WorkerEntrypoint } from "cloudflare:workers";
-import { configureReplicas, database, lookup, replicaRegion, shardStub } from "../catalog/databases.js";
+import { configureReplicas, current, database, replicaRegion, shardStub } from "../catalog/databases.js";
 import { DB_NAME, DB_NAME_RULE } from "../catalog/catalog.js";
 import { RespClient } from "../client/resp-client.js";
 import { keyIndexes } from "../protocol/commands.js";
@@ -52,7 +52,7 @@ export class Admin extends WorkerEntrypoint {
     if (typeof name !== "string" || !DB_NAME.test(name)) throw new Error(DB_NAME_RULE);
     if (!SHARD_COUNTS.has(shards)) throw new Error("shards is 1, 4, 16 or 64");
     if (place !== "world" && !HINTS.has(place)) throw new Error("place is world or a region");
-    if (await lookup(this.env, name)) throw new Error(`${name} already exists`);
+    if (await current(this.env, name)) throw new Error(`${name} already exists`);
     const db = await database(this.env, name, shards, place === "world" ? WORLD : [place], replicas ? WORLD : undefined);
     if (db.replicas) await configureReplicas(this.env, db);
     await this.#watcher(name).note("action", `Created ${name}: ${shards} shard${shards === 1 ? "" : "s"}, ${place === "world" ? "spread around the world" : `in ${REGION_NAMES[place] ?? place}`}${replicas ? ", with read replicas in every region" : ""}`);
@@ -125,7 +125,7 @@ export class Admin extends WorkerEntrypoint {
 
   async #find(name, required = false) {
     if (typeof name !== "string" || !DB_NAME.test(name)) throw new Error(DB_NAME_RULE);
-    const db = await lookup(this.env, name);
+    const db = await current(this.env, name);
     if (db && !db.dropped) return db;
     if (required) throw new Error(`no database named ${name}`);
     return null;
