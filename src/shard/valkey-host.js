@@ -29,6 +29,9 @@ export class ValkeyHost {
   #lastTick = 0; // Date.now() of the last step taken by a waiting exec
   #pool = { 2: [], 3: [] }; // idle internal clients for execBatch, by RESP protocol
   #stalled = new Set(); // wake functions of readers paused by the total budget
+  #writes = 0; // reply writes so far, to see when Valkey has nothing left to send
+  #draining = false; // drain(): client input stops, and clients close once answered
+  #batches = 0; // internal requests running (exec, execBatch): RPCs, whose writes could wake a blocked client
   bootMs = 0;
   // (tmp, rdb) => null, or an async () => ok that writes the base for an AOF rewrite Valkey just started
   // to `tmp` (patches/0004). null: Valkey rewrites inline, blocking, as before.
@@ -36,6 +39,7 @@ export class ValkeyHost {
   rewriting = null; // a Promise while a rewrite taken by onRewrite runs
   rewriteDoneMs = null; // the last one's finish: Valkey's swap plus its storage commit
   lastActive = 0; // Date.now() of the last client input: on sockets (not quiet ones), or set by the shard for RPCs
+  onInput = null; // () => void, on client input from a socket
 
   #sync; // () => Promise: resolves when every storage write so far is confirmed (group commit), or null
   #fatal; // (error) => void: Valkey threw mid-command, or null
@@ -142,6 +146,7 @@ export class ValkeyHost {
         if (!s || s.eof) return -1;
         // Valkey hands us everything; flow control is on the read side (serve() stops reading
         // while too many reply bytes are unacknowledged), so this stays bounded.
+        this.#writes++;
         s.inflight += len;
         this.#total += len;
         s.writer.write(mem().slice(ptr, ptr + len)).then(() => {
@@ -278,6 +283,7 @@ export class ValkeyHost {
     let done;
     const closed = new Promise((r) => (done = r));
     const s = { fd, chunks: [], off: 0, eof: false, writer, done, internal, inflight: 0, wake: null };
+    s.finished = new Promise((r) => (s.gone = r)); // serve() has closed the socket
     this.#socks.set(fd, s);
     this.#pending.push(fd);
     this.#updateTimer();
@@ -287,7 +293,9 @@ export class ValkeyHost {
   // One TCP client = one Valkey client fd. Resolves when Valkey closes the fd. A quiet socket (a replica's
   // stream from its primary) isn't client activity, and what it hasn't run when it ends is dropped: the
   // primary copies the replica afresh, and old commands must not run after that copy's FLUSHALL.
-  async serve(socket, greeting = null, quiet = false) {
+  // `farewell` is written last if drain() closes the socket: it tells the client that nothing it got no
+  // reply to ran.
+  async serve(socket, greeting = null, quiet = false, farewell = null) {
     const writer = socket.writable.getWriter();
     if (greeting) writer.write(new TextEncoder().encode(greeting)).catch(() => {});
     const { s, closed } = this.#open(writer, false);
@@ -296,23 +304,63 @@ export class ValkeyHost {
     (async () => {
       for (;;) {
         // Backpressure: a client that isn't reading its replies stops being read.
-        while (!s.eof && (s.inflight > CLIENT_HIGH_WATER || this.#total > SHARD_HIGH_WATER)) {
+        while (!s.eof && !this.#draining && (s.inflight > CLIENT_HIGH_WATER || this.#total > SHARD_HIGH_WATER)) {
           await new Promise((r) => { if (this.#total > SHARD_HIGH_WATER) this.#stalled.add(r); s.wake = r; });
         }
+        // From drain() on, input is dropped and only drain() ends the client: an end here could free it in
+        // Valkey with replies still unsent.
+        if (this.#draining) return;
         const { value, done } = await reader.read();
+        if (this.#draining) return;
         if (done) break;
         s.chunks.push(value);
-        if (!quiet) this.lastActive = Date.now();
+        if (!quiet) { this.lastActive = Date.now(); this.onInput?.(); }
         this.#schedule();
       }
-    })().catch(() => {}).finally(() => { if (quiet) { s.chunks = []; s.off = 0; } s.eof = true; this.#schedule(); });
+      if (quiet) { s.chunks = []; s.off = 0; }
+      s.eof = true;
+      this.#schedule();
+    })().catch(() => { s.eof = true; this.#schedule(); });
     await closed;
+    if (this.#draining && farewell) await writer.write(new TextEncoder().encode(farewell)).catch(() => {});
     await s.writer.close().catch(() => {});
+    s.gone();
+  }
+
+  /**
+   * Stops taking client input and answers everything Valkey has read, then closes every client socket (each
+   * after its farewell). Once it returns, a command a client got no reply to never ran, and every reply's
+   * write is committed. Returns how many clients it closed, and whether all closed within 5 s. Input already received but not yet read by Valkey is dropped, so this is quick.
+   * Internal clients (RPC batches) are left to finish.
+   */
+  async drain() {
+    this.#draining = true;
+    const clients = [...this.#socks.values()].filter((s) => !s.internal);
+    for (const s of clients) { s.chunks = []; s.off = 0; s.wake?.(); }
+    for (const w of this.#stalled) w();
+    this.#stalled.clear();
+    // RPC batches already running finish first (the shard refuses new ones): one could unblock a client's
+    // BLPOP while that client is being closed, and the element would be popped with no reply.
+    for (let i = 0; this.#batches && i < 5000; i++) await new Promise((r) => setTimeout(r, 1));
+    // Valkey writes a reply in the pass after the command and big ones over several passes, and the host
+    // never refuses a write: a pass that writes nothing leaves no reply unsent.
+    for (let i = 0, w = -1; i < 1000 && w !== this.#writes; i++) { w = this.#writes; this.step(); }
+    while (this.#commits) await new Promise((r) => setTimeout(r, 1));
+    await this.#sync?.();
+    for (const s of clients) s.eof = true; // Valkey frees each client, with nothing left to send
+    for (let i = 0; i < 4; i++) this.step();
+    const all = Promise.all(clients.map((s) => s.finished)).then(() => true);
+    return { clients: clients.length, closed: await Promise.race([all, new Promise((r) => setTimeout(() => r(false), 5000))]) };
   }
 
   // Runs RESP request bytes through a throwaway in-process client and returns the raw reply bytes.
   // A trailing QUIT makes Valkey flush every reply and then close the fd; its +OK is stripped.
   async exec(bytes) {
+    this.#batches++;
+    try { return await this.#exec(bytes); } finally { this.#batches--; }
+  }
+
+  async #exec(bytes) {
     const out = [];
     const writer = { write: async (b) => { out.push(b); }, close: async () => {} };
     const { s, closed } = this.#open(writer, true);
@@ -366,6 +414,11 @@ export class ValkeyHost {
   }
 
   async #batch(c, bytes, count) {
+    this.#batches++;
+    try { return await this.#runBatch(c, bytes, count); } finally { this.#batches--; }
+  }
+
+  async #runBatch(c, bytes, count) {
     Object.assign(c, { acc: new Uint8Array(0), pos: 0, frames: 0, want: count });
     c.s.chunks.push(bytes);
     const finished = () => c.frames >= c.want || !c.alive;

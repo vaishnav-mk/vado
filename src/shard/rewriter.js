@@ -12,7 +12,7 @@ import { Vfs } from "./vfs.js";
 import { command, concat, decodeAll } from "../protocol/resp.js";
 import { aofFiles, MANIFEST } from "../replication/replication.js";
 import { flavourOf, valkeyArgs, WASM } from "./shard.js";
-import { AOF_HELPER_TIMEOUT_MS, VFS_CHUNK } from "../constants.js";
+import { AOF_HELPER_TIMEOUT_MS, deployedAt, VFS_CHUNK } from "../constants.js";
 
 const line = (o) => new TextEncoder().encode(JSON.stringify(o) + "\n");
 // FNV-1a of the base, sent after it: the shard installs only a base that arrived exactly as it was sent.
@@ -86,6 +86,11 @@ export async function rewriteByHelper(host, stub, tmp, rdb, sync, log = {}) {
 
 export class ValkeyRewriter extends DurableObject {
   #busy = false;
+
+  /** When this object's code was deployed: a shard compares it with its own to find newer code (shard.js). */
+  deployedAt() {
+    return deployedAt(this.env);
+  }
 
   async connect(socket) {
     const writer = socket.writable.getWriter(), reader = socket.readable.getReader();

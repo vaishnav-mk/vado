@@ -8,7 +8,7 @@ import { command, concat, decodeAll } from "../protocol/resp.js";
 import { coloOf } from "../replication/regions.js";
 import { replicaBinding, Replicator } from "../replication/replication.js";
 import { rewriteByHelper } from "./rewriter.js";
-import { AOF_CHECK_MS, AOF_HELPER_RETRY_MS, AOF_REWRITE_CAP, AOF_REWRITE_IDLE_MS, AOF_REWRITE_MIN } from "../constants.js";
+import { AOF_CHECK_MS, AOF_HELPER_RETRY_MS, AOF_REWRITE_CAP, AOF_REWRITE_IDLE_MS, AOF_REWRITE_MIN, deployedAt, RESTARTING, VERSION_CHECK_MS } from "../constants.js";
 
 export const WASM = { valkey: valkeyWasm, redis: redisWasm };
 /** What an object runs, from its name: a Redis database's objects have a "redis" segment (src/catalog/databases.js). */
@@ -58,6 +58,9 @@ export class ValkeyShard extends DurableObject {
   #lastRewrite = null; // the last helper rewrite: phase times, bytes, error (in stats())
 
   #dropped; // the database was dropped: storage is gone but this tombstone, and nothing boots
+  #restarting = false; // restarting onto newer code (#upgrade): refuses new work
+  #rpcs = 0; // RPCs running commands, which a restart lets finish
+  #versionCheckAt = 0;
 
   constructor(ctx, env) {
     super(ctx, env);
@@ -71,6 +74,7 @@ export class ValkeyShard extends DurableObject {
     if (!this.#replica) {
       this.#repl = new Replicator(ctx, env, this.#host, ctx.id.name, env[replicaBinding(Number(this.constructor.binding.slice(5) || 0))]);
       this.#host.onAppend = (bytes) => { this.#repl.append(bytes); if (!this.#checkArmed) this.#armCheck(); };
+      this.#host.onInput = () => this.#checkVersion();
       if (this.#rewriter()) this.#host.onRewrite = (tmp, rdb) => (this.#helper() ? () => this.#rewriteByHelper(tmp, rdb) : null);
     }
   }
@@ -170,6 +174,67 @@ export class ValkeyShard extends DurableObject {
   #active() {
     this.#host.lastActive = Date.now();
     this.#repl?.wake();
+    this.#checkVersion();
+  }
+
+  // A busy primary looks for newer code every VERSION_CHECK_MS, by asking its rewriter object, which runs the
+  // newest code whenever it starts (it is idle between rewrites).
+  #checkVersion() {
+    const now = Date.now();
+    if (this.#replica || now - this.#versionCheckAt < VERSION_CHECK_MS || !this.#rewriter()) return;
+    this.#versionCheckAt = now;
+    this.#rewriter().getByName(this.ctx.id.name).deployedAt() // an older rewriter lacks it: the catch
+      .then((t) => this.#upgrade(t)).catch((e) => { if (!/deployedAt/.test(e?.message)) console.log(`version check: ${e?.message}`); });
+  }
+
+  // Code deployed at `t` is newer: whether to restart onto it now (and if so, from here on this instance is
+  // restarting). At most 3 tries per deploy, VERSION_CHECK_MS apart: a restart soon after a deploy can come back on
+  // the old code while the deploy is still spreading, and under a gradual deploy this object may keep getting the
+  // old code, which must not make it restart forever.
+  #restartFor(t) {
+    const own = deployedAt(this.env), now = Date.now();
+    if (!own || !(t > own) || this.#restarting || this.#dropped) return false;
+    const sql = this.ctx.storage.sql;
+    sql.exec(`CREATE TABLE IF NOT EXISTS restarts (deployed INTEGER NOT NULL, at INTEGER NOT NULL, report TEXT)`);
+    const { n, last } = sql.exec(`SELECT count(*) AS n, max(at) AS last FROM restarts WHERE deployed >= ?`, t).toArray()[0];
+    if (n >= 3 || now - (last ?? 0) < VERSION_CHECK_MS) return false;
+    sql.exec(`INSERT INTO restarts VALUES (?, ?, NULL)`, t, now);
+    this.#restarting = true;
+    return true;
+  }
+
+  // A primary onto newer code: restart now, cleanly, rather than be reset by the runtime minutes later with
+  // commands in flight. Routers that dialed "router-<ms>" get the greeting again before the close, meaning that
+  // nothing they got no reply to ran, so they send it again. Its replicas keep serving meanwhile; the next
+  // instance copies to them, and they move to its code then (connect()).
+  async #upgrade(t) {
+    if (this.#replica || !this.#restartFor(t)) return;
+    // What the restart took, for the next instance's stats() (the clock moves only across I/O, which each phase is).
+    const t0 = Date.now(), report = { from: this.env.VERSION?.id ?? null };
+    Object.assign(report, await this.#host.drain(), { drainMs: Date.now() - t0 });
+    for (let i = 0; this.#rpcs && i < 500; i++) await new Promise((r) => setTimeout(r, 10));
+    report.ms = Date.now() - t0;
+    this.ctx.storage.sql.exec(`UPDATE restarts SET report = ? WHERE at = ?`, JSON.stringify(report), t0);
+    await this.ctx.storage.sync();
+    setTimeout(() => this.ctx.abort(new Error(RESTARTING)), 0);
+  }
+
+  // The last restart onto newer code, as the instance that restarted reported it, or null.
+  #lastUpgrade() {
+    const sql = this.ctx.storage.sql;
+    if (!sql.exec(`SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'restarts'`).toArray().length) return null;
+    const row = sql.exec(`SELECT deployed, at, report FROM restarts ORDER BY at DESC LIMIT 1`).toArray()[0];
+    return row ? { deployed: row.deployed, at: row.at, ...JSON.parse(row.report ?? "{}") } : null;
+  }
+
+  // RPCs that run commands: refused while restarting (the router tries again on the next instance), and
+  // counted, so the restart waits for the ones already running.
+  async #rpc(f) {
+    this.#live();
+    if (this.#restarting) throw new Error(RESTARTING);
+    this.#active();
+    this.#rpcs++;
+    try { return await f(); } finally { this.#rpcs--; }
   }
 
   /** Replica: its primary's copy has arrived; serve reads. Returns where this replica runs. */
@@ -180,6 +245,7 @@ export class ValkeyShard extends DurableObject {
 
   async alarm() {
     if (this.#replica || this.#dropped) return;
+    this.#checkVersion();
     await this.#repl.tick();
     this.#checkArmed = false;
     if (await this.#rewriteCheck()) this.#armCheck();
@@ -198,6 +264,13 @@ export class ValkeyShard extends DurableObject {
       // The primary's stream starts a fresh copy, so stop serving reads until it has arrived. A stream that ends
       // here resets the replica, as retire() does: the primary's own close doesn't arrive, so it calls that.
       if (localAddress?.startsWith("repl")) {
+        // A primary on newer code: restart onto it first. Its copy fails, and it copies again REPL_RETRY_MS later.
+        const from = /^repl-(\d+)/.exec(localAddress);
+        if (from && this.#restartFor(Number(from[1]))) {
+          await socket.close().catch(() => {});
+          await this.ctx.storage.sync();
+          return void setTimeout(() => this.ctx.abort(new Error(RESTARTING)), 0);
+        }
         this.#stream?.socket.close().catch(() => {}); // from a primary that reset, so never closed it
         const stream = (this.#stream = { socket });
         this.#ready = false;
@@ -207,31 +280,34 @@ export class ValkeyShard extends DurableObject {
       }
       if (!this.#ready) return await socket.close(); // the router reads from the primary instead
     }
+    const greeting = localAddress?.startsWith("router") ? `+${this.#instance}\r\n` : null;
+    const caller = /^router-(\d+)/.exec(localAddress ?? "");
+    if (caller) this.#upgrade(Number(caller[1])).catch((e) => console.log(`upgrade: ${e.stack}`));
+    else this.#checkVersion();
+    if (this.#restarting) { // nothing runs here any more (set at once by #upgrade): greet and say goodbye
+      const w = socket.writable.getWriter();
+      if (caller) await w.write(new TextEncoder().encode(greeting + greeting)).catch(() => {});
+      return await w.close().catch(() => {});
+    }
     this.#repl?.wake();
-    await this.#host.serve(socket, localAddress?.startsWith("router") ? `+${this.#instance}\r\n` : null);
+    await this.#host.serve(socket, greeting, false, caller ? greeting : null);
   }
 
   /** Runs commands on a pooled internal client and returns the decoded (RESP2) replies. For fan-out/admin. */
   async run(cmds) {
-    this.#live();
-    this.#active();
-    return decodeAll(await this.#host.execBatch(concat(cmds.map(command)), cmds.length));
+    return await this.#rpc(async () => decodeAll(await this.#host.execBatch(concat(cmds.map(command)), cmds.length)));
   }
 
   /** The router's RPC mode: `count` raw RESP requests in, their raw replies out (pooled client).
    *  Without `count` (an older router mid-deploy) it falls back to a throwaway client. */
   async execRaw(bytes, count, proto = 2) {
-    this.#live();
     if (this.#replica && !this.#ready) throw new Error("replica not ready");
-    this.#active();
-    return count ? await this.#host.execBatch(bytes, count, proto) : await this.#host.exec(bytes);
+    return await this.#rpc(() => (count ? this.#host.execBatch(bytes, count, proto) : this.#host.exec(bytes)));
   }
 
   /** Like run, but returns the raw reply bytes. */
   async runRaw(cmds) {
-    this.#live();
-    this.#active();
-    return await this.#host.execBatch(concat(cmds.map(command)), cmds.length);
+    return await this.#rpc(() => this.#host.execBatch(concat(cmds.map(command)), cmds.length));
   }
 
   /** Identifies this in-memory instance; a reset, eviction or isolate move gives a new one. */
@@ -285,7 +361,7 @@ export class ValkeyShard extends DurableObject {
     if (this.#dropped) return { dropped: true, instance: this.#instance, isolate: (isolateId ??= crypto.randomUUID()), files: [], replicas: [] };
     if (this.#colo === undefined) { this.#colo = null; coloOf().then((c) => { this.#colo = c; }, () => {}); }
     return {
-      ...this.#host.stats(), flavour: this.#flavour, instance: this.#instance, version: this.env.VERSION?.id ?? null, isolate: (isolateId ??= crypto.randomUUID()), colo: this.#colo, aliveSeconds: (Date.now() - this.#bornAt) / 1000, files: this.#host.files(),
+      ...this.#host.stats(), flavour: this.#flavour, instance: this.#instance, version: this.env.VERSION?.id ?? null, isolate: (isolateId ??= crypto.randomUUID()), colo: this.#colo, aliveSeconds: (Date.now() - this.#bornAt) / 1000, restarting: this.#restarting, lastUpgrade: this.#lastUpgrade(), files: this.#host.files(),
       role: this.#replica ? "replica" : "primary", ...(this.#replica ? { ready: this.#ready } : { replicas: this.#repl.status(), lastRewrite: this.#lastRewrite && { ...this.#lastRewrite, doneMs: this.#host.rewriteDoneMs } }),
     };
   }

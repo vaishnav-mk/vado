@@ -128,6 +128,13 @@ export const REPL_COPY_MS = 5 * 60_000;
 // A primary with no client activity or writes for this long, whose replicas haven't been read for this long
 // either, retires its replicas and stops its alarm, so an idle replicated database sleeps. Activity wakes it.
 export const REPL_IDLE_MS = 10 * 60_000;
+/**
+ * How often a busy shard asks whether newer code is deployed (its rewriter object, which runs the newest code once
+ * idle). The runtime moves an object with open sockets to new code only by resetting it, minutes after a deploy,
+ * cutting off commands in flight; a shard that sees newer code restarts itself first, cleanly. Routers of the new
+ * code say so when they connect, so this matters only to databases whose clients keep their connections.
+ */
+export const VERSION_CHECK_MS = 30_000;
 /** When this code was deployed (its Worker version's timestamp), or 0 if unknown. Routers put theirs in the address
  *  they dial ("router-<ms>:6379"), which also says they understand the restart marker (Upstream in router.js), and
  *  primaries in their replication dial ("repl-<ms>:6379"). */

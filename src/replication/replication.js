@@ -2,7 +2,7 @@
 // the commands that redo it. So a replica is sent the AOF files as a starting copy, then every append
 // as it happens, over one socket per replica. Replicas keep their data in memory only; one that
 // resets starts empty, and its primary copies it again.
-import { REPL_BACKLOG, REPL_COPY_MS, REPL_IDLE_MS, REPL_RETRY_MS, REPL_STUCK_MS, REPL_TICK_MS } from "../constants.js";
+import { deployedAt, REPL_BACKLOG, REPL_COPY_MS, REPL_IDLE_MS, REPL_RETRY_MS, REPL_STUCK_MS, REPL_TICK_MS } from "../constants.js";
 import { command, concat } from "../protocol/resp.js";
 
 const REPLY_OFF = command(["CLIENT", "REPLY", "OFF"]);
@@ -193,7 +193,7 @@ export class Replicator {
       this.#host.release(t.queued); t.queue = []; t.queued = 0;
       const stub = this.#ns.getByName(replicaName(this.#name, t.region), { locationHint: t.region });
       t.stub = stub;
-      t.socket = stub.connect("repl:6379");
+      t.socket = stub.connect(`repl-${deployedAt(this.#env)}:6379`); // a replica on older code restarts first
       t.writer = t.socket.writable.getWriter();
       this.#readMarks(t);
       await t.writer.write(START);
