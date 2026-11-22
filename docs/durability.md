@@ -124,16 +124,18 @@ have (`src/replication/replication.js`).
   evict keys of their own; reads still hide expired keys, and the primary's stream deletes them, as with Valkey's own
   replicas. A replica can't lose a key its primary still has, and a streamed write can't fail on the replica's
   memory limit, where with replies off nobody would see it.
-- **A replica's stream ends.** However it ends (the primary dropped it, reset or went to sleep), the replica resets
-  too: it never serves data that has stopped updating, and commands left unread from the old stream can't run after
-  the next copy's `FLUSHALL`.
+- **The primary closes a replica's stream.** When it drops a replica or goes to sleep, the replica resets too: it
+  never serves data that has stopped updating, its routers' open sockets close, and commands left unread from the
+  old stream can't run after the next copy's `FLUSHALL`.
 - **A replica resets.** It starts empty and refuses reads. The primary sees the socket close, waits 5 s
   (`REPL_RETRY_MS`) and copies it again. Routers read from the primary meanwhile.
 - **A replica falls behind.** Replication bytes not yet sent or acknowledged count toward the primary's 16 MB input
   budget (`SHARD_HIGH_WATER`), so replicas that lag slow the writes down. A replica more than 8 MB behind
   (`REPL_BACKLOG`), or one that hasn't answered a marker for 60 s (`REPL_STUCK_MS`), is dropped and copied again.
-- **The primary resets.** Its acknowledged writes are in its AOF. Its replicas' streams end, so they reset, and
-  routers read from the primary until the restarted primary has copied them again, a few seconds.
+- **The primary resets.** Its acknowledged writes are in its AOF. A reset doesn't close its streams, so its
+  replicas keep serving what they have, which may miss the last writes before the reset, until the restarted
+  primary copies them again: about 10 seconds after a reset in production, and a new copy stops reads until it has
+  arrived.
 - **The database goes idle.** After 10 minutes (`REPL_IDLE_MS`) with no writes, no client activity on the primary and
   no reads on any replica, the primary retires its replicas (they stop serving reads), closes the streams and stops
   its alarm, so every object can be evicted. It checks once more after asking the replicas, so a write during the
