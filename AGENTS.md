@@ -16,9 +16,10 @@ Rules for anyone, human or agent, changing this repo.
   `READ_YOUR_WRITES_MS` after the reply; a fan-out that writes counts for every shard (`#wroteAll`). Only
   retryable reads (read-only, non-blocking, outside MULTI/WATCH) may go to a replica, so a failed replica read can
   go again to the primary.
-- **A replica serves only while its stream lasts.** When the primary closes its stream, the replica resets, so it
-  never serves data that has stopped updating and routers' open sockets to it close. (A primary that resets may not
-  close it; its next copy stops reads instead.) Replicas run with
+- **A replica serves only while its stream lasts.** When a primary stops streaming to a replica it calls
+  `retire()`, and the replica resets, so it never serves data that has stopped updating and routers' open sockets to
+  it close. A close from the primary's end doesn't reach the replica, so never rely on it. (A primary that resets
+  can't call it; its next copy stops reads instead.) Replicas run with
   `import-mode` and no memory limit, and the stream is the import source: only the primary decides which keys
   expire or go.
 - **A replica copy sees files that only grow.** No AOF rewrite may start while a copy runs (`Replicator.copying`), a

@@ -149,9 +149,12 @@ export class ValkeyShard extends DurableObject {
     return Date.now() - this.#host.lastActive;
   }
 
-  /** Replica: its primary has gone idle and closes the stream; stop serving reads until it copies again. */
+  /** Replica: its primary has stopped streaming to it (dropped it, or went to sleep), so its data only gets
+   *  older: stop serving, and reset, which also closes routers' open sockets (their reads go to the primary).
+   *  The primary copies a fresh instance when it streams again. */
   retire() {
     this.#ready = false;
+    setTimeout(() => this.ctx.abort(new Error("retired by its primary")), 0);
   }
 
   // Client activity: wakes a primary's replication if it went to sleep.
@@ -183,9 +186,8 @@ export class ValkeyShard extends DurableObject {
       return await w.close().catch(() => {});
     }
     if (this.#replica) {
-      // The primary's stream starts a fresh copy, so stop serving reads until it has arrived. Once the stream
-      // ends the data only gets older: reset, which also closes routers' open sockets (their reads retry on
-      // the primary), and the primary copies a fresh instance.
+      // The primary's stream starts a fresh copy, so stop serving reads until it has arrived. A stream that ends
+      // here resets the replica, as retire() does: the primary's own close doesn't arrive, so it calls that.
       if (localAddress?.startsWith("repl")) {
         this.#stream?.socket.close().catch(() => {}); // from a primary that reset, so never closed it
         const stream = (this.#stream = { socket });

@@ -124,9 +124,9 @@ have (`src/replication/replication.js`).
   evict keys of their own; reads still hide expired keys, and the primary's stream deletes them, as with Valkey's own
   replicas. A replica can't lose a key its primary still has, and a streamed write can't fail on the replica's
   memory limit, where with replies off nobody would see it.
-- **The primary closes a replica's stream.** When it drops a replica or goes to sleep, the replica resets too: it
-  never serves data that has stopped updating, its routers' open sockets close, and commands left unread from the
-  old stream can't run after the next copy's `FLUSHALL`.
+- **The primary stops streaming to a replica.** When it drops a replica or goes to sleep, it tells the replica
+  (`retire`), which resets: it never serves data that has stopped updating, and its routers' open sockets close.
+  A new copy closes any older stream first, so commands left unread from it can't run after the copy's `FLUSHALL`.
 - **A replica resets.** It starts empty and refuses reads. The primary sees the socket close, waits 5 s
   (`REPL_RETRY_MS`) and copies it again. Routers read from the primary meanwhile.
 - **A replica falls behind.** Replication bytes not yet sent or acknowledged count toward the primary's 16 MB input

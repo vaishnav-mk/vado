@@ -81,7 +81,7 @@ export class Replicator {
     const idle = await Promise.all(ts.map((t) => t.stub.replicaIdleMs().catch(() => 0)));
     if (!idle.every((ms) => ms >= REPL_IDLE_MS) || this.#lastAppend > now || this.#host.lastActive > now) return false;
     this.#asleep = true;
-    for (const t of ts) { t.stub.retire().catch(() => {}); this.#drop(t, "asleep: idle"); }
+    for (const t of ts) this.#drop(t, "asleep: idle");
     return true;
   }
 
@@ -222,11 +222,13 @@ export class Replicator {
         carry = text.slice(Math.max(at, text.length - 6));
       }
     } catch { /* closed */ }
-    if (t.socket === socket) this.#drop(t, "replica closed the connection");
+    if (t.socket === socket) this.#drop(t, "replica closed the connection", false); // it's gone already
   }
 
-  #drop(t, why) {
+  #drop(t, why, tell = true) {
     if (t.phase === "idle") return;
+    // A close from this end doesn't reach the replica, so tell it: it must not serve data that stopped updating.
+    if (tell) t.stub?.retire().catch(() => {});
     try { t.writer?.abort?.(why); } catch { /* gone */ }
     try { t.socket?.close?.(); } catch { /* gone */ }
     this.#host.release(t.inflight + t.queued);
