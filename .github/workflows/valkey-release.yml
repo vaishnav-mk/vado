@@ -1,0 +1,95 @@
+# Weekly: if Valkey has a release newer than the one build.sh pins, try it
+# (update.sh, build, interface check) and open an issue with the results.
+# It never commits or opens a PR; bumping stays a reviewed change.
+name: valkey-release
+
+on:
+  schedule:
+    - cron: "23 5 * * 1" # Mondays 05:23 UTC
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Find the newest Valkey release
+        id: release
+        run: |
+          set -euo pipefail
+          current=$(sed -n 's/^VALKEY_VERSION=//p' wasm/build.sh)
+          # Highest version, not the newest date: Valkey also ships patch
+          # releases for older branches.
+          latest=$(gh api --paginate 'repos/valkey-io/valkey/releases?per_page=100' \
+            --jq '.[] | select(.prerelease == false and .draft == false) | .tag_name' |
+            grep -E '^[0-9]+\.[0-9]+\.[0-9]+$' | sort -V | tail -1)
+          echo "build.sh has $current, newest release is $latest"
+          newer=false
+          if [ "$latest" != "$current" ] && [ "$(printf '%s\n' "$current" "$latest" | sort -V | tail -1)" = "$latest" ]; then
+            title="Valkey $latest is out"
+            open=$(gh issue list --repo "$GITHUB_REPOSITORY" --state open --search "\"$title\" in:title" \
+              --json title --jq "map(select(.title == \"$title\")) | length")
+            if [ "$open" = 0 ]; then newer=true; else echo "an open issue \"$title\" exists"; fi
+          fi
+          { echo "current=$current"; echo "latest=$latest"; echo "newer=$newer"; } >>"$GITHUB_OUTPUT"
+
+      - if: steps.release.outputs.newer == 'true'
+        uses: ./.github/actions/wasm-toolchain
+
+      - name: Try the new release
+        if: steps.release.outputs.newer == 'true'
+        env:
+          CURRENT: ${{ steps.release.outputs.current }}
+          LATEST: ${{ steps.release.outputs.latest }}
+        run: |
+          set +e -uo pipefail # no -e: every result goes in the report
+          before=$(stat -c %s wasm/valkey.wasm)
+          details() { printf '<details><summary>%s</summary>\n\n```\n' "$1"; tail -n 60 "$2"; printf '```\n\n</details>\n\n'; }
+          {
+            echo "Valkey [$LATEST](https://github.com/valkey-io/valkey/releases/tag/$LATEST) is out; \`wasm/build.sh\` pins $CURRENT."
+            echo
+            if bash wasm/update.sh "$LATEST" >update.log 2>&1; then
+              echo "- Patches: all apply."
+              patched=true
+            else
+              echo "- Patches: **some do not apply**."
+              patched=false
+            fi
+            built=skipped
+            if [ "$patched" = false ]; then
+              echo "- Build: skipped."
+            elif bash wasm/build.sh >build.log 2>&1; then
+              built=ok
+              after=$(stat -c %s wasm/build/valkey.wasm)
+              echo "- Build: ok."
+              printf -- '- Size: %d bytes (%s, committed) -> %d bytes (%s), %+d bytes.\n' "$before" "$CURRENT" "$after" "$LATEST" "$((after - before))"
+              if node wasm/interface.mjs wasm/build/valkey.wasm --check wasm/interface.txt >interface.log 2>&1; then
+                echo "- Interface: unchanged."
+              else
+                echo "- Interface: **changed**, the JS host (src/shard/valkey-host.js) may need updating:"
+                echo
+                echo '```diff'
+                cat interface.log
+                echo '```'
+              fi
+            else
+              built=failed
+              echo "- Build: **failed**."
+            fi
+            echo
+            details "update.sh output" update.log
+            [ "$built" = failed ] && details "build.sh output (last 60 lines)" build.log
+            echo "To bump: \`wasm/update.sh $LATEST\`, fix any patches, rebuild, copy \`wasm/build/valkey.wasm\` to \`wasm/valkey.wasm\`, regenerate \`wasm/interface.txt\` (see wasm/README.md)."
+          } >issue.md
+          cat issue.md
+          gh issue create --repo "$GITHUB_REPOSITORY" --title "Valkey $LATEST is out" --body-file issue.md
