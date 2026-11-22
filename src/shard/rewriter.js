@@ -55,6 +55,7 @@ export async function rewriteByHelper(host, stub, tmp, rdb, sync, log = {}) {
     if (head.error) throw new Error(`rewriter: ${head.error}`);
     log.baseBytes = head.size;
     host.removeFile(tmp); // one left by a rewrite that a restart cut short
+    host.appendFile(tmp, new Uint8Array(0)); // the file must exist even when the base is empty (an empty shard's)
     // Every reply waits for the storage writes before it, so take the base one chunk's commit at a time:
     // a reply then waits for at most one chunk, not for all of the base that arrived ahead of it.
     let got = 0, synced = 0, sum = FNV0, b = rest;
