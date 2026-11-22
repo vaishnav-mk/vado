@@ -114,7 +114,7 @@ class Upstream {
     const gen = this.gen;
     this.socket = this.stub.connect(this.router.dial);
     this.writer = this.socket.writable.getWriter();
-    this.#read(this.socket, gen);
+    void this.#read(this.socket, gen);
   }
 
   // Called by the router's watchdog.
@@ -197,7 +197,7 @@ class Upstream {
 
   // Only a primary's socket carries nothing the next one can't be given: a replica that closes before its greeting
   // isn't ready (the router reads from the primary instead), and pub/sub subscriptions live on their socket.
-  #canRedial() { return typeof this.index === "number" && !this.passthrough; }
+  #canRedial() { return this.index !== "pubsub" && this.index[0] !== "r" && !this.passthrough; }
 
   #frame(f) {
     this.lastUsed = this.router.now;
@@ -391,6 +391,7 @@ export class Router {
   #password; // undefined: no AUTH required
   #open; // (name) => Promise<{ db, shard, pubsub }>
   #authed;
+  /** @type {Promise<void> | null} */
   #pending = null; // later requests wait for this (an AUTH switching databases, an RPC-path command)
   #onHead = new Map(); // reply slot -> wake, for RPC-path commands waiting on every earlier reply
   #idleMs;
@@ -523,7 +524,7 @@ export class Router {
     return up;
   }
   stubOf(i) {
-    return i === "pubsub" ? this.pubsubStub() : typeof i === "string" ? this.replicaStub(Number(i.slice(1))) : this.shardStub(i);
+    return i === "pubsub" ? this.pubsubStub() : i[0] === "r" ? this.replicaStub(Number(i.slice(1))) : this.shardStub(i); // "r<i>": #readFrom
   }
   // What a new shard socket is sent first, so it serves this connection as the last one did.
   setup() {
@@ -688,7 +689,7 @@ export class Router {
   }
 
   #mget(argv) {
-    const keys = argv.slice(1), s = this.#slot(), out = new Array(keys.length), groups = this.#groups(keys);
+    const keys = argv.slice(1), s = this.#slot(), out = Array.from({ length: keys.length }), groups = this.#groups(keys);
     let left = groups.size, failed = null;
     for (const [g, idx] of groups) {
       this.#up(g).send(command(["MGET", ...idx.map((i) => keys[i])]), (f) => {
@@ -808,7 +809,8 @@ export class Router {
       if (f[0] === 43 && str(f).startsWith("+RESET")) return this.endPassthrough(false);
       if (f[0] !== 42) return;
       const [v] = decode(f);
-      if (Array.isArray(v) && typeof v[0] === "string" && v[0].endsWith("unsubscribe") && v[2] === 0) this.endPassthrough(false);
+      // Not only pushes: RESP3 subscribers run other commands too, whose replies can start with null or a number.
+      if (Array.isArray(v) && String(v[0]).endsWith("unsubscribe") && v[2] === 0) this.endPassthrough(false);
     };
     up.raw(raw.slice());
   }
@@ -956,7 +958,7 @@ export class Router {
   // ---- fan-out over every shard, via RPC (no upstream connections held) ----
   // At most FAN_OUT shards at a time, answers in shard order.
   async #all(cmds, raw) {
-    const N = this.db.shards, out = new Array(N);
+    const N = this.db.shards, out = Array.from({ length: N });
     let next = 0;
     const worker = async () => {
       for (let i = next++; i < N; i = next++) out[i] = await (raw ? this.shardStub(i).runRaw(cmds) : this.shardStub(i).run(cmds));

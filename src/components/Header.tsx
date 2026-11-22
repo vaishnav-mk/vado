@@ -48,7 +48,7 @@ export function Header({ name, databases, options, state, connection }: {
         <Text variant="heading" as="h1">vado</Text>
         {databases.length > 0 && (
           <Select aria-label="Database" placeholder="Pick a database" value={name ?? null} items={items} className="min-w-72"
-            onValueChange={(v) => v && navigate({ to: "/db/$name", params: { name: v as string } })} />
+            onValueChange={(v) => v && navigate({ to: "/db/$name", params: { name: v } })} />
         )}
         <NewDatabase options={options} />
         <div className="ml-auto flex flex-wrap items-center gap-3">

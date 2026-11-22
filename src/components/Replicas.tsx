@@ -151,7 +151,7 @@ function RowView({ row, maxLag, gap, focus, onHover, onPick }: {
           <div key={i} className={`flex h-full max-w-10 flex-1 cursor-pointer items-end rounded-[2px] ${focus === i ? "bg-kumo-brand/15" : ""}`}
             onMouseMove={(e) => onHover(i, e)} onClick={() => onPick(i)}>
             <div className={`w-full rounded-[2px] motion-safe:transition-[height] motion-safe:duration-700 ${c?.state === "copying" || c?.state === "catching up" ? "motion-safe:animate-pulse" : ""}`}
-              style={{ height: `${height(c, maxLag)}%`, background: replicaColor(c?.state), opacity: c?.state === "asleep" ? 0.45 : 1,
+              style={{ height: `${height(c, maxLag)}%`, background: replicaColor(c?.state ?? "asleep"), opacity: c?.state === "asleep" ? 0.45 : 1,
                 boxShadow: (c?.reads ?? 0) > SERVING ? "inset 0 3px 0 rgba(255,255,255,.75)" : undefined }} />
           </div>
         ))}

@@ -23,5 +23,6 @@ const REPLICA_WORDS: Record<ReplicaState, string> = {
   idle: "Lost its stream",
 };
 
-export const replicaColor = (s: string | undefined) => REPLICA[s as ReplicaState] ?? REPLICA.asleep;
-export const replicaWords = (s: string | undefined) => REPLICA_WORDS[s as ReplicaState] ?? s ?? "Unknown";
+// The fallbacks are for a state a newer backend sends that this page doesn't know yet.
+export const replicaColor = (s: ReplicaState) => REPLICA[s] ?? REPLICA.asleep;
+export const replicaWords = (s: ReplicaState) => REPLICA_WORDS[s] ?? s;

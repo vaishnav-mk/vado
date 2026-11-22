@@ -233,12 +233,14 @@ export class Watcher extends DurableObject {
       if (rk.instance !== r.instance) rk.points = [];
       Object.assign(rk, { state: r.state, instance: r.instance });
       if (r.instance) keep(rk.points, { at, reads: r.reads }, WATCH_RATE_POLLS);
-      const { instance, ...shown } = r;
-      return { ...shown, reads: r.instance ? rate(rk.points, "reads") : 0 };
+      const shown = { ...r, reads: r.instance ? rate(rk.points, "reads") : 0 };
+      delete shown.instance;
+      return shown;
     });
     const reads = rate(k.points, "reads"), writes = rate(k.points, "writes");
-    const { instance, calls, ...shown } = v;
-    return { ...shown, ok: true, reads, writes, restartedAt: k.restartedAt ?? 0, replicas };
+    const shown = { ...v, ok: true, reads, writes, restartedAt: k.restartedAt ?? 0, replicas };
+    delete shown.instance; delete shown.calls;
+    return shown;
   }
 
   // Restarts, log compactions and replica changes seen in one poll, as a few readable events rather than one
@@ -279,7 +281,7 @@ export class Watcher extends DurableObject {
       byColo.set(iso.colo, e);
     }
     for (const id of this.#isolates.keys()) if (!seen.has(id)) this.#isolates.delete(id);
-    return [...byColo].map(([colo, e]) => ({ ...place(colo), ops: e.ops, conns: e.conns })).filter((e) => e.city);
+    return byColo.entries().map(([colo, e]) => ({ ...place(colo), ops: e.ops, conns: e.conns })).filter((e) => e.city).toArray();
   }
 
   // Response time: a GET on a connection that only reads (so it reads from a replica when clients would)

@@ -33,7 +33,9 @@ export class Sender extends DurableObject {
     let next = Date.now();
     try {
       const keys = String(Math.max(1, Math.ceil((loop.keys ?? 20_000) / Number(ROUND.conns)))); // per connection
-      await runTest("throughput", this.env, new URLSearchParams({ ...ROUND, keys, db: loop.db, prefix: loop.prefix, ...(loop.round % 4 ? { op: "get" } : {}) }));
+      const q = new URLSearchParams({ ...ROUND, keys, db: loop.db, prefix: loop.prefix });
+      if (loop.round % 4) q.set("op", "get");
+      await runTest("throughput", this.env, q);
     } catch { next += RETRY_MS; } // a shard restarting, say
     if ((await this.ctx.storage.get("loop"))?.id !== loop.id) return; // stop(), or a new loop(), ran meanwhile
     await this.ctx.storage.put("loop", { ...loop, round: loop.round + 1 });

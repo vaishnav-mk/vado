@@ -1,6 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { Badge, Button, LayerCard, Meter, Table, Text, Tooltip } from "@cloudflare/kumo";
-import { ArrowClockwiseIcon } from "@phosphor-icons/react";
+import { Badge, LayerCard, Meter, RefreshButton, Table, Text, Tooltip } from "@cloudflare/kumo";
 import { Guard } from "./Guard";
 import { restartShard } from "../server/admin";
 import { bytes, bytesOf, duration, ms, num } from "../lib/format";
@@ -29,15 +28,16 @@ function Restart({ db, i }: { db: string; i: number }) {
   const [busy, setBusy] = useState(false), [error, setError] = useState<string | null>(null);
   const run = async () => {
     setBusy(true); setError(null);
-    try { await restartShard({ data: { name: db, shard: i } }); } catch (e) { setError((e as Error).message); }
+    try { await restartShard({ data: { name: db, shard: i } }); } catch (e) { setError(e instanceof Error ? e.message : String(e)); }
     setBusy(false);
   };
   return (
     <Guard action="restart a shard">
       {(disabled) => (
         <Tooltip content={error ?? "Restart this shard, as a deploy or crash would. Saved data stays."}>
-          <Button variant="secondary" size="sm" shape="square" icon={ArrowClockwiseIcon} aria-label={`Restart shard ${i}`} loading={busy} disabled={disabled}
-            className={error ? "text-kumo-danger" : undefined} onClick={(e) => { e.stopPropagation(); run(); }} />
+          {/* RefreshButton doesn't disable itself while loading. */}
+          <RefreshButton variant="secondary" size="sm" aria-label={`Restart shard ${i}`} loading={busy} disabled={disabled || busy}
+            className={error ? "text-kumo-danger" : undefined} onClick={(e) => { e.stopPropagation(); void run(); }} />
         </Tooltip>
       )}
     </Guard>

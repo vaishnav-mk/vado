@@ -36,7 +36,7 @@ const MOVABLE = {
   zinterstore: (a) => { const k = numkeysAt(a, 2, 3); return k && [1, ...k]; },
   zdiffstore: (a) => { const k = numkeysAt(a, 2, 3); return k && [1, ...k]; },
   xread: (a) => streamsKeys(a), xreadgroup: (a) => streamsKeys(a),
-  sort: (a) => sortKeys(a), sort_ro: (a) => [1],
+  sort: (a) => sortKeys(a), sort_ro: () => [1],
   georadius: (a) => storeKeys(a, 1), georadiusbymember: (a) => storeKeys(a, 1),
   migrate: () => null,
 };

@@ -48,6 +48,7 @@ export class Replicator {
   get configured() { return this.#targets.size > 0; }
   get copying() { return this.#copying > 0; }
   rdbDue = false; // copies are done: the next quiet moment should rewrite the base back to RDB
+  /** @type {Promise<void> | null} */
   #basing = null; // the rewrite to a command base that copies starting now wait for (#commandBase)
 
   /** Sets the regions this shard keeps replicas in, remembered across restarts. */
@@ -189,13 +190,13 @@ export class Replicator {
       if (this.#files().base?.endsWith(".rdb")) throw new Error("the base is still RDB (its rewrite failed)");
       // Sizes now, synchronously: appends from here on are queued for this replica.
       const { base, incrs } = this.#files();
-      const parts = [base, ...incrs].filter(Boolean).map((p) => [p, this.#host.fileSize(p) ?? 0]);
+      const parts = (base ? [base, ...incrs] : incrs).map((p) => [p, this.#host.fileSize(p) ?? 0]);
       this.#host.release(t.queued); t.queue = []; t.queued = 0;
       const stub = this.#ns.getByName(replicaName(this.#name, t.region), { locationHint: t.region });
       t.stub = stub;
       t.socket = stub.connect(`repl-${deployedAt(this.#env)}:6379`); // a replica on older code restarts first
       t.writer = t.socket.writable.getWriter();
-      this.#readMarks(t);
+      void this.#readMarks(t);
       await t.writer.write(START);
       for (const [p, size] of parts) for (let pos = 0; pos < size && t.phase === "copying"; pos += COPY_CHUNK) await t.writer.write(this.#host.readFile(p, pos, COPY_CHUNK));
       t.marks.push({ at: Date.now(), ready: true });

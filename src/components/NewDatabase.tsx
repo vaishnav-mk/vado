@@ -7,7 +7,7 @@ import { createDatabase } from "../server/admin";
 import type { Options } from "../lib/types";
 
 const SHARDS = { 1: "1 shard (64 MB)", 4: "4 shards (256 MB)", 16: "16 shards (1 GB)", 64: "64 shards (4 GB)" };
-const SERVERS: Record<string, string> = { valkey: "Valkey 9.1", redis: "Redis 8.12" };
+const SERVERS = new Map([["valkey", "Valkey 9.1"], ["redis", "Redis 8.12"]]);
 
 export function NewDatabase({ options: { regions, flavours } }: { options: Options }) {
   const [open, setOpen] = useState(false), [name, setName] = useState(""), [shards, setShards] = useState("4"), [flavour, setFlavour] = useState("valkey");
@@ -22,7 +22,7 @@ export function NewDatabase({ options: { regions, flavours } }: { options: Optio
       setOpen(false); setName("");
       await router.invalidate();
       await navigate({ to: "/db/$name", params: { name: db.name } });
-    } catch (err) { setError((err as Error).message); }
+    } catch (err) { setError(err instanceof Error ? err.message : String(err)); }
     setBusy(false);
   };
   return (
@@ -37,12 +37,12 @@ export function NewDatabase({ options: { regions, flavours } }: { options: Optio
           <Input label="Name" placeholder="sessions" value={name} onChange={(e) => setName(e.target.value)} autoComplete="off" spellCheck={false}
             description="Lowercase letters, digits, - and _" error={error ?? undefined} variant={error ? "error" : "default"} />
           {flavours.length > 1 && (
-            <Select label="Runs" value={flavour} onValueChange={(v) => v && setFlavour(v as string)} items={Object.fromEntries(flavours.map((f) => [f, SERVERS[f]]))}
+            <Select label="Runs" value={flavour} onValueChange={(v) => v && setFlavour(v)} items={Object.fromEntries(flavours.map((f) => [f, SERVERS.get(f)]))}
               description="Each shard runs the real server, compiled to WebAssembly. Clients can't tell it from one server." />
           )}
-          <Select label="Shards" value={shards} onValueChange={(v) => v && setShards(v as string)} items={SHARDS} />
-          <Select label="Where the shards live" value={place} onValueChange={(v) => v && setPlace(v as string)} items={{ world: "Spread around the world", ...regions }} />
-          <Select label="Read replicas" value={copies} onValueChange={(v) => v && setCopies(v as string)} items={{ yes: "In every region", no: "None" }}
+          <Select label="Shards" value={shards} onValueChange={(v) => v && setShards(v)} items={SHARDS} />
+          <Select label="Where the shards live" value={place} onValueChange={(v) => v && setPlace(v)} items={{ world: "Spread around the world", ...regions }} />
+          <Select label="Read replicas" value={copies} onValueChange={(v) => v && setCopies(v)} items={{ yes: "In every region", no: "None" }}
             description="A copy of every shard in each region. Reads go to the nearest copy; writes go to the shard." />
           <div className="flex justify-end gap-2">
             <Dialog.Close render={(p) => <Button {...p} variant="secondary">Cancel</Button>} />

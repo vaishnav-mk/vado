@@ -1,10 +1,12 @@
 // What the dashboard does besides watching (live numbers come from /live, a Watcher per database): the database
 // list, creating one, running a command, restarting a shard and test traffic. Its server functions call this in the
-// same Worker and check who is signed in first (Cloudflare Access, admin/access.js). It never returns a password
-// hash or a client's address.
+// same Worker and check who is signed in first (Cloudflare Access, admin/access.js). They parse every input (names
+// are strings, argv a list of strings), so this checks only the rules. It never returns a password hash or a
+// client's address.
 import { configureReplicas, current, database, replicaRegion, shardStub } from "../catalog/databases.js";
 import { DB_NAME, DB_NAME_RULE } from "../catalog/catalog.js";
 import { RespClient } from "../protocol/resp-client.js";
+import { decodeTyped } from "../protocol/resp.js";
 import { keyIndexes } from "../protocol/commands.js";
 import { shardOfSlot, slotOf } from "../protocol/slots.js";
 import { commands } from "../router/serve.js";
@@ -15,7 +17,7 @@ const enc = new TextEncoder();
 const SHARD_COUNTS = new Set([1, 4, 16, 64]);
 const WAIT_MS = 3_000; // how long a write from the dashboard waits to hear from its replicas
 // One-shot calls can't use these: they need a connection that stays open.
-const NEEDS_A_CONNECTION = new Set(["subscribe", "psubscribe", "ssubscribe", "monitor", "multi", "watch", "reset", "quit"]);
+const NEEDS_A_CONNECTION = new Set(["subscribe", "psubscribe", "ssubscribe", "monitor", "multi", "watch", "reset", "quit", "hello"]);
 // Not from a button: KEYS returns every key at once (SCAN pages through them), and a flush wipes the database.
 const REFUSED = { keys: "KEYS returns every key at once; use SCAN", flushall: "FLUSHALL wipes the database; run it from a client", flushdb: "FLUSHDB wipes the database; run it from a client" };
 
@@ -46,7 +48,7 @@ export class Admin {
   /** A new database: `shards` of 1, 4, 16 or 64, placed in one region or spread over the world (`place`
    *  "world"), with read replicas in every region or none. Refuses a name that is taken. */
   async create({ name, shards, place, replicas, flavour = "valkey" }) {
-    if (typeof name !== "string" || !DB_NAME.test(name)) throw new Error(DB_NAME_RULE);
+    if (!DB_NAME.test(name)) throw new Error(DB_NAME_RULE);
     if (!SHARD_COUNTS.has(shards)) throw new Error("shards is 1, 4, 16 or 64");
     if (place !== "world" && !HINTS.has(place)) throw new Error("place is world or a region");
     if (await current(this.env, name)) throw new Error(`${name} already exists`);
@@ -74,11 +76,10 @@ export class Admin {
     return await this.#watcher(name).stopTest();
   }
 
-  /** Runs one command on database `name` and says where it went: the key's slot and shard, the colo the
-   *  router ran in, the replica region a read is served from, and for a write on a replicated database,
-   *  how many replicas had it within WAIT_MS. */
+  /** Runs one command on database `name` and says what it replied (with its RESP2 type, resp.js decodeTyped) and
+   *  where it went: the key's slot and shard, the colo the router ran in, the replica region a read is served from,
+   *  and for a write on a replicated database, how many replicas had it within WAIT_MS. */
   async command(name, argv) {
-    if (!Array.isArray(argv) || !argv.length || argv.some((a) => typeof a !== "string")) throw new Error("expected the command as a list of strings");
     const cmd = argv[0].toLowerCase();
     if (NEEDS_A_CONNECTION.has(cmd)) throw new Error(`${argv[0].toUpperCase()} needs a client that keeps its connection open, such as valkey-cli`);
     if (Object.hasOwn(REFUSED, cmd)) throw new Error(REFUSED[cmd]);
@@ -95,10 +96,11 @@ export class Admin {
       // replica), a delete of a dashboard-only key in the same slot (`{key}` is a hash tag for key's slot).
       if (key !== null) await c.call(write && db.replicas && !/[{}]/.test(key) ? ["DEL", `dashboard:warm:{${key}}`] : ["EXISTS", key]);
       const t0 = performance.now();
-      const [reply] = await c.call(argv);
+      await c.send(argv);
+      const [reply] = await c.read(1, decodeTyped);
       const ms = performance.now() - t0;
       let replication = null;
-      if (write && db.replicas && !reply?.err) {
+      if (write && db.replicas && reply.type !== "error") {
         const t1 = performance.now();
         const [acked] = await c.call(["WAIT", String(db.replicas.length), String(WAIT_MS)]);
         replication = { acked, of: db.replicas.length, ms: performance.now() - t1 };
@@ -108,7 +110,7 @@ export class Admin {
   }
 
   async #find(name, required = false) {
-    if (typeof name !== "string" || !DB_NAME.test(name)) throw new Error(DB_NAME_RULE);
+    if (!DB_NAME.test(name)) throw new Error(DB_NAME_RULE);
     const db = await current(this.env, name);
     if (db && !db.dropped) return db;
     if (required) throw new Error(`no database named ${name}`);

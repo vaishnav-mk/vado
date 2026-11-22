@@ -1,7 +1,7 @@
 // The RESP parser on its own: requests and replies that arrive in pieces parse the same as whole ones, and resuming
 // keeps a huge pipeline linear.
 import { expect, test } from "vite-plus/test";
-import { command, concat, frameEnd, request } from "./resp.js";
+import { command, concat, decodeTyped, frameEnd, request } from "./resp.js";
 
 const enc = new TextEncoder();
 const dec = new TextDecoder();
@@ -35,6 +35,21 @@ test("replies of every RESP type in pieces", () => {
   const replies = ["*3\r\n:1\r\n*2\r\n$1\r\na\r\n$-1\r\n+OK\r\n", "%2\r\n+k\r\n:1\r\n+j\r\n*1\r\n:2\r\n", "|1\r\n+ttl\r\n:3\r\n$2\r\nhi\r\n", `*500\r\n${"$3\r\nabc\r\n".repeat(500)}`];
   const bytes = enc.encode(replies.join(""));
   for (const size of [1, 5, 64, bytes.length]) expect(chunked(bytes, size, frame)).toEqual(replies);
+});
+
+test("decodeTyped keeps each RESP2 reply's type", () => {
+  const typed = (s) => decodeTyped(enc.encode(s))[0];
+  expect(typed("+OK\r\n")).toEqual({ type: "status", value: "OK" });
+  expect(typed("$2\r\nOK\r\n")).toEqual({ type: "bulk", value: "OK" });
+  expect(typed("-ERR nope\r\n")).toEqual({ type: "error", value: "ERR nope" });
+  expect(typed(":-3\r\n")).toEqual({ type: "integer", value: -3 });
+  expect(typed("$-1\r\n")).toEqual({ type: "nil" });
+  expect(typed("*-1\r\n")).toEqual({ type: "nil" });
+  expect(typed("*3\r\n$0\r\n\r\n*2\r\n:1\r\n$-1\r\n+QUEUED\r\n")).toEqual({
+    type: "array", value: [{ type: "bulk", value: "" }, { type: "array", value: [{ type: "integer", value: 1 }, { type: "nil" }] }, { type: "status", value: "QUEUED" }],
+  });
+  expect(decodeTyped(enc.encode("$2\r\nhi\r\n:1\r\n"))[1], "the next frame's offset").toBe(8);
+  expect(() => typed("%1\r\n+k\r\n:1\r\n")).toThrow(/RESP2/);
 });
 
 // Without resuming, each 1 KB piece re-parses everything before it (about 30 s).

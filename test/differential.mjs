@@ -16,6 +16,7 @@ const int = (n) => Math.floor(rnd() * n);
 const tags = ["{u1}", "{u2}", "{u3}", ""];
 const key = () => `${pick(tags)}k${int(12)}`;
 const tagged = (t) => `${t}k${int(12)}`;
+const byCodeUnits = (a, b) => (a < b ? -1 : a > b ? 1 : 0);
 const val = () => pick(["a", "bb", "ccc", String(int(100)), "x".repeat(int(40))]);
 
 const gens = [
@@ -52,14 +53,14 @@ async function scanAll(db) {
     keys.push(...batch);
     cursor = next;
   } while (cursor !== "0");
-  return keys.sort();
+  return keys.sort(byCodeUnits);
 }
 
 const norm = (c, r) => {
   const name = c[0];
-  if (["SMEMBERS", "KEYS"].includes(name) && Array.isArray(r)) return [...r].sort();
-  if (name === "HGETALL" && Array.isArray(r)) { const p = []; for (let i = 0; i < r.length; i += 2) p.push(`${r[i]}=${r[i + 1]}`); return p.sort(); }
-  if (name === "TTL" && typeof r === "number" && r > 0) return "ttl>0";
+  if (["SMEMBERS", "KEYS"].includes(name) && Array.isArray(r)) return [...r].sort(byCodeUnits);
+  if (name === "HGETALL" && Array.isArray(r)) { const p = []; for (let i = 0; i < r.length; i += 2) p.push(`${r[i]}=${r[i + 1]}`); return p.sort(byCodeUnits); }
+  if (name === "TTL" && r > 0) return "ttl>0"; // r is an integer or { err }, and { err } > 0 is false
   return r;
 };
 

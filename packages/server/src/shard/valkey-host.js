@@ -52,7 +52,7 @@ export class ValkeyHost {
     const memory = () => this.#vk.exports.memory;
     this.#vfs = new Vfs(sql, memory);
     this.#vfs.onTrash = () => this.#sweep();
-    this.#sweep(); // left from before a restart
+    void this.#sweep(); // left from before a restart
     const t0 = Date.now();
     this.#vk = new WebAssembly.Instance(module, this.#imports(module, memory));
     this.#vk.exports._initialize();
@@ -169,7 +169,7 @@ export class ValkeyHost {
         const job = !this.rewriting && this.onRewrite?.(tmp, rdb === 1);
         if (!job) return 0;
         this.rewriting = (async () => {
-          await null; // after the wasm call that started the rewrite has returned
+          await Promise.resolve(); // after the wasm call that started the rewrite has returned
           let ok = false;
           try { ok = await job(); } catch (e) { this.#log(`rewrite: ${e?.stack ?? e}`); }
           try {
@@ -226,13 +226,12 @@ export class ValkeyHost {
     }
   }
 
-  // rk_tick (newer builds) runs beforeSleep after the pass, so one call reads, runs, writes the AOF and
-  // flushes replies. rk_step runs it before the pass, so a wake needs two.
+  // rk_tick runs beforeSleep after the pass, so one call reads, runs, writes the AOF and flushes replies.
   step() {
     const vk = this.#vk.exports;
     // A throw (a wasm trap, a storage error under fd_write) stops Valkey mid-command, so its memory can't be
     // trusted after: `fatal` resets the object, which reloads from what was committed.
-    try { vk.rk_tick ? vk.rk_tick() : vk.rk_step(); } catch (e) { this.#log(`rk_step threw: ${e?.stack ?? e}`); this.#fatal?.(e); throw e; }
+    try { vk.rk_tick(); } catch (e) { this.#log(`rk_tick threw: ${e?.stack ?? e}`); this.#fatal?.(e); throw e; }
   }
 
   #schedule() {
@@ -248,7 +247,6 @@ export class ValkeyHost {
     this.#queued = false;
     const flushes = this.#vfs.stats.writes;
     this.step();
-    if (!this.#vk.exports.rk_tick) this.step();
     if (this.#sync && this.#vfs.stats.writes !== flushes) {
       this.#commits++;
       this.#sync().catch(() => {}).finally(() => { this.#commits--; if (this.#queued) this.#wake(); });
@@ -269,7 +267,7 @@ export class ValkeyHost {
     if (this.#sweeping) return;
     this.#sweeping = true;
     try {
-      await null; // not inside the wasm call that deleted the file
+      await Promise.resolve(); // not inside the wasm call that deleted the file
       while (this.#vfs.sweep(VFS_SWEEP_BYTES)) await new Promise((r) => setTimeout(r, VFS_SWEEP_MS));
     } catch (e) {
       this.#log(`vfs sweep: ${e?.message ?? e}`);
@@ -365,7 +363,7 @@ export class ValkeyHost {
     const writer = { write: async (b) => { out.push(b); }, close: async () => {} };
     const { s, closed } = this.#open(writer, true);
     let done = false;
-    closed.then(() => { done = true; });
+    void closed.then(() => { done = true; });
     s.chunks.push(bytes, QUIT);
     // Read + run, write replies (beforeSleep), then free the QUIT client (next beforeSleep).
     for (let i = 0; i < 6 && this.#socks.has(s.fd); i++) this.step();
@@ -401,7 +399,7 @@ export class ValkeyHost {
     const writer = { write: (b) => { this.#pooledOutput(c, b); return Promise.resolve(); }, close: async () => {} };
     const { s, closed } = this.#open(writer, true);
     c.s = s;
-    closed.then(() => { c.alive = false; });
+    void closed.then(() => { c.alive = false; });
     if (proto === 3) await this.#batch(c, HELLO3, 1);
     return c;
   }

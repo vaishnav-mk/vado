@@ -13,11 +13,11 @@ export const objectOptions = (env, hint = env.LOCATION_HINT) => (HINTS.has(hint)
 const shardName = (db, i) => `${db.name}.${db.created.toString(36)}${db.flavour === "redis" ? ".redis" : ""}.${i}`;
 // Shard i uses class k = i % db.classes, so shards less than db.classes apart never share an isolate.
 // Databases from before classes have none: all their shards are ValkeyShard (k = 0). Pub/sub stays there too.
-const classOf = (db, i) => (typeof i === "number" && db.classes > 1 ? i % db.classes : 0);
+const classOf = (db, i) => (i !== "pubsub" && db.classes > 1 ? i % db.classes : 0);
 const shardNs = (env, db, i) => (classOf(db, i) ? env[`SHARD${classOf(db, i)}`] : env.SHARD);
 // A spread database places data shard i in regions[i % n]; its pub/sub shard stays at LOCATION_HINT.
 export const shardStub = (env, db, i) =>
-  shardNs(env, db, i).getByName(shardName(db, i), objectOptions(env, typeof i === "number" && db.regions ? db.regions[i % db.regions.length] : env.LOCATION_HINT));
+  shardNs(env, db, i).getByName(shardName(db, i), objectOptions(env, i !== "pubsub" && db.regions ? db.regions[i % db.regions.length] : env.LOCATION_HINT));
 // Its read replicas use class 8 + k (replicaBinding), so a replica never shares an isolate with a primary.
 export const replicaStub = (env, db, i, region) => env[replicaBinding(classOf(db, i))].getByName(replicaName(shardName(db, i), region), objectOptions(env, region));
 

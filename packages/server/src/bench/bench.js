@@ -20,8 +20,6 @@ async function open(env, q, stallMs) {
   return RespClient.open(env, name, stallMs);
 }
 
-const info = async (c, section) =>
-  Object.fromEntries(String((await c.call(["INFO", section]))[0]).split("\r\n").filter((l) => l.includes(":")).map((l) => l.split(":")));
 const pct = (xs, p) => xs.sort((a, b) => a - b)[Math.min(xs.length - 1, Math.floor(xs.length * p))];
 const allShards = async (env, name, fn) => { const db = await database(env, name); return Promise.all(Array.from({ length: db.shards }, (_, i) => fn(shardStub(env, db, i), i))); };
 
@@ -37,7 +35,9 @@ const tests = {
     const { secret: stored, ...db } = await database(env, q.get("db"), q.get("shards") ? Number(q.get("shards")) : undefined, list(q.get("regions")), list(q.get("replicas")), q.get("classes") ? Number(q.get("classes")) : undefined, secret, q.get("flavour") ?? undefined);
     if (password && stored !== secret) throw new Error("the database already exists, so it keeps the password it has");
     if (db.replicas) await configureReplicas(env, db);
-    return { db: { ...db, password: !!stored }, ...(password ? { password } : {}) };
+    const out = { db: { ...db, password: !!stored } };
+    if (password) out.password = password;
+    return out;
   },
 
   // Drops a database: the catalog marks it dropped (the name is never reused), then every shard deletes its
@@ -163,7 +163,9 @@ const tests = {
     const idx = which === "all" ? Array.from({ length: db.shards }, (_, i) => i) : [Number(which)];
     const replica = q.get("replica"); // a region: abort that region's replica of each shard instead
     await Promise.all(idx.map((i) => (replica ? replicaStub(env, db, i, replica) : shardStub(env, db, i)).abort().catch(() => {})));
-    return { aborted: idx, ...(replica ? { replica } : {}) };
+    const out = { aborted: idx };
+    if (replica) out.replica = replica;
+    return out;
   },
 
   // Every shard's stats with Valkey's own INFO counters, and its ready replicas' (src/admin/snapshot.js).
@@ -256,7 +258,9 @@ const tests = {
     }));
     const ms = performance.now() - t0;
     cs.forEach((c) => c.close());
-    return { n, batch, conns, valueBytes: size, ms, opsPerSec: Math.round((n / ms) * 1000), errors, firstError, ...(get ? { hits } : {}) };
+    const out = { n, batch, conns, valueBytes: size, ms, opsPerSec: Math.round((n / ms) * 1000), errors, firstError };
+    if (get) out.hits = hits;
+    return out;
   },
 
   async conns(env, q) {
@@ -268,7 +272,7 @@ const tests = {
         await c.call(["PING"]);
         return c;
       }));
-      for (const r of batch) r.status === "fulfilled" ? cs.push(r.value) : errors.push(`at ${cs.length}: ${r.reason?.message}`);
+      for (const r of batch) if (r.status === "fulfilled") cs.push(r.value); else errors.push(`at ${cs.length}: ${r.reason?.message}`);
     }
     cs.forEach((c) => c.close());
     return { requested: n, opened: cs.length, ms: Date.now() - t0, errors };
@@ -424,7 +428,7 @@ const tests = {
       }
     } catch (e) { error = e.message; }
     c.close();
-    return { calls, ms: Date.now() - t0, msPerCall: Math.round((Date.now() - t0) / Math.max(1, calls)), slowestMs: slowest, error, errors: errors.slice(0, 10), errorCount: errors.length, last: typeof last === "object" ? JSON.stringify(last).slice(0, 80) : last };
+    return { calls, ms: Date.now() - t0, msPerCall: Math.round((Date.now() - t0) / Math.max(1, calls)), slowestMs: slowest, error, errors: errors.slice(0, 10), errorCount: errors.length, last: last instanceof Object ? JSON.stringify(last).slice(0, 80) : last };
   },
 
   async idle(env, q) {

@@ -5,7 +5,7 @@ import { createServerFn } from "@tanstack/react-start";
 import { env } from "cloudflare:workers";
 import { z } from "zod";
 import { Admin, FLAVOURS } from "@vado/server";
-import type { CommandResult, Database, TestView } from "../lib/types";
+import type { CommandResult, Database, Options, TestView } from "../lib/types";
 import { requireUser } from "./access";
 
 const admin = () => new Admin(env);
@@ -20,13 +20,13 @@ export const getDatabase = createServerFn({ method: "GET" })
   .handler(({ data }): Promise<Database | null> => admin().database(data.name).catch(() => null));
 
 /** The regions a database can use, and the servers this build runs. */
-export const listOptions = createServerFn({ method: "GET" }).handler(() => ({ regions: admin().regions() as Record<string, string>, flavours: FLAVOURS as string[] }));
+export const listOptions = createServerFn({ method: "GET" }).handler((): Options => ({ regions: admin().regions(), flavours: FLAVOURS }));
 
 export const createDatabase = createServerFn({ method: "POST" })
   .validator(z.object({ name, shards: z.number().int().min(1).max(64), place: z.string().min(1).max(16), replicas: z.boolean(), flavour: z.string().max(16) }))
-  .handler(async ({ data }) => {
+  .handler(async ({ data }): Promise<Database> => {
     await requireUser();
-    return (await admin().create(data)) as Database;
+    return await admin().create(data);
   });
 
 export const restartShard = createServerFn({ method: "POST" })
@@ -39,9 +39,9 @@ export const restartShard = createServerFn({ method: "POST" })
 
 export const startTest = createServerFn({ method: "POST" })
   .validator(z.object({ name, level: z.enum(["light", "medium", "heavy"]), from: z.string().min(1).max(16) }))
-  .handler(async ({ data }) => {
+  .handler(async ({ data }): Promise<TestView> => {
     await requireUser();
-    return (await admin().startTest(data.name, data.level, data.from)) as TestView;
+    return await admin().startTest(data.name, data.level, data.from);
   });
 
 export const stopTest = createServerFn({ method: "POST" })
@@ -54,7 +54,7 @@ export const stopTest = createServerFn({ method: "POST" })
 
 export const runCommand = createServerFn({ method: "POST" })
   .validator(z.object({ name, argv: z.array(z.string().max(64 * 1024)).min(1).max(256) }))
-  .handler(async ({ data }) => {
+  .handler(async ({ data }): Promise<CommandResult> => {
     await requireUser();
-    return (await admin().command(data.name, data.argv)) as CommandResult;
+    return await admin().command(data.name, data.argv);
   });

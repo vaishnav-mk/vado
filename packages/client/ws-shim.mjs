@@ -14,7 +14,9 @@ const server = net.createServer((sock) => {
   sock.setNoDelay(true);
   // WS_HEADER="name: value" adds a header to the WebSocket upgrade; WS_DEBUG=1 logs close codes.
   const header = process.env.WS_HEADER?.match(/^([^:]+):\s*(.*)$/);
-  const ws = new WebSocket(url, { protocols: ["vado-acks"], ...(header ? { headers: { [header[1]]: header[2] } } : {}) });
+  const options = { protocols: ["vado-acks"] };
+  if (header) options.headers = { [header[1]]: header[2] };
+  const ws = new WebSocket(url, options);
   ws.binaryType = "arraybuffer";
   const early = [];
   let timer = null;

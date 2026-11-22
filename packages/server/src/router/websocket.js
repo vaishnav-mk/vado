@@ -15,13 +15,13 @@ export function wsSocket(ws, acks = false) {
   const wake = () => { const r = resume; resume = null; r?.(); };
   const end = () => { wake(); try { ctrl.close(); } catch { /* already closed */ } };
   ws.addEventListener("message", (e) => {
-    if (acks && typeof e.data === "string") { // bytes the client has taken so far
+    if (acks && !(e.data instanceof ArrayBuffer)) { // a text message: bytes the client has taken so far
       acked = Math.max(acked, Number(e.data) || 0);
       if (sent - acked <= WS_UNACKED / 2) wake();
       return;
     }
     try {
-      ctrl.enqueue(typeof e.data === "string" ? new TextEncoder().encode(e.data) : new Uint8Array(e.data));
+      ctrl.enqueue(e.data instanceof ArrayBuffer ? new Uint8Array(e.data) : new TextEncoder().encode(e.data));
     } catch { return; }
     if (ctrl.desiredSize < 0) { ws.close(1009, "sending faster than the server reads"); end(); }
   });

@@ -18,12 +18,12 @@ export function replicaCounts(shards: Shard[] | undefined): ReplicaCounts {
 }
 
 /** One short line ("9 serving, 567 asleep") and a badge variant for it. */
-export function replicaLine(c: ReplicaCounts): { text: string; variant: "success" | "warning" | "error" | "neutral" } {
-  if (c.ready === c.total) return { text: `${plural(c.total, "replica")} serving`, variant: "success" };
-  if (c.asleep === c.total) return { text: `${plural(c.total, "replica")} asleep`, variant: "neutral" };
+export function replicaLine(c: ReplicaCounts) {
+  if (c.ready === c.total) return { text: `${plural(c.total, "replica")} serving`, variant: "success" } as const;
+  if (c.asleep === c.total) return { text: `${plural(c.total, "replica")} asleep`, variant: "neutral" } as const;
   const parts = [c.ready && `${c.ready.toLocaleString("en")} serving`, c.waking && `${c.waking.toLocaleString("en")} copying`,
     c.lost && `${c.lost.toLocaleString("en")} reconnecting`, c.asleep && `${c.asleep.toLocaleString("en")} asleep`].filter(Boolean);
-  return { text: `Replicas: ${parts.join(", ")}`, variant: c.lost ? "error" : c.waking ? "warning" : "success" };
+  return { text: `Replicas: ${parts.join(", ")}`, variant: c.lost ? "error" : c.waking ? "warning" : "success" } as const;
 }
 
 export const SLEEP_NOTE = "A shard's replicas sleep after 10 minutes without traffic to that shard, and its next read or write wakes them in a few seconds.";

@@ -8,6 +8,7 @@ import * as echarts from "echarts/core";
 import { LineChart } from "echarts/charts";
 import { GridComponent, TooltipComponent } from "echarts/components";
 import { CanvasRenderer } from "echarts/renderers";
+import type { DefaultLabelFormatterCallbackParams, TooltipComponentFormatterCallbackParams } from "echarts";
 import { Chart, ChartPalette, Text } from "@cloudflare/kumo";
 import { axisLabel, clock, niceAxis } from "../lib/format";
 
@@ -57,8 +58,9 @@ export function LiveChart({ series, dark, unit = "", minStep = 1, format, height
         backgroundColor: dark ? "#1f1f1f" : "#ffffff",
         borderColor: dark ? "#3f3f46" : "#e5e7eb",
         textStyle: { color: dark ? "#f5f5f5" : "#171717", fontSize: 12 },
-        dangerousHtmlFormatter: (params: unknown) => {
-          const rows = (Array.isArray(params) ? params : [params]) as { seriesName: string; color: string; value: [number, number | null] }[];
+        dangerousHtmlFormatter: (params: TooltipComponentFormatterCallbackParams) => {
+          // SAFETY: trigger "axis" passes an entry per line series below, with that series' name, color and [time, value | null] point.
+          const rows = (Array.isArray(params) ? params : [params]) as (DefaultLabelFormatterCallbackParams & { seriesName: string; color: string; value: [number, number | null] })[];
           if (!rows.length) return "";
           return `<div style="margin-bottom:4px;opacity:.7">${esc(clock(rows[0].value[0]))}</div>${rows
             .map((r) => `<div style="display:flex;gap:8px;align-items:center"><span style="width:8px;height:8px;border-radius:9px;background:${r.color}"></span>${esc(r.seriesName)}<b style="margin-left:auto;padding-left:12px">${r.value[1] === null ? "–" : esc(format(r.value[1]))}</b></div>`)

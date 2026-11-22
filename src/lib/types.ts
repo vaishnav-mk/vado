@@ -134,8 +134,12 @@ export type LiveMessage =
   | { type: "init"; history: Point[]; events: LiveEvent[]; state: LiveState | null }
   | { type: "tick"; point: Point; events: LiveEvent[]; state: LiveState };
 
-/** A decoded RESP reply: bulk and simple strings as strings, errors as { err }. */
-export type Reply = string | number | boolean | null | { err: string } | Reply[];
+/** A RESP2 reply with its type (resp.js decodeTyped), so a status reply and a bulk string show apart. */
+export type Reply =
+  | { type: "status" | "error" | "bulk"; value: string }
+  | { type: "integer"; value: number }
+  | { type: "nil" }
+  | { type: "array"; value: Reply[] };
 
 /** What Admin.command says about one command. */
 export interface CommandResult {

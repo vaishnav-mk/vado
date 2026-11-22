@@ -3,7 +3,7 @@ import { Button, Input, LayerCard, Select, Text } from "@cloudflare/kumo";
 import { PlayIcon } from "@phosphor-icons/react";
 import { Guard } from "./Guard";
 import { runCommand } from "../server/admin";
-import { COMMANDS, OTHER, replicationLine, showArgv, showReply, toArgv } from "../lib/command";
+import { COMMANDS, OTHER, replicationLine, showArgv, showReply, toArgv, type Arg } from "../lib/command";
 import { ms } from "../lib/format";
 import { place, REGION_NAMES } from "../lib/places";
 import type { LastCommand, Shard } from "../lib/types";
@@ -26,11 +26,11 @@ function story(r: LastCommand, shards: Shard[]) {
 }
 
 export function RunCommand({ db, shards, last, onResult }: { db: string; shards: Shard[]; last: LastCommand | null; onResult: (r: LastCommand) => void }) {
-  const [cmd, setCmd] = useState("GET"), [values, setValues] = useState<string[]>([]);
+  const [cmd, setCmd] = useState<keyof typeof COMMANDS>("GET"), [values, setValues] = useState<string[]>([]);
   const [busy, setBusy] = useState(false), [error, setError] = useState<string | null>(null);
-  const args = COMMANDS[cmd] ?? [];
+  const args: Arg[] = COMMANDS[cmd];
   let argv: string[] = [], parseError: string | null = null;
-  try { argv = toArgv(cmd, values); } catch (e) { parseError = (e as Error).message; }
+  try { argv = toArgv(cmd, values); } catch (e) { parseError = e instanceof Error ? e.message : String(e); }
 
   const submit = async (e: FormEvent) => {
     e.preventDefault();
@@ -40,7 +40,7 @@ export function RunCommand({ db, shards, last, onResult }: { db: string; shards:
       const before = shards.map((s) => s.replicas?.map((x) => x.state) ?? null);
       const r = await runCommand({ data: { name: db, argv } });
       onResult({ ...r, argv, at: Date.now(), before: r.shard !== null ? before[r.shard] ?? null : null });
-    } catch (err) { setError((err as Error).message); }
+    } catch (err) { setError(err instanceof Error ? err.message : String(err)); }
     setBusy(false);
   };
 
@@ -49,7 +49,7 @@ export function RunCommand({ db, shards, last, onResult }: { db: string; shards:
       <LayerCard.Secondary>Run a command</LayerCard.Secondary>
       <LayerCard.Primary className="flex flex-col gap-3">
         <form onSubmit={submit} className="flex flex-col gap-3">
-          <Select label="Command" value={cmd} items={ITEMS} onValueChange={(v) => { if (v) { setCmd(v as string); setValues([]); setError(null); } }} />
+          <Select label="Command" value={cmd} items={ITEMS} onValueChange={(v) => { if (v) { setCmd(v); setValues([]); setError(null); } }} />
           {args.map((a, k) => (
             <Input key={`${cmd}-${k}`} label={a.name} placeholder={a.placeholder} value={values[k] ?? ""} className="w-full font-mono" autoComplete="off" spellCheck={false}
               description={a.many ? 'Separate values with spaces. "Quote" a value that has spaces.' : undefined}

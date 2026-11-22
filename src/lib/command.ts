@@ -10,10 +10,10 @@ export interface Arg {
   many?: boolean;
 }
 
-export const OTHER = "Other";
+export const OTHER = "Other" as const; // as const, or the command Select's value type widens to string
 
 /** Command -> its arguments, in order. Other is a whole command line. */
-export const COMMANDS: Record<string, Arg[]> = {
+export const COMMANDS = {
   GET: [{ name: "Key", placeholder: "greeting" }],
   SET: [{ name: "Key", placeholder: "greeting" }, { name: "Value", placeholder: "hello world" }],
   DEL: [{ name: "Keys", placeholder: "greeting counter", many: true }],
@@ -31,7 +31,9 @@ export const COMMANDS: Record<string, Arg[]> = {
   ZRANGE: [{ name: "Key", placeholder: "scores" }, { name: "Start", placeholder: "0" }, { name: "Stop", placeholder: "-1" }],
   DBSIZE: [],
   [OTHER]: [{ name: "Command", placeholder: 'SET "my key" "hello world" EX 60', many: true }],
-};
+} satisfies Record<string, Arg[]>;
+
+const ESCAPES = new Map([["n", "\n"], ["t", "\t"], ["r", "\r"]]);
 
 /** Splits a line into arguments like valkey-cli: spaces separate, "double" quotes allow \" \\ \n \t \r \xHH, 'single' quotes are literal but for \'. */
 export function splitArgs(line: string): string[] {
@@ -54,7 +56,7 @@ export function splitArgs(line: string): string[] {
           const e = line[i + 1];
           if (q === "'") { arg += e === "'" ? "'" : `\\${e}`; i += 2; continue; }
           if (e === "x" && /^[0-9a-fA-F]{2}$/.test(line.slice(i + 2, i + 4))) { arg += String.fromCharCode(parseInt(line.slice(i + 2, i + 4), 16)); i += 4; continue; }
-          arg += ({ n: "\n", t: "\t", r: "\r" } as Record<string, string>)[e] ?? e;
+          arg += ESCAPES.get(e) ?? e;
           i += 2;
           continue;
         }
@@ -70,10 +72,10 @@ export function splitArgs(line: string): string[] {
 }
 
 /** The argv for `command` with `values` typed in its fields. Fields that take one value are taken as typed. */
-export function toArgv(command: string, values: string[]): string[] {
+export function toArgv(command: keyof typeof COMMANDS, values: string[]): string[] {
   if (command === OTHER) return splitArgs(values[0] ?? "");
-  const args = COMMANDS[command] ?? [];
-  const argv = [command];
+  const args: Arg[] = COMMANDS[command];
+  const argv: string[] = [command];
   args.forEach((a, k) => {
     const v = values[k] ?? "";
     if (a.many) argv.push(...splitArgs(v));
@@ -86,22 +88,20 @@ export function toArgv(command: string, values: string[]): string[] {
 export const showArgv = (argv: string[]) =>
   argv.map((a) => (a === "" || /[\s"'\\]/.test(a) ? JSON.stringify(a) : a)).join(" ");
 
-const isError = (v: Reply): v is { err: string } => typeof v === "object" && v !== null && !Array.isArray(v) && "err" in v;
-const STATUS = new Set(["OK", "PONG", "QUEUED"]);
-
 /** A reply as valkey-cli prints it. */
-export function showReply(v: Reply, depth = 0): string {
-  if (v === null) return "(nil)";
-  if (typeof v === "number") return Number.isInteger(v) ? `(integer) ${v}` : `(double) ${v}`;
-  if (typeof v === "boolean") return v ? "(true)" : "(false)";
-  if (isError(v)) return `(error) ${v.err}`;
-  if (Array.isArray(v)) {
-    if (!v.length) return "(empty array)";
-    const width = String(v.length).length;
-    return v.map((x, k) => `${k ? "   ".repeat(depth) : ""}${String(k + 1).padStart(width)}) ${showReply(x, depth + 1)}`).join("\n");
+export function showReply(r: Reply, depth = 0): string {
+  switch (r.type) {
+    case "status": return r.value;
+    case "error": return `(error) ${r.value}`;
+    case "integer": return `(integer) ${r.value}`;
+    case "nil": return "(nil)";
+    case "bulk": return JSON.stringify(r.value.length > 4000 ? `${r.value.slice(0, 4000)}…` : r.value);
+    case "array": {
+      if (!r.value.length) return "(empty array)";
+      const width = String(r.value.length).length;
+      return r.value.map((x, k) => `${k ? "   ".repeat(depth) : ""}${String(k + 1).padStart(width)}) ${showReply(x, depth + 1)}`).join("\n");
+    }
   }
-  const s = String(v);
-  return STATUS.has(s) ? s : JSON.stringify(s.length > 4000 ? `${s.slice(0, 4000)}…` : s);
 }
 
 /** Only "Copied to N of M" when the replicas were ready to take it; otherwise what they were doing. */

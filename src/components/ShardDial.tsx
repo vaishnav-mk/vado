@@ -8,7 +8,7 @@ import { Legend } from "./Legend";
 import { bytes, num, plural } from "../lib/format";
 import { useReducedMotion } from "../lib/hooks";
 import { SLOTS } from "../lib/places";
-import type { Shard } from "../lib/types";
+import type { ReplicaState, Shard } from "../lib/types";
 
 const R_IN = 120, R_OUT = 178, R_HUB = 112;
 const first = (i: number, n: number) => Math.ceil((i * SLOTS) / n);
@@ -29,7 +29,7 @@ function annulus(r0: number, r1: number, a0: number, a1: number) {
 }
 
 /** All of a shard's replicas as one state: serving if any serves, else copying, reconnecting, or asleep. */
-const summaryState = (reps: { state: string }[]) =>
+const summaryState = (reps: { state: string }[]): ReplicaState =>
   reps.some((r) => r.state === "ready") ? "ready" : reps.some((r) => r.state === "copying" || r.state === "catching up") ? "copying" : reps.some((r) => r.state === "idle") ? "idle" : "asleep";
 const ops = (s: Shard | undefined) => (s?.ok ? (s.reads ?? 0) + (s.writes ?? 0) + s.replicas.reduce((a, r) => a + (r.reads ?? 0), 0) : 0);
 

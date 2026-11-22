@@ -20,22 +20,22 @@ const TONE: Record<EventLevel, string> = {
   error: "bg-kumo-danger/15 text-kumo-danger",
 };
 
-const FILTERS: Record<string, { label: string; keep: (e: LiveEvent) => boolean; empty: string }> = {
-  all: { label: "All", keep: () => true, empty: "Restarts, deploys, replicas and what you do here show up as they happen." },
-  shards: { label: "Shards", keep: (e) => ["restart", "deploy", "rewrite", "memory"].includes(e.kind), empty: "Restarts, deploys and log compactions show up here." },
-  replicas: { label: "Replicas", keep: (e) => e.kind === "replica", empty: "Replicas waking, copying, catching up or going to sleep show up here." },
-  mine: { label: "Your actions", keep: (e) => e.kind === "action" || e.kind === "test", empty: "New databases, restarts and test traffic started from here show up here." },
-};
+const FILTERS = [
+  { value: "all", label: "All", keep: () => true, empty: "Restarts, deploys, replicas and what you do here show up as they happen." },
+  { value: "shards", label: "Shards", keep: (e: LiveEvent) => ["restart", "deploy", "rewrite", "memory"].includes(e.kind), empty: "Restarts, deploys and log compactions show up here." },
+  { value: "replicas", label: "Replicas", keep: (e: LiveEvent) => e.kind === "replica", empty: "Replicas waking, copying, catching up or going to sleep show up here." },
+  { value: "mine", label: "Your actions", keep: (e: LiveEvent) => e.kind === "action" || e.kind === "test", empty: "New databases, restarts and test traffic started from here show up here." },
+];
 
 export function Activity({ events }: { events: LiveEvent[] }) {
   const [tab, setTab] = useState("all");
   const now = useNow(5_000);
-  const f = FILTERS[tab] ?? FILTERS.all, shown = events.filter(f.keep);
+  const f = FILTERS.find((x) => x.value === tab) ?? FILTERS[0], shown = events.filter(f.keep);
   return (
     <LayerCard className="h-full min-w-0">
       <LayerCard.Secondary>Activity</LayerCard.Secondary>
       <LayerCard.Primary className="min-h-0 flex-1 gap-3">
-        <Tabs variant="segmented" size="sm" value={tab} onValueChange={setTab} tabs={Object.entries(FILTERS).map(([value, x]) => ({ value, label: x.label }))} />
+        <Tabs variant="segmented" size="sm" value={tab} onValueChange={setTab} tabs={FILTERS.map(({ value, label }) => ({ value, label }))} />
         {/* As tall as the cards beside it: the list scrolls rather than stretching the row. */}
         <div className="relative min-h-80 flex-1">
           {shown.length ? (

@@ -348,7 +348,8 @@ export class ValkeyShard extends DurableObject {
     this.#live();
     const [txt] = decodeAll(await this.#host.execBatch(command(["INFO", "server", "clients", "memory", "persistence", "stats", "keyspace", "commandstats"]), 1));
     const info = Object.fromEntries(String(txt).split("\r\n").filter((l) => l.includes(":")).map((l) => [l.slice(0, l.indexOf(":")), l.slice(l.indexOf(":") + 1)]));
-    const { files, ...stats } = this.stats();
+    const stats = this.stats();
+    delete stats.files;
     return { ...stats, info };
   }
 

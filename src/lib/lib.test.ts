@@ -23,13 +23,14 @@ test("toArgv", () => {
 
 test("showArgv and showReply", () => {
   assert.equal(showArgv(["SET", "my key", "v"]), `SET "my key" v`);
-  assert.equal(showReply("OK"), "OK");
-  assert.equal(showReply("hello"), `"hello"`);
-  assert.equal(showReply(null), "(nil)");
-  assert.equal(showReply(3), "(integer) 3");
-  assert.equal(showReply({ err: "ERR nope" }), "(error) ERR nope");
-  assert.equal(showReply([]), "(empty array)");
-  assert.equal(showReply(["a", ["b", 2]]), `1) "a"\n2) 1) "b"\n   2) (integer) 2`);
+  assert.equal(showReply({ type: "status", value: "OK" }), "OK");
+  assert.equal(showReply({ type: "bulk", value: "OK" }), `"OK"`); // GET of a key holding OK, quoted as valkey-cli does
+  assert.equal(showReply({ type: "bulk", value: "hello" }), `"hello"`);
+  assert.equal(showReply({ type: "nil" }), "(nil)");
+  assert.equal(showReply({ type: "integer", value: 3 }), "(integer) 3");
+  assert.equal(showReply({ type: "error", value: "ERR nope" }), "(error) ERR nope");
+  assert.equal(showReply({ type: "array", value: [] }), "(empty array)");
+  assert.equal(showReply({ type: "array", value: [{ type: "bulk", value: "a" }, { type: "array", value: [{ type: "bulk", value: "b" }, { type: "integer", value: 2 }] }] }), `1) "a"\n2) 1) "b"\n   2) (integer) 2`);
 });
 
 test("chart axes never repeat a label", () => {

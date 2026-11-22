@@ -11,9 +11,9 @@ const LEVELS = { light: "Light", medium: "Medium", heavy: "Heavy" };
 export function TestTraffic({ db, test, now, regions }: { db: string; test: TestView | null | undefined; now: number; regions: Record<string, string> }) {
   const [level, setLevel] = useState<keyof typeof LEVELS>("medium"), [from, setFrom] = useState("everywhere");
   const [busy, setBusy] = useState(false), [error, setError] = useState<string | null>(null);
-  const act = async (f: () => Promise<unknown>) => {
+  const act = async (f: () => Promise<TestView | null>) => {
     setBusy(true); setError(null);
-    try { await f(); } catch (e) { setError((e as Error).message); }
+    try { await f(); } catch (e) { setError(e instanceof Error ? e.message : String(e)); }
     setBusy(false);
   };
   const left = test ? Math.max(0, (test.until - now) / 1000) : 0;
@@ -23,8 +23,8 @@ export function TestTraffic({ db, test, now, regions }: { db: string; test: Test
       <LayerCard.Primary className="flex flex-col gap-3">
         <Text variant="secondary" size="sm">Writes keys from Cloudflare locations, then reads them back three times, so you can watch the database under load. It stops by itself after 10 minutes.</Text>
         <div className="grid grid-cols-2 gap-2">
-          <Select label="From" value={from} onValueChange={(v) => v && setFrom(v as string)} disabled={!!test} items={{ everywhere: "Everywhere", ...regions }} />
-          <Select label="Amount" value={level} onValueChange={(v) => v && setLevel(v as keyof typeof LEVELS)} disabled={!!test} items={LEVELS} />
+          <Select label="From" value={from} onValueChange={(v) => v && setFrom(v)} disabled={!!test} items={{ everywhere: "Everywhere", ...regions }} />
+          <Select label="Amount" value={level} onValueChange={(v) => v && setLevel(v)} disabled={!!test} items={LEVELS} />
         </div>
         <Guard action={test ? "stop test traffic" : "start test traffic"} className="flex">
           {(disabled) => test

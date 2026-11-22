@@ -6,6 +6,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { geoDistance, geoInterpolate, geoOrthographic, geoPath } from "d3-geo";
 import { feature } from "topojson-client";
+import type { GeometryCollection, Topology } from "topojson-specification";
 import land110 from "world-atlas/land-110m.json";
 import { ChartPalette, LayerCard, Text } from "@cloudflare/kumo";
 import { Legend } from "./Legend";
@@ -15,8 +16,10 @@ import { useReducedMotion } from "../lib/hooks";
 import { place } from "../lib/places";
 import type { LastCommand, LiveState, ReplicaState } from "../lib/types";
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-const LAND = feature(land110 as any, (land110 as any).objects.land) as unknown as GeoJSON.FeatureCollection;
+// SAFETY: world-atlas's land-110m.json is a TopoJSON topology whose `land` object is a GeometryCollection; TypeScript
+// infers its JSON with `type: string`, not those literal types.
+const TOPOLOGY = land110 as Topology<{ land: GeometryCollection }>;
+const LAND = feature(TOPOLOGY, TOPOLOGY.objects.land);
 const SPIN = 5; // degrees per second
 const PATH_MS = 6_000; // how long the last command's path stays
 const TRAVEL_MS = 1_200; // how long its dot takes to cross
@@ -53,7 +56,7 @@ function scene(state: LiveState | null, last: LastCommand | null, dark: boolean)
   const homes = new Map<string, { at: LonLat; city: string; shards: number[]; writes: number }>();
   for (const s of shards) {
     if (!has(s)) continue;
-    const h = homes.get(key(s)) ?? { at: [s.lon, s.lat] as LonLat, city: s.city || "an unknown place", shards: [], writes: 0 };
+    const h = homes.get(key(s)) ?? { at: [s.lon, s.lat], city: s.city || "an unknown place", shards: [], writes: 0 };
     h.shards.push(s.i);
     h.writes += s.ok ? s.writes ?? 0 : 0;
     homes.set(key(s), h);
@@ -63,14 +66,14 @@ function scene(state: LiveState | null, last: LastCommand | null, dark: boolean)
   for (const s of shards) {
     for (const r of s.replicas ?? []) {
       if (!has(r)) continue;
-      const c = copies.get(key(r)) ?? { at: [r.lon, r.lat] as LonLat, city: r.city || r.regionName, region: r.regionName || r.region, states: [], reads: 0, lag: 0 };
+      const c = copies.get(key(r)) ?? { at: [r.lon, r.lat], city: r.city || r.regionName, region: r.regionName || r.region, states: [], reads: 0, lag: 0 };
       c.states.push(r.state);
       c.reads += r.reads ?? 0;
       if (r.state === "ready") c.lag = Math.max(c.lag, r.lagMs ?? 0);
       copies.set(key(r), c);
       if (!has(s) || key(s) === key(r)) continue;
       const k = `${key(s)}>${key(r)}`;
-      const st = streams.get(k) ?? { from: [s.lon, s.lat] as LonLat, to: [r.lon, r.lat] as LonLat, rate: 0, states: [] };
+      const st = streams.get(k) ?? { from: [s.lon, s.lat], to: [r.lon, r.lat], rate: 0, states: [] };
       if (r.state === "asleep" || r.state === "idle" || !s.ok || !s.writes) continue; // nothing is moving
       st.rate += s.writes;
       st.states.push(r.state);
@@ -86,7 +89,7 @@ function scene(state: LiveState | null, last: LastCommand | null, dark: boolean)
   const targets = [...homes.values()];
   if (targets.length <= MAX_ENTRY_ARCS) {
     for (const e of [...entries].sort((a, b) => b.ops - a.ops).slice(0, 8)) for (const h of targets)
-      if (key(e) !== key({ lat: h.at[1], lon: h.at[0] })) arcs.push(arc(`${key(e)}>${h.at}`, [e.lon, e.lat], h.at, blue, e.ops / targets.length, 0.25));
+      if (key(e) !== key({ lat: h.at[1], lon: h.at[0] })) arcs.push(arc(`${key(e)}>${h.at.join()}`, [e.lon, e.lat], h.at, blue, e.ops / targets.length, 0.25));
   }
 
   for (const h of homes.values()) {
@@ -94,7 +97,7 @@ function scene(state: LiveState | null, last: LastCommand | null, dark: boolean)
       `${h.shards.length === 1 ? "Shard" : "Shards"} ${shardList(h.shards)}${h.writes ? `, taking ${num(h.writes)} writes/s` : ""}`);
   }
   for (const c of copies.values()) {
-    const counts = WORST.filter((w) => c.states.includes(w)).map((w) => `${c.states.filter((x) => x === w).length} ${replicaWords(w).toLowerCase()}`);
+    const counts = WORST.flatMap((w) => (c.states.includes(w) ? [`${c.states.filter((x) => x === w).length} ${replicaWords(w).toLowerCase()}`] : []));
     const asleep = c.states.every((x) => x === "asleep");
     spot(c.at, `${c.city}, ${c.region}`, { kind: "replica", color: replicaColor(worst(c.states)), size: asleep ? 2.5 : 4, alpha: asleep ? 0.55 : 1 },
       `${plural(c.states.length, "read replica")}: ${counts.join(", ")}${c.reads ? `. Serving ${num(c.reads)} reads/s` : ""}${c.lag ? `, up to ${ms(c.lag)} behind` : ""}`);
@@ -115,7 +118,7 @@ function scene(state: LiveState | null, last: LastCommand | null, dark: boolean)
       fan: last.write && last.replication ? (shard.replicas ?? []).filter(has).map((r) => arc(r.region, [shard.lon, shard.lat], [r.lon, r.lat], HIGHLIGHT, 0)) : [],
     };
   }
-  const centerOf = targets.length ? targets : entries.map((e) => ({ at: [e.lon, e.lat] as LonLat }));
+  const centerOf = targets.length ? targets : entries.map((e) => ({ at: [e.lon, e.lat] satisfies LonLat }));
   const center: LonLat | null = centerOf.length ? [centerOf.reduce((a, h) => a + h.at[0], 0) / centerOf.length, centerOf.reduce((a, h) => a + h.at[1], 0) / centerOf.length] : null;
   return { spots: [...spots.values()], arcs, path, center };
 }
@@ -300,7 +303,7 @@ export function Globe({ state, last, dark }: { state: LiveState | null; last: La
               if (e.button !== 0) return;
               e.currentTarget.setPointerCapture(e.pointerId);
               aimed.current = true;
-              drag.current = { id: e.pointerId, x: e.clientX, y: e.clientY, rot: [...(rot.current ?? [0, 0])] as [number, number] };
+              drag.current = { id: e.pointerId, x: e.clientX, y: e.clientY, rot: [...(rot.current ?? [0, 0])] };
               setTip(null);
             }}
             onPointerMove={(e) => {

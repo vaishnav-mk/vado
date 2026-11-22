@@ -86,7 +86,7 @@ export async function serve(socket, env, name, via = "tcp", where = null) {
  *  code: the shared password opens any database). */
 export function connectLocal(env, name) {
   const up = new TransformStream(), down = new TransformStream();
-  serve({ readable: up.readable, writable: down.writable }, env, name, "binding");
+  void serve({ readable: up.readable, writable: down.writable }, env, name, "binding");
   return { readable: down.readable, writable: up.writable };
 }
 

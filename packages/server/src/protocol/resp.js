@@ -94,6 +94,34 @@ export function decode(b, i = 0, raw = false) {
   }
 }
 
+/** Decodes the RESP2 reply at `i` keeping its type, so it can be shown as valkey-cli does (a status reply OK unquoted,
+ *  a bulk string "OK" quoted): { type: "status" | "error" | "integer" | "bulk", value }, { type: "nil" }, or
+ *  { type: "array", value: [replies] }. */
+export function decodeTyped(b, i = 0) {
+  const t = b[i];
+  const le = lineEnd(b, i + 1, b.length);
+  if (le < 0) throw new Error("incomplete RESP frame");
+  const line = () => dec.decode(b.subarray(i + 1, le));
+  switch (t) {
+    case 43: return [{ type: "status", value: line() }, le + 2];
+    case 45: return [{ type: "error", value: line() }, le + 2];
+    case 58: return [{ type: "integer", value: num(b, i + 1, le) }, le + 2];
+    case 36: {
+      const n = num(b, i + 1, le);
+      return n < 0 ? [{ type: "nil" }, le + 2] : [{ type: "bulk", value: dec.decode(b.subarray(le + 2, le + 2 + n)) }, le + 4 + n];
+    }
+    case 42: {
+      const n = num(b, i + 1, le);
+      if (n < 0) return [{ type: "nil" }, le + 2];
+      const value = [];
+      let j = le + 2;
+      for (let k = 0; k < n; k++) { const [v, nx] = decodeTyped(b, j); value.push(v); j = nx; }
+      return [{ type: "array", value }, j];
+    }
+    default: throw new Error(`RESP protocol error: unexpected byte ${t} in a RESP2 reply`);
+  }
+}
+
 function skipAttr(b, i) {
   const le = lineEnd(b, i + 1, b.length);
   let j = le + 2;
