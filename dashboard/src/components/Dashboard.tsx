@@ -34,7 +34,7 @@ export function Dashboard({ name, live, regions, dark }: { name: string; live: L
         <ResponseTime history={history} dark={dark} watcher={state?.watcher} />
       </Grid>
       <ShardTable db={name} shards={shards} now={now} selected={selected} onSelect={setSelected} />
-      <Replicas state={state} reads={reads} />
+      <Replicas state={state} reads={reads} selected={selected} onSelect={setSelected} />
       <Grid variant="2up" gap="base">
         <div className="flex min-w-0 flex-col gap-6">
           <RunCommand db={name} shards={shards} last={last} onResult={setLast} />
