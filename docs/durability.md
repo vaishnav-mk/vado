@@ -137,8 +137,9 @@ have (`src/replication/replication.js`).
   primary copies them again: about 10 seconds after a reset in production, and a new copy stops reads until it has
   arrived.
 - **The database goes idle.** After 10 minutes (`REPL_IDLE_MS`) with no writes, no client activity on the primary and
-  no reads on any replica, the primary retires its replicas (they stop serving reads), closes the streams and stops
-  its alarm, so every object can be evicted. It checks once more after asking the replicas, so a write during the
+  no reads on any replica, the primary retires its replicas (they reset), closes the streams and stops its alarm, so
+  every object can be evicted. It stores that it sleeps, so being booted again after an eviction (to be looked at by
+  the dashboard, say) doesn't wake it; only activity does. It checks once more after asking the replicas, so a write during the
   check keeps it awake. The next client activity on the primary wakes it and it copies every replica again; a read
   meanwhile finds its replica retired and goes to the primary, which wakes it too. Retired replicas serve nothing,
   so sleeping never makes reads stale.

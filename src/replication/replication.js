@@ -31,13 +31,17 @@ export class Replicator {
   #targets = new Map(); // region -> state
   #copying = 0;
   #lastAppend = Date.now();
-  #asleep = false; // idle: replicas retired, no alarm; activity or a write wakes it
+  #asleep = false; // idle: replicas retired, no alarm; activity or a write wakes it. Stored (repl_asleep)
 
   constructor(ctx, env, host, name, ns) {
     this.#ctx = ctx; this.#env = env; this.#host = host; this.#name = name; this.#ns = ns; // ns: the class its replicas live in
     ctx.storage.sql.exec(`CREATE TABLE IF NOT EXISTS repl_targets (region TEXT PRIMARY KEY)`);
     for (const { region } of ctx.storage.sql.exec(`SELECT region FROM repl_targets`).toArray()) this.#targets.set(region, idle(region));
-    if (this.#targets.size) ctx.storage.setAlarm(Date.now() + 100);
+    // A sleeping primary is soon evicted, and whatever boots it next (a look from the dashboard, say) must not
+    // copy every replica again: only activity wakes it.
+    ctx.storage.sql.exec(`CREATE TABLE IF NOT EXISTS repl_asleep (since INTEGER NOT NULL)`);
+    this.#asleep = ctx.storage.sql.exec(`SELECT 1 FROM repl_asleep`).toArray().length > 0;
+    if (this.#targets.size && !this.#asleep) ctx.storage.setAlarm(Date.now() + 100);
   }
 
   get configured() { return this.#targets.size > 0; }
@@ -52,6 +56,7 @@ export class Replicator {
     for (const r of regions) sql.exec(`INSERT INTO repl_targets (region) VALUES (?)`, r);
     for (const [r, t] of this.#targets) if (!regions.includes(r)) { this.#drop(t, "no longer configured"); this.#targets.delete(r); }
     for (const r of regions) if (!this.#targets.has(r)) this.#targets.set(r, idle(r));
+    this.wake(); // configuring (re)starts the replicas
     this.#ctx.storage.setAlarm(Date.now());
   }
 
@@ -68,6 +73,7 @@ export class Replicator {
   wake() {
     if (!this.#asleep) return;
     this.#asleep = false;
+    this.#ctx.storage.sql.exec(`DELETE FROM repl_asleep`);
     for (const t of this.#targets.values()) t.retryAt = 0;
     this.#ctx.storage.setAlarm(Date.now());
   }
@@ -81,6 +87,7 @@ export class Replicator {
     const idle = await Promise.all(ts.map((t) => t.stub.replicaIdleMs().catch(() => 0)));
     if (!idle.every((ms) => ms >= REPL_IDLE_MS) || this.#lastAppend > now || this.#host.lastActive > now) return false;
     this.#asleep = true;
+    this.#ctx.storage.sql.exec(`INSERT INTO repl_asleep VALUES (?)`, now);
     for (const t of ts) this.#drop(t, "asleep: idle");
     return true;
   }
