@@ -182,8 +182,14 @@ class Upstream {
   }
 
   close() {
-    if (!this.dead) socketsOpen--;
+    if (this.dead) return;
+    socketsOpen--;
     this.dead = true;
+    // Callers wait for earlier replies first (#afterAll); anything still owed gets LOST rather than never.
+    const pending = this.pending;
+    this.pending = [];
+    this.sent = [];
+    for (const cb of pending) cb(LOST);
     this.socket.close().catch(() => {});
   }
 }
@@ -743,6 +749,7 @@ export class Router {
       if (!ok) return this.#reply(WRONGPASS);
       if (name !== this.db.name) {
         const next = await this.#open(name);
+        await this.#afterAll(); // earlier requests went to the old database's upstreams
         for (const up of this.#ups.values()) up.close();
         this.#ups.clear();
         this.#clearWatch();
@@ -771,14 +778,17 @@ export class Router {
   }
 
   #reset() {
-    this.#multi = null;
-    this.#clearWatch();
-    this.#name = null;
-    this.proto = 2;
-    this.endPassthrough(false);
-    for (const up of this.#ups.values()) up.close();
-    this.#ups.clear();
-    this.#reply(simple("RESET"));
+    const s = this.#slot();
+    this.#hold(this.#afterEarlierReplies(s).then(() => { // closing upstreams first would lose earlier replies
+      this.#multi = null;
+      this.#clearWatch();
+      this.#name = null;
+      this.proto = 2;
+      this.endPassthrough(false);
+      for (const up of this.#ups.values()) up.close();
+      this.#ups.clear();
+      this.#resolve(s, simple("RESET"));
+    }));
   }
 
   #cluster(argv) {
@@ -794,6 +804,11 @@ export class Router {
   // after FLUSHALL must not run first). Found by differential testing against real Valkey.
   #afterEarlierReplies(s) {
     return this.#queue[0] === s ? Promise.resolve() : new Promise((r) => this.#onHead.set(s, r));
+  }
+  // Resolves once every request so far has its reply.
+  #afterAll() {
+    const s = this.#slot();
+    return this.#afterEarlierReplies(s).then(() => this.#resolve(s, new Uint8Array(0)));
   }
   // An RPC rejects only when its shard can't answer (Valkey errors come back as values), so the
   // command may or may not have run: say so, as the socket path does.
