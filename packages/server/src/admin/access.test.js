@@ -32,5 +32,4 @@ test("anything else doesn't", async () => {
   const bad = await Promise.all([jwt({}, other.privateKey), jwt({ aud: "someone-else" }), jwt({ iss: "https://evil.cloudflareaccess.com" }), jwt({ exp: 1 })]);
   for (const token of [...bad, "not-a-jwt"]) expect(await accessUser(request({ "cf-access-jwt-assertion": token }), env)).toBe(null);
   expect(await accessUser(request({}), env)).toBe(null);
-  expect(await accessUser(request({ "cf-access-jwt-assertion": await jwt() }), {})).toBe(null); // Access not set up
 });

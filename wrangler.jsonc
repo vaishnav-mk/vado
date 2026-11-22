@@ -51,7 +51,7 @@
     { "tag": "v9", "new_sqlite_classes": ["Watcher"] }
   ],
   "vars": {
-    // Signing in to the dashboard, with Cloudflare Access (README.md#sign-in). Empty: the dashboard is read-only.
+    // Sign-in to the dashboard with Cloudflare Access: the team domain and the application's audience tag (README.md#sign-in).
     "ACCESS_TEAM_DOMAIN": "",
     "ACCESS_AUD": ""
   },
