@@ -1,11 +1,11 @@
 // Commands that go to every shard by RPC (no upstream connections held), in order with the socket path (viaRpc).
 import { decode } from "../protocol/decode";
-import { arrayOf, bulk, elements, integer, lower, str } from "../protocol/resp";
+import { arrayOf, bulk, elements, EMPTY, integer, lower, str } from "../protocol/resp";
 import type { CommandEntry } from "../protocol/types";
 import { CONFIG_SET, FUNCTION_EVERYWHERE, SCRIPT_EVERYWHERE } from "./command-sets";
 import { FAN_OUT } from "./config";
 import type { Conn } from "./conn";
-import { bulkText, EMPTY, OK, unsupported } from "./replies-text";
+import { bulkText, OK, unsupported } from "./replies-text";
 import { forward } from "./routing";
 
 type Merge = (frames: Uint8Array[]) => Uint8Array;

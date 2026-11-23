@@ -1,11 +1,11 @@
 // Connection state the router answers for: HELLO, CLIENT, RESET, SELECT, CLUSTER.
 import type { CommandEntry } from "../protocol/types";
-import { bulk, command, error, integer, lower, str } from "../protocol/resp";
+import { bulk, command, EMPTY, error, integer, lower, str } from "../protocol/resp";
 import { slotOf } from "../protocol/slots";
 import { login } from "./auth";
 import { CLIENT_UNSUPPORTED } from "./command-sets";
 import type { Conn } from "./conn";
-import { arityError, EMPTY, HELLO_NOAUTH, OK, RESET, unknownSubcommand, unsupported } from "./replies-text";
+import { arityError, HELLO_NOAUTH, OK, RESET, unknownSubcommand, unsupported } from "./replies-text";
 import { forward } from "./routing";
 
 export function hello(c: Conn, argv: Uint8Array[]): void {

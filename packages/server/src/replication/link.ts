@@ -4,8 +4,7 @@ import { concat } from "../protocol/resp";
 import { REPL_BACKLOG, REPL_RETRY_MS } from "./config";
 import type { Mark, ReplicaPhase, ReplicaStatus, ReplicaStub, ReplicatorHost } from "./types";
 import { MARK, PongCounter } from "./wire";
-
-export const messageOf = (cause: unknown): string => (cause instanceof Error ? cause.message : String(cause));
+import { messageOf } from "../shared";
 
 export class ReplicaLink {
   readonly region: Hint;

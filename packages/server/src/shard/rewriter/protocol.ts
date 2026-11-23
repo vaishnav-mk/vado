@@ -2,6 +2,7 @@
 // then the files; the rewriter answers with a JSON line (the base's size, or an error), the base, and a JSON line with
 // its checksum.
 import { concat } from "../../protocol/resp";
+import { decoder, encoder } from "../../shared";
 
 export interface RewriteRequest {
   manifest: string;
@@ -16,9 +17,6 @@ export interface RewriteTail {
 }
 
 export type RewriteLine = RewriteRequest | RewriteHead | RewriteTail;
-
-const encoder = new TextEncoder();
-const decoder = new TextDecoder();
 
 export const line = (message: RewriteLine): Uint8Array => encoder.encode(JSON.stringify(message) + "\n");
 

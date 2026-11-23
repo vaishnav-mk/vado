@@ -1,7 +1,7 @@
 // Commands answered by RPC to chosen shards: SCAN, RANDOMKEY, WAIT.
-import { arrayOf, bulk, elements, error, integer, str } from "../protocol/resp";
+import { arrayOf, bulk, elements, EMPTY, error, integer, str } from "../protocol/resp";
 import type { Conn } from "./conn";
-import { bulkText, EMPTY, NOT_INTEGER, NULL_BULK } from "./replies-text";
+import { bulkText, NOT_INTEGER, NULL_BULK } from "./replies-text";
 
 /** SCAN's cursor is the shard's cursor * shards + the shard index, so it stays one integer. */
 export function scan(c: Conn, argv: Uint8Array[]): void {

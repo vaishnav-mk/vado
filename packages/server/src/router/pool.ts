@@ -2,8 +2,7 @@ import { socketsLeft } from "./isolate";
 import { RpcUpstream } from "./rpc-upstream";
 import { SocketUpstream } from "./socket-upstream";
 import type { UpKey, Upstream, UpstreamOwner } from "./types";
-
-const noop = () => {};
+import { noop } from "../shared";
 
 /** A connection's upstreams, one per shard (or pub/sub object, or replica) it has talked to. */
 export class UpstreamPool {

@@ -1,8 +1,9 @@
 import { DB_NAME, DB_NAME_RULE } from "../catalog/names";
 import { error } from "../protocol/resp";
 import type { Conn } from "./conn";
-import { droppedDatabase, messageOf, TOO_MANY, WRONGPASS } from "./replies-text";
+import { droppedDatabase, TOO_MANY, WRONGPASS } from "./replies-text";
 import { sameSecret, secretMatches } from "./secrets";
+import { messageOf } from "../shared";
 
 const shared = (c: Conn, pass: string) => c.options.password === undefined || sameSecret(pass, c.options.password);
 

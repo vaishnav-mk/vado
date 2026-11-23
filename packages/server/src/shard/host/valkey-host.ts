@@ -5,7 +5,6 @@ import { viewsOf } from "../vfs/memory";
 import type { FileEntry, VfsStorage } from "../vfs/types";
 import { Vfs } from "../vfs/vfs";
 import { aofRewrite } from "./aof-rewrite";
-import { sleep } from "./gauge";
 import { Internal } from "./internal";
 import { Loop } from "./loop";
 import { drain, serve } from "./serve";
@@ -21,13 +20,12 @@ import type {
   ValkeyExports,
 } from "./types";
 import { wasiImports } from "./wasi";
+import { decoder, encoder, sleep } from "../../shared";
 
 const wasm: { Memory: unknown; Tag?: unknown } = WebAssembly;
 
 // SAFETY: workerd has the exception-handling proposal's WebAssembly.Tag; TypeScript's lib lacks it or won't import it.
 const Tag = wasm.Tag as TagConstructor;
-const encoder = new TextEncoder();
-const decoder = new TextDecoder();
 
 export class ValkeyHost {
   onRewrite: RewriteHook | null = null;

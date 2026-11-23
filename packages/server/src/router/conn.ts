@@ -1,13 +1,13 @@
 // A client connection's state, shared by the command handlers, and what its upstreams and replies call back into.
 import type { DatabaseRecord } from "../catalog/types";
-import { command } from "../protocol/resp";
+import { command, HELLO3 } from "../protocol/resp";
 import { ROUTER_HIGH_WATER, ROUTER_LOW_WATER } from "./config";
 import { isolateFull } from "./isolate";
 import { isPrimary } from "./key-shards";
 import { UpstreamPool } from "./pool";
 import { ReadYourWrites } from "./read-your-writes";
 import { ReplyQueue } from "./replies";
-import { droppedDatabase, HELLO3, LOST } from "./replies-text";
+import { droppedDatabase, LOST } from "./replies-text";
 import { Tx } from "./transaction-state";
 import type {
   ClientSocket,

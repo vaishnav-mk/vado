@@ -9,8 +9,7 @@ import { commands } from "../router/command-table";
 import { openLocal } from "../router/local";
 import { COMMAND_STALL_MS, WAIT_MS } from "./config";
 import type { CommandResult } from "./live-types";
-
-const enc = new TextEncoder();
+import { encoder } from "../shared";
 
 // One-shot calls can't use these: they need a connection that stays open.
 const NEEDS_A_CONNECTION = new Set([
@@ -47,11 +46,11 @@ export async function command(env: Env, db: DatabaseRecord, argv: string[]): Pro
   const idx = keyIndexes(
     table,
     cmd,
-    argv.map((a) => enc.encode(a)),
+    argv.map((a) => encoder.encode(a)),
   );
 
   const key = idx?.length ? argv[idx[0]] : null,
-    slot = key === null ? null : slotOf(enc.encode(key));
+    slot = key === null ? null : slotOf(encoder.encode(key));
 
   const write = !!flags?.has("write"),
     read = !!flags?.has("readonly");

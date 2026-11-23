@@ -7,8 +7,7 @@ import { isPrimary } from "./key-shards";
 import { Pending } from "./pending";
 import { LOST } from "./replies-text";
 import type { Callback, ShardStub, UpKey, Upstream, UpstreamOwner } from "./types";
-
-const noop = () => {};
+import { noop } from "../shared";
 
 // A socket whose write failed is dead unless its read side ends by then (it may still hold a restart marker).
 const WRITE_FAILED_MS = 2_000;

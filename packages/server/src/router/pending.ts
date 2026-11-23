@@ -1,7 +1,6 @@
 import { EXEC, MULTI } from "./replies-text";
 import type { Callback } from "./types";
-
-const noop = () => {};
+import { noop } from "../shared";
 
 /** The requests a socket has sent and not had replies to, in order. Parallel arrays, so add() allocates nothing. */
 export class Pending {

@@ -2,8 +2,8 @@ import { iovecs } from "./memory";
 import type { Store } from "./store";
 import type { Views } from "./types";
 import { E, FD_APPEND, FILETYPE, type FdTable, PREOPEN_FD, PREOPEN_NAME, writeFilestat } from "./wasi-abi";
+import { encoder } from "../../shared";
 
-const encoder = new TextEncoder();
 const PREOPEN = encoder.encode(PREOPEN_NAME);
 
 /** WASI imports on fds (fd_write is the host's: stdio and files share it). */

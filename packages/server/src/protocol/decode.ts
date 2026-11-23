@@ -1,8 +1,7 @@
 // Decoding whole RESP frames, for the paths that read replies (fan-out merges, admin, the shard's own commands).
 import { frameEnd, lineEnd, num } from "./resp";
 import type { Reply, TypedReply } from "./types";
-
-const dec = new TextDecoder();
+import { decoder } from "../shared";
 
 /** Decodes the frame at `i`: the value and the offset after it. Bulk strings become strings, errors `{ err }`. */
 export function decode(b: Uint8Array, i = 0): [Reply, number] {
@@ -10,7 +9,7 @@ export function decode(b: Uint8Array, i = 0): [Reply, number] {
   const le = lineEnd(b, i + 1, b.length);
 
   if (le < 0) throw new Error("incomplete RESP frame");
-  const line = () => dec.decode(b.subarray(i + 1, le));
+  const line = () => decoder.decode(b.subarray(i + 1, le));
 
   switch (t) {
     case 43:
@@ -37,7 +36,7 @@ export function decode(b: Uint8Array, i = 0): [Reply, number] {
 
       // Verbatim strings start "txt:".
       if (t === 61) s = s.subarray(4);
-      const text = dec.decode(s);
+      const text = decoder.decode(s);
 
       return [t === 33 ? { err: text } : text, le + 4 + n];
     }
@@ -110,7 +109,7 @@ export function decodeTyped(b: Uint8Array, i = 0): [TypedReply, number] {
   const le = lineEnd(b, i + 1, b.length);
 
   if (le < 0) throw new Error("incomplete RESP frame");
-  const line = () => dec.decode(b.subarray(i + 1, le));
+  const line = () => decoder.decode(b.subarray(i + 1, le));
 
   switch (t) {
     case 43:
@@ -124,7 +123,7 @@ export function decodeTyped(b: Uint8Array, i = 0): [TypedReply, number] {
 
       return n < 0
         ? [{ type: "nil" }, le + 2]
-        : [{ type: "bulk", value: dec.decode(b.subarray(le + 2, le + 2 + n)) }, le + 4 + n];
+        : [{ type: "bulk", value: decoder.decode(b.subarray(le + 2, le + 2 + n)) }, le + 4 + n];
     }
 
     case 42: {

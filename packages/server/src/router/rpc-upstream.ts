@@ -4,8 +4,7 @@ import { REDIAL_MS, REDIALS, RPC_BATCH_BYTES } from "./config";
 import { isolateAdd } from "./isolate";
 import { DROPPED, LOST } from "./replies-text";
 import type { Callback, ShardStub, UpKey, Upstream, UpstreamOwner } from "./types";
-
-const noop = () => {};
+import { noop } from "../shared";
 
 /**
  * An upstream without a socket: each batch is one RPC (shard.execRaw) on a pooled Valkey client, one batch in flight

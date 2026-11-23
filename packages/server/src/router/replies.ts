@@ -1,13 +1,12 @@
-import { concat } from "../protocol/resp";
-import { DROPPED, EMPTY, LOST } from "./replies-text";
+import { concat, EMPTY } from "../protocol/resp";
+import { DROPPED, LOST } from "./replies-text";
 import type { ReplyOwner } from "./types";
+import { noop } from "../shared";
 
 /** One reply's place in the connection's order; `b` is set once the reply is known. */
 export interface Slot {
   b: Uint8Array | null;
 }
-
-const noop = () => {};
 
 /**
  * A connection's replies, written in request order. Socket upstreams keep per-shard order on their own; a command

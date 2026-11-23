@@ -1,19 +1,19 @@
+import { encoder } from "../shared";
 // Passwords: constant-time comparison, and the salted hash a database's own password is stored as.
-const enc = new TextEncoder();
 
 // SAFETY: Workers' SubtleCrypto has timingSafeEqual; the DOM lib the dashboard needs in tsconfig hides it.
 const subtle = crypto.subtle as SubtleCrypto & { timingSafeEqual(a: Uint8Array, b: Uint8Array): boolean };
 
 /** Length leaks; contents don't. */
 export const sameSecret = (a: string, b: string): boolean => {
-  const x = enc.encode(a),
-    y = enc.encode(b);
+  const x = encoder.encode(a),
+    y = encoder.encode(b);
 
   return x.length === y.length && subtle.timingSafeEqual(x, y);
 };
 
 const sha256 = async (s: string) =>
-  [...new Uint8Array(await crypto.subtle.digest("SHA-256", enc.encode(s)))]
+  [...new Uint8Array(await crypto.subtle.digest("SHA-256", encoder.encode(s)))]
     .map((b) => b.toString(16).padStart(2, "0"))
     .join("");
 

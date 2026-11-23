@@ -1,17 +1,15 @@
 // Pooled internal Valkey clients for RPC batches. Reusing them avoids an accept, create, QUIT and free per batch,
 // which saturated shards when hundreds of routers sent batches at once. Commands that leave connection state behind
 // (WATCH, SUBSCRIBE, CLIENT REPLY) never come through here.
-import { frameEnd } from "../../protocol/resp";
+import { EMPTY, frameEnd, HELLO3 } from "../../protocol/resp";
 import { POOL_MAX } from "./config";
 import { Gauge } from "./gauge";
 import type { Loop } from "./loop";
 import type { Sockets } from "./sockets";
 import type { PooledClient, Protocol } from "./types";
+import { encoder } from "../../shared";
 
-const encoder = new TextEncoder();
 const QUIT = encoder.encode("*1\r\n$4\r\nQUIT\r\n");
-const HELLO3 = encoder.encode("*2\r\n$5\r\nHELLO\r\n$1\r\n3\r\n");
-const EMPTY = new Uint8Array(0);
 const WRITTEN = Promise.resolve();
 const PUSH = 62; // ">": RESP3 pushes aren't replies
 

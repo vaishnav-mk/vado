@@ -4,10 +4,9 @@
 // and writes wait while WS_UNACKED are outstanding. Without acks, replies go as fast as the router makes them.
 import { WS_MAX_QUEUED, WS_UNACKED } from "./config";
 import type { ClientSocket } from "./types";
+import { encoder } from "../shared";
 
 export const ACKS = "vado-acks";
-
-const enc = new TextEncoder();
 
 const quietly = (f: () => void) => {
   try {
@@ -59,7 +58,7 @@ export function wsSocket(ws: WebSocket, acks = false): ClientSocket {
     }
 
     try {
-      input?.enqueue(data instanceof ArrayBuffer ? new Uint8Array(data) : enc.encode(data));
+      input?.enqueue(data instanceof ArrayBuffer ? new Uint8Array(data) : encoder.encode(data));
     } catch {
       return;
     }

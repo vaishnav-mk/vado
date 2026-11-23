@@ -11,11 +11,12 @@ import { Conn } from "./conn";
 import { append } from "./buffer";
 import { config, dbsize, flush, info, keys, scriptOrFunction } from "./fanout";
 import { passRequest, pubsub } from "./pubsub";
-import { badArity, messageOf, NOAUTH, OK, PONG, unknownCommand, unsupported, wrongArity } from "./replies-text";
+import { badArity, NOAUTH, OK, PONG, unknownCommand, unsupported, wrongArity } from "./replies-text";
 import { getkeys, routeKeys } from "./routing";
 import { randomkey, scan, wait } from "./rpc-commands";
 import { client, cluster, hello, reset, select } from "./session";
 import { discard, exec, multi, queue, unwatch, watch } from "./transaction";
+import { messageOf } from "../shared";
 
 const WAITAOF = arrayOf([integer(1), integer(0)]);
 

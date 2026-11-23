@@ -1,17 +1,15 @@
 // What the router writes itself, byte for byte as Valkey would, and the requests it makes up.
 import { bulk, command, error, lineEnd, simple, str } from "../protocol/resp";
 import type { CommandEntry } from "../protocol/types";
+import { encoder } from "../shared";
 
-const enc = new TextEncoder();
-
-export const EMPTY = new Uint8Array(0);
 export const OK = simple("OK");
 export const QUEUED = simple("QUEUED");
 export const PONG = simple("PONG");
 export const RESET = simple("RESET");
 export const NULL_BULK = bulk(null);
-export const NULL_ARRAY = enc.encode("*-1\r\n");
-export const NULL3 = enc.encode("_\r\n");
+export const NULL_ARRAY = encoder.encode("*-1\r\n");
+export const NULL3 = encoder.encode("_\r\n");
 export const CROSSSLOT = error("CROSSSLOT Keys in request don't hash to the same slot");
 
 /** Compared by identity: only a reply that is this object means the shard never answered. */
@@ -30,7 +28,6 @@ export const HELLO_NOAUTH = error(
 export const MULTI = command(["MULTI"]);
 export const EXEC = command(["EXEC"]);
 export const UNWATCH = command(["UNWATCH"]);
-export const HELLO3 = command(["HELLO", "3"]);
 
 /** What a dropped shard's methods throw (ValkeyShard #live). */
 export const DROPPED = /database dropped/;
@@ -40,8 +37,6 @@ export const bulkBytes = (f: Uint8Array) => f.subarray(lineEnd(f, 1, f.length) +
 
 /** A bulk string frame's text; "" for any other frame. */
 export const bulkText = (f: Uint8Array) => (f[0] === 36 ? str(bulkBytes(f)) : "");
-
-export const messageOf = (cause: unknown): string => (cause instanceof Error ? cause.message : String(cause));
 
 export const unsupported = (name: string) => error(`ERR '${name}' is not supported by the sharded router`);
 export const wrongArity = (name: string) => error(`ERR wrong number of arguments for '${name}' command`);

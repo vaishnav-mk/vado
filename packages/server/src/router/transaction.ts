@@ -21,8 +21,7 @@ import {
 } from "./replies-text";
 import { forward } from "./routing";
 import type { Multi } from "./types";
-
-const noop = () => {};
+import { noop } from "../shared";
 
 export function multi(c: Conn): void {
   if (c.tx.multi) return c.replies.reply(error("ERR MULTI calls can not be nested"));

@@ -3,8 +3,7 @@ import { type Gauge, within } from "./gauge";
 import type { Loop } from "./loop";
 import type { Sockets } from "./sockets";
 import type { ByteSocket, DrainReport, HostSocket, InputSink } from "./types";
-
-const encoder = new TextEncoder();
+import { encoder } from "../../shared";
 
 /**
  * One TCP client as one Valkey client fd; resolves when Valkey closes the fd. A quiet socket (a replica's stream

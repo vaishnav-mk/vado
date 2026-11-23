@@ -19,8 +19,6 @@ export class Gauge {
   }
 }
 
-export const sleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
-
 /** Whether `work` settles within `ms`. */
 export async function within(work: Promise<void>, ms: number): Promise<boolean> {
   let timer: ReturnType<typeof setTimeout> | undefined;

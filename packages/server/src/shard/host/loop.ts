@@ -1,9 +1,10 @@
 // Runs Valkey's event loop: a pass when input arrives (with group commit), and serverCron while clients are connected.
 import type { VfsStats } from "../vfs/types";
 import { SHARD_COMMITS } from "./config";
-import { Gauge, sleep } from "./gauge";
+import { Gauge } from "./gauge";
 import type { Sockets } from "./sockets";
 import type { ValkeyExports } from "./types";
+import { sleep } from "../../shared";
 
 export class Loop {
   readonly commits = new Gauge(); // AOF commits in flight

@@ -7,11 +7,12 @@ import type { Hint } from "../catalog/types";
 import { command } from "../protocol/resp";
 import { aofFiles } from "./aof-files";
 import { REPL_COPY_MS, REPL_IDLE_MS, REPL_STUCK_MS, REPL_TICK_MS } from "./config";
-import { messageOf, ReplicaLink } from "./link";
+import { ReplicaLink } from "./link";
 import { replicaOf } from "./names";
 import { replAsleep, replTargets } from "./schema";
 import type { ReplicaStatus, ReplicatorHost, ReplicatorShard } from "./types";
 import { COPY_CHUNK, MARK, START } from "./wire";
+import { messageOf } from "../shared";
 
 const RDB_PREAMBLE_OFF = command(["CONFIG", "SET", "aof-use-rdb-preamble", "no"]);
 const RDB_PREAMBLE_ON = command(["CONFIG", "SET", "aof-use-rdb-preamble", "yes"]);

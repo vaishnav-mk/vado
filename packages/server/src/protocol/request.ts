@@ -1,9 +1,7 @@
 // Client requests: the one parser untrusted bytes go through.
 import { lineEnd, num } from "./resp";
 import type { ParsedRequest, RequestResume } from "./types";
-
-const enc = new TextEncoder();
-const dec = new TextDecoder();
+import { decoder, encoder } from "../shared";
 
 // Valkey's PROTO_INLINE_MAX_SIZE.
 const INLINE_MAX = 64 << 10;
@@ -19,7 +17,7 @@ function inline(b: Uint8Array, i: number, end: number, max: number): ParsedReque
 
   const argv = [];
 
-  for (const word of dec.decode(b.subarray(i, le)).trim().split(/\s+/)) if (word) argv.push(enc.encode(word));
+  for (const word of decoder.decode(b.subarray(i, le)).trim().split(/\s+/)) if (word) argv.push(encoder.encode(word));
 
   return { argv, end: le + 2 };
 }

@@ -1,8 +1,7 @@
 import type { Store } from "./store";
 import type { Views } from "./types";
 import { E, FD_APPEND, FILETYPE, type FdTable, OFLAG, PREOPEN_FD, writeFilestat } from "./wasi-abi";
-
-const decoder = new TextDecoder();
+import { decoder } from "../../shared";
 
 export const parentOf = (path: string) => (path.includes("/") ? path.slice(0, path.lastIndexOf("/")) : "");
 

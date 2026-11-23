@@ -5,8 +5,7 @@ import { command, concat } from "../protocol/resp";
 import { decodeAll } from "../protocol/decode";
 import type { Test } from "./types";
 import { failure, liveStats, num, open, text } from "./util";
-
-const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+import { sleep } from "../shared";
 
 const shardZero = async (env: Env, q: URLSearchParams) =>
   shardStub(env, await database(env, q.get("db") ?? "default"), 0);

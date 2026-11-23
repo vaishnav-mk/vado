@@ -1,8 +1,7 @@
 import { frameEnd } from "../protocol/resp";
 import type { FrameResume } from "../protocol/types";
 import { append } from "./buffer";
-
-const noop = () => {};
+import { noop } from "../shared";
 
 /**
  * Calls `frame` with each whole RESP frame `socket` sends, while `current()` holds. Resolves once the socket ends or

@@ -1,11 +1,10 @@
 // RESP2/RESP3 frames on bytes: where each ends (for proxying) and encoding.
 import type { CommandArg, FrameResume } from "./types";
+import { decoder, encoder } from "../shared";
 
-const enc = new TextEncoder();
-const dec = new TextDecoder();
 const CR = 13;
 const LF = 10;
-const CRLF = enc.encode("\r\n");
+const CRLF = encoder.encode("\r\n");
 
 /** The offset of the next CRLF in `b[i..end)`, or -1. */
 export function lineEnd(b: Uint8Array, i: number, end: number): number {
@@ -108,35 +107,35 @@ export function frameEnd(b: Uint8Array, i: number, end: number, resume: FrameRes
   }
 }
 
-const toBytes = (x: CommandArg): Uint8Array => (x instanceof Uint8Array ? x : enc.encode(String(x)));
+const toBytes = (x: CommandArg): Uint8Array => (x instanceof Uint8Array ? x : encoder.encode(String(x)));
 
 /** Encodes one command (an array of bulk strings). */
 export function command(args: readonly CommandArg[]): Uint8Array {
-  const parts: Uint8Array[] = [enc.encode(`*${args.length}\r\n`)];
+  const parts: Uint8Array[] = [encoder.encode(`*${args.length}\r\n`)];
 
   for (const a of args) {
     const b = toBytes(a);
-    parts.push(enc.encode(`$${b.length}\r\n`), b, CRLF);
+    parts.push(encoder.encode(`$${b.length}\r\n`), b, CRLF);
   }
 
   return concat(parts);
 }
 
-export const simple = (s: string): Uint8Array => enc.encode(`+${s}\r\n`);
+export const simple = (s: string): Uint8Array => encoder.encode(`+${s}\r\n`);
 
 // Newlines become spaces, as Valkey does: client text in an error must not end the frame early.
-export const error = (s: string): Uint8Array => enc.encode(`-${s.replace(/[\r\n]/g, " ")}\r\n`);
-export const integer = (n: number | bigint): Uint8Array => enc.encode(`:${n}\r\n`);
+export const error = (s: string): Uint8Array => encoder.encode(`-${s.replace(/[\r\n]/g, " ")}\r\n`);
+export const integer = (n: number | bigint): Uint8Array => encoder.encode(`:${n}\r\n`);
 
 export function bulk(x: CommandArg | null): Uint8Array {
-  if (x === null) return enc.encode("$-1\r\n");
+  if (x === null) return encoder.encode("$-1\r\n");
   const b = toBytes(x);
 
-  return concat([enc.encode(`$${b.length}\r\n`), b, CRLF]);
+  return concat([encoder.encode(`$${b.length}\r\n`), b, CRLF]);
 }
 
 export const arrayOf = (frames: readonly Uint8Array[]): Uint8Array =>
-  concat([enc.encode(`*${frames.length}\r\n`), ...frames]);
+  concat([encoder.encode(`*${frames.length}\r\n`), ...frames]);
 
 export function concat(parts: readonly Uint8Array[]): Uint8Array {
   let n = 0;
@@ -169,9 +168,12 @@ export function elements(frame: Uint8Array): Uint8Array[] {
   return out;
 }
 
-export const str = (b: Uint8Array): string => dec.decode(b);
+export const str = (b: Uint8Array): string => decoder.decode(b);
 
 // Apply, unlike spreading the bytes, keeps lower() as fast as a plain loop on command names.
 const latin1: (thisArg: null, codes: Uint8Array) => string = Function.prototype.apply.bind(String.fromCharCode);
 
-export const lower = (b: Uint8Array): string => (b.length <= 64 ? latin1(null, b) : dec.decode(b)).toLowerCase();
+export const lower = (b: Uint8Array): string => (b.length <= 64 ? latin1(null, b) : decoder.decode(b)).toLowerCase();
+
+export const EMPTY = new Uint8Array(0);
+export const HELLO3 = command(["HELLO", "3"]);

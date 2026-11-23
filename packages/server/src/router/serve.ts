@@ -9,15 +9,12 @@ import { IDLE_MS, PULSE_MS } from "./config";
 import { setSocketBudget } from "./isolate";
 import { learnColo, live, report } from "./pulse-report";
 import type { LiveConn } from "./pulse-report";
-import { messageOf } from "./replies-text";
 import { Router } from "./router";
 import { signIns } from "./sign-ins";
 import type { ClientSocket, DatabaseHandles, Via, Where } from "./types";
+import { encoder, messageOf, noop } from "../shared";
 
 export { live } from "./pulse-report";
-
-const enc = new TextEncoder();
-const noop = () => {};
 
 const handles = (env: Env, db: DatabaseRecord, table: CommandTable): DatabaseHandles => ({
   db,
@@ -70,7 +67,7 @@ async function serveRouter(socket: ClientSocket, env: Env, name: string, conn: L
     target = handles(env, db, db.flavour === "valkey" ? valkey : await commands(env, db.flavour));
   } catch (cause) {
     const w = socket.writable.getWriter();
-    await w.write(enc.encode(`-ERR ${messageOf(cause)}\r\n`)).catch(noop);
+    await w.write(encoder.encode(`-ERR ${messageOf(cause)}\r\n`)).catch(noop);
     await w.close().catch(noop);
     // Nothing reads the client's commands now; cancelling fails their writes instead of leaving them waiting.
     await socket.readable.cancel().catch(noop);
