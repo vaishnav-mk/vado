@@ -84,9 +84,17 @@ export function Header({
   return (
     <header className="border-b border-kumo-hairline bg-kumo-base">
       <div className="mx-auto flex max-w-7xl flex-wrap items-center gap-3 px-6 py-3">
-        <Text variant="heading" as="h1">
-          vado
-        </Text>
+        <div className="flex items-center gap-2">
+          <svg viewBox="0 0 28 28" className="size-6" fill="none" aria-hidden="true">
+            <rect x="3" y="3" width="10" height="10" rx="2.5" stroke="currentColor" strokeWidth="1.5" />
+            <rect x="15" y="3" width="10" height="10" rx="2.5" stroke="currentColor" strokeWidth="1.5" />
+            <rect x="3" y="15" width="10" height="10" rx="2.5" stroke="currentColor" strokeWidth="1.5" />
+            <rect x="15" y="15" width="10" height="10" rx="2.5" className="fill-kumo-brand" />
+          </svg>
+          <Text variant="heading" as="h1">
+            vado
+          </Text>
+        </div>
         {databases.length > 0 && (
           <Select
             aria-label="Database"
