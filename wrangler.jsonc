@@ -85,13 +85,13 @@
     { "tag": "v9", "new_sqlite_classes": ["Watcher"] },
   ],
   "vars": {
-    // Sign-in to the dashboard with Cloudflare Access: the team domain and the application's audience tag (https://vado-docs.vaishnav.one/docs/quick-start#sign-in).
+    // The dashboard's sign-in through a Cloudflare Access application: team domain and audience tag. Empty, it only watches.
     "ACCESS_TEAM_DOMAIN": "",
     "ACCESS_AUD": "",
   },
   // Each deploy's version id: a shard reports it, so the dashboard can tell a deploy from a crash.
   "version_metadata": { "binding": "VERSION" },
-  // Failed AUTHs per client address and Cloudflare location (packages/server/src/router/serve.js). namespace_id: any integer unique
+  // Failed AUTHs per client address and Cloudflare location (packages/server/src/router/sign-ins.ts). namespace_id: any integer unique
   // to the account.
   "ratelimits": [{ "name": "AUTH_LIMIT", "namespace_id": "6379", "simple": { "limit": 30, "period": 60 } }],
   "observability": { "enabled": true },

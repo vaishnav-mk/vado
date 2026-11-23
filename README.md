@@ -18,11 +18,9 @@ Experimental. An independent project, not an official Cloudflare or Valkey produ
 
 ## Quick start
 
-1. Create a Cloudflare Access application for the Worker's `/signin` path
-   ([sign in](https://vado-docs.vaishnav.one/docs/quick-start#sign-in)).
-2. Press **Deploy to Cloudflare**. It asks for `VALKEY_PASSWORD`, `ACCESS_TEAM_DOMAIN` and `ACCESS_AUD`. The Worker's
-   URL is the dashboard.
-3. Connect. The username picks the database; a new one is created on first use.
+1. Press **Deploy to Cloudflare**. It asks for `VALKEY_PASSWORD`, the password clients send with AUTH. The Worker's URL
+   is the dashboard.
+2. Connect. The username picks the database; a new one is created on first use.
 
 ```sh
 npx vado-shim wss://<your-worker>.workers.dev/ws 6379
