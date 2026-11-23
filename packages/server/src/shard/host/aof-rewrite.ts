@@ -1,7 +1,6 @@
-// The aof_rewrite import (patches/0004): Valkey started an AOF rewrite to `tmp` that a forked child would write.
 import type { RewriteDeps, RewriteJob } from "./types";
 
-/** Returns 1 if the host took the rewrite (onRewrite gave a job), 0 to let Valkey rewrite inline, blocking. */
+// patches/0004: 1 if the host took the rewrite a forked child would write, 0 to let Valkey rewrite inline.
 export function aofRewrite(deps: RewriteDeps) {
   const { state } = deps;
 
@@ -28,8 +27,7 @@ async function finishRewrite(deps: RewriteDeps, job: RewriteJob, tmp: string, ge
   }
 
   try {
-    // The clock moves only across I/O: the sync below makes this include the swap's commit.
-    const t = Date.now();
+    const t = Date.now(); // the clock moves only across I/O: this includes the sync's commit
 
     // false: that rewrite was killed meanwhile (and maybe another started), so tmp is a leftover.
     if (!deps.finish(ok, generation)) deps.remove(tmp);

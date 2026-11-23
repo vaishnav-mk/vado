@@ -6,8 +6,7 @@ const bytes = customType<{ data: Uint8Array; driverData: ArrayBuffer }>({
   fromDriver: (value) => new Uint8Array(value),
 });
 
-// `size` is always 0 and never read, but NOT NULL. `chunks` is the key the file's chunks live under; NULL means
-// the file's own path (files from before keys).
+// `size` is always 0 and never read. `chunks` NULL means the file's own path (files from before keys).
 export const vfsNode = sqliteTable("vfs_node", {
   path: text("path").primaryKey(),
   isDir: integer("is_dir").notNull(),
@@ -26,5 +25,4 @@ export const vfsChunk = sqliteTable(
   (table) => [primaryKey({ columns: [table.path, table.seq] })],
 );
 
-// Keys of deleted files whose chunks the sweep hasn't removed yet.
 export const vfsTrash = sqliteTable("vfs_trash", { key: text("key").primaryKey() });

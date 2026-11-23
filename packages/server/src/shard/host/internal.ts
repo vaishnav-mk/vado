@@ -1,6 +1,4 @@
-// Pooled internal Valkey clients for RPC batches. Reusing them avoids an accept, create, QUIT and free per batch,
-// which saturated shards when hundreds of routers sent batches at once. Commands that leave connection state behind
-// (WATCH, SUBSCRIBE, CLIENT REPLY) never come through here.
+// Clients are pooled, so commands that leave connection state behind (WATCH, SUBSCRIBE) must never come here.
 import { EMPTY, frameEnd, HELLO3 } from "../../protocol/resp";
 import { POOL_MAX } from "./config";
 import { Gauge } from "./gauge";
@@ -13,7 +11,6 @@ const QUIT = encoder.encode("*1\r\n$4\r\nQUIT\r\n");
 const WRITTEN = Promise.resolve();
 const PUSH = 62; // ">": RESP3 pushes aren't replies
 
-/** Appends `bytes` to the client's reply buffer (doubling it when full) and counts the replies now complete. */
 export function received(c: PooledClient, bytes: Uint8Array): void {
   if (c.len + bytes.length > c.out.length) {
     if (!c.len) c.out = bytes;
@@ -41,7 +38,7 @@ function reset(c: PooledClient, want: number): void {
 }
 
 export class Internal {
-  readonly batches = new Gauge(); // RPC batches running: their writes could wake a blocked client
+  readonly batches = new Gauge();
   readonly #pool: Record<Protocol, PooledClient[]> = { 2: [], 3: [] };
   readonly #sockets: Sockets;
   readonly #loop: Loop;
@@ -55,7 +52,6 @@ export class Internal {
     return this.#pool[2].length + this.#pool[3].length;
   }
 
-  /** Runs `bytes` (exactly `count` commands) on a pooled client and returns their `count` replies. */
   async execBatch(bytes: Uint8Array, count: number, proto: Protocol): Promise<Uint8Array> {
     const c = this.#pool[proto].pop() ?? (await this.#client(proto));
     const out = await this.#batch(c, bytes, count);

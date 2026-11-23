@@ -14,7 +14,6 @@ export const droppedStats = (instance: string): DroppedStats => ({
   replicas: [],
 });
 
-/** The INFO sections snapshot() reads. */
 export const SNAPSHOT_INFO = [
   "INFO",
   "server",
@@ -26,7 +25,6 @@ export const SNAPSHOT_INFO = [
   "commandstats",
 ];
 
-/** stats() without its file listing, plus Valkey's INFO fields. */
 export function snapshotOf({ files: _files, ...stats }: ShardStats, info: string): ShardSnapshot {
   return { ...stats, info: infoFields(info) };
 }

@@ -1,6 +1,5 @@
 import type { ChunkRow } from "./types";
 
-/** Index of the last row starting at or before `pos`, or -1. */
 export function rowAt(rows: ChunkRow[], pos: number): number {
   let lo = 0;
   let hi = rows.length - 1;
@@ -34,7 +33,6 @@ export function pushRow(rows: ChunkRow[], seq: number, len: number): void {
   rows.push({ seq, start: last ? last.start + last.len : 0, len });
 }
 
-/** Sets the last row's length; false if the last row isn't `seq` (the index no longer matches). */
 export function growLastRow(rows: ChunkRow[], seq: number, len: number): boolean {
   const last = rows.at(-1);
 

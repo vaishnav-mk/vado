@@ -1,6 +1,4 @@
-// A WASI preview1 filesystem on Durable Object SQLite, for Valkey's AOF and RDB files. Every call is synchronous,
-// like the wasm that makes it. Writes to O_APPEND fds (the AOF) are stored at once, so the output gate holds a
-// reply until the AOF bytes behind it are durable; other files buffer until fsync or close.
+// O_APPEND writes (the AOF) are stored at once, so the output gate holds a reply until its AOF bytes are durable.
 import { migrate } from "../../migrate";
 import { addMissingColumns } from "./legacy";
 import { vfsMigrations } from "./migrations";
@@ -18,8 +16,8 @@ const noMemory = (): WebAssembly.Memory => {
 
 export class Vfs {
   readonly stats: VfsStats = { writes: 0, writeBytes: 0, reads: 0, readBytes: 0, rowsWritten: 0 };
-  onAppend: ((bytes: Uint8Array) => void) | null = null; // each append to the AOF's incr file: the replication stream
-  onTrash: (() => void) | null = null; // there are deleted files' chunks for sweep()
+  onAppend: ((bytes: Uint8Array) => void) | null = null;
+  onTrash: (() => void) | null = null;
   readonly #store: Store;
   readonly #fds = new FdTable();
   readonly #views: Views;
@@ -30,12 +28,11 @@ export class Vfs {
     this.#views = viewsOf(memory);
   }
 
-  /** The file WASI imports; the host adds stdio, the clock and fd_write (which calls write()). */
   imports() {
     return { ...fdImports(this.#fds, this.#store, this.#views), ...pathImports(this.#fds, this.#store, this.#views) };
   }
 
-  /** fd_write for Vfs fds: a WASI errno, or null if `fd` isn't one (stdio). */
+  // null: `fd` is stdio.
   write(fd: number, chunks: Uint8Array[]): number | null {
     const f = this.#fds.get(fd);
 
@@ -51,14 +48,14 @@ export class Vfs {
     const pos = f.append ? n.size : f.pos;
 
     if (pos !== n.size) {
-      // An overwrite in the middle, which Valkey's AOF and RDB never do: rewrite the file.
+      // Valkey's AOF and RDB never overwrite, so this needn't be cheap.
       const all = new Uint8Array(Math.max(n.size, pos + total));
       this.#store.readAt(n, 0, all.subarray(0, n.size));
       all.set(concat(chunks), pos);
       this.#store.rewrite(n, all);
     } else {
       const bytes = chunks.length === 1 ? chunks[0].slice() : concat(chunks);
-      this.#store.append(n, bytes, f.append); // the AOF: stored before Valkey's reply goes out
+      this.#store.append(n, bytes, f.append);
 
       // The incr file is only ever appended to; Valkey opens it without O_APPEND under WASI.
       if (this.onAppend && n.path.endsWith(".incr.aof")) this.onAppend(bytes);
@@ -69,7 +66,6 @@ export class Vfs {
     return E.OK;
   }
 
-  /** Bytes [pos, pos + len) of the file at `path` (relative to the root), or null if it doesn't exist. */
   read(path: string, pos: number, len: number): Uint8Array | null {
     const n = this.#store.node(path);
 
@@ -84,17 +80,14 @@ export class Vfs {
     return this.#store.node(path)?.size ?? null;
   }
 
-  /** Deletes about `bytes` of deleted files' chunks (at least one row). Returns whether any are left. */
   sweep(bytes: number): boolean {
     return this.#store.sweep(bytes);
   }
 
-  /** Deletes every file and directory. */
   clear(): void {
     this.#store.clear();
   }
 
-  /** Appends to the file at `path`, creating it (and its directory) if missing. Buffered until flush(). */
   append(path: string, bytes: Uint8Array): void {
     let n = this.#store.node(path);
 

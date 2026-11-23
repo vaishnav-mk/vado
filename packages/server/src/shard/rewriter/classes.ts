@@ -1,4 +1,3 @@
-// The same object under other class names, one per shard class: ValkeyShard<k> uses ValkeyRewriter<k>.
 import { ValkeyRewriter } from "./rewriter";
 
 export class ValkeyRewriter1 extends ValkeyRewriter {}

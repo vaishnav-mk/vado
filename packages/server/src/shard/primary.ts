@@ -1,6 +1,3 @@
-// A primary's scheduled work, on named alarms of the object's one scheduler: the AOF size check (AOF_CHECK_MS after
-// an append), the Replicator's tick (every REPL_TICK_MS while replicas are configured and awake, and then it also
-// runs the AOF check), and the retry of a restart onto newer code (VERSION_CHECK_MS after each restart).
 import { DurabilityAlarms } from "durability";
 import type { DurabilityScheduler } from "durability";
 import { replicaDial } from "../replication/names";
@@ -21,8 +18,8 @@ export class PrimaryRole {
   readonly repl: Replicator;
   readonly rewrites: Rewrites;
   #upgrader: () => Upgrader;
-  #checkArmed = false; // a rewriteCheck (or the replicator's tick) will look at the AOF size
-  #stopped = false; // dropped: nothing more is scheduled or run
+  #checkArmed = false;
+  #stopped = false;
 
   constructor(
     ctx: DurableObjectState,
@@ -47,7 +44,7 @@ export class PrimaryRole {
       name: ctx.id.name ?? "",
       replicas,
       dial: replicaDial(deployed),
-      // Not inside the wasm call that appended (a write wakes replication): the schedule is a storage transaction.
+      // Not inside the wasm call that appended: the schedule is a storage transaction.
       schedule: (at: number) =>
         queueMicrotask(() => {
           if (!this.#stopped) this.alarms.replicaTick(at).catch(logFailure("replica tick"));
@@ -65,8 +62,7 @@ export class PrimaryRole {
   #armCheck(): void {
     this.#checkArmed = true;
 
-    // The replicator's tick also runs the check, so only schedule one without it. Not inside the wasm call that
-    // appended: the schedule is a storage transaction.
+    // The replicator's tick also runs the check.
     if (!this.repl.configured && !this.#stopped)
       queueMicrotask(() => {
         this.alarms.rewriteCheck(Date.now() + AOF_CHECK_MS).catch((e: Error) => {
@@ -76,7 +72,6 @@ export class PrimaryRole {
       });
   }
 
-  /** The database is being dropped: its replicas retire, and its alarms go (with the object's physical alarm). */
   async stop(): Promise<void> {
     this.#stopped = true;
     await this.repl.retireAll();

@@ -1,4 +1,3 @@
-/** What the Vfs needs from a Durable Object's storage (ctx.storage satisfies it). */
 export type VfsStorage = Pick<DurableObjectStorage, "sql" | "transactionSync">;
 
 export type Memory = () => WebAssembly.Memory;
@@ -8,7 +7,6 @@ export interface Views {
   dv: () => DataView;
 }
 
-/** One chunk row: `seq` of the file's key, `start` its offset in the file, `len` its bytes. */
 export interface ChunkRow {
   seq: number;
   start: number;
@@ -20,7 +18,7 @@ export interface Chunk {
   data: Uint8Array;
 }
 
-/** An open or cached file. Open fds hold this object, so a rename or unlink is seen through every fd. */
+// Open fds share this object, so every fd sees a rename or unlink.
 export interface FileNode {
   path: string;
   key: string;
@@ -48,7 +46,7 @@ export interface OpenDir {
 
 export type OpenFd = OpenFile | OpenDir;
 
-/** One file or directory, as `files()` reports it (field names are part of the stats RPC result). */
+// Field names are part of the stats RPC result.
 export interface FileEntry {
   path: string;
   is_dir: number;

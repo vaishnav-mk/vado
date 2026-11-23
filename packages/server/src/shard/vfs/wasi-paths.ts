@@ -5,7 +5,7 @@ import { decoder } from "../../shared";
 
 export const parentOf = (path: string) => (path.includes("/") ? path.slice(0, path.lastIndexOf("/")) : "");
 
-/** `path` relative to directory `dir` ("" is the preopen root), with "." and ".." resolved. */
+// "" is the preopen root.
 export function resolvePath(dir: string, path: string): string {
   const parts = dir ? dir.split("/") : [];
 
@@ -19,9 +19,7 @@ export function resolvePath(dir: string, path: string): string {
   return parts.join("/");
 }
 
-/** WASI imports on paths. */
 export function pathImports(fds: FdTable, store: Store, { u8, dv }: Views) {
-  // A path argument, as a key under the preopen root; null if `dirfd` isn't a directory.
   const resolve = (dirfd: number, ptr: number, len: number) => {
     let dir = "";
 
@@ -33,6 +31,12 @@ export function pathImports(fds: FdTable, store: Store, { u8, dv }: Views) {
     }
 
     return resolvePath(dir, decoder.decode(u8().subarray(ptr, ptr + len)));
+  };
+
+  const onPath = (f: (path: string) => number) => (dirfd: number, ptr: number, len: number) => {
+    const path = resolve(dirfd, ptr, len);
+
+    return path === null ? E.BADF : f(path);
   };
 
   return {
@@ -98,33 +102,25 @@ export function pathImports(fds: FdTable, store: Store, { u8, dv }: Views) {
 
       return E.OK;
     },
-    path_create_directory: (dirfd: number, pathPtr: number, pathLen: number) => {
-      const path = resolve(dirfd, pathPtr, pathLen);
-
-      if (path === null) return E.BADF;
-
+    path_create_directory: onPath((path) => {
       if (path === "" || store.row(path)) return E.EXIST;
       store.mkdir(path);
 
       return E.OK;
-    },
+    }),
     path_rename: (oldDir: number, oldPtr: number, oldLen: number, newDir: number, newPtr: number, newLen: number) => {
       const from = resolve(oldDir, oldPtr, oldLen);
       const to = resolve(newDir, newPtr, newLen);
 
       if (from === null || to === null) return E.BADF;
-      const row = store.row(from);
 
-      if (!row) return E.NOENT;
+      if (!store.row(from)) return E.NOENT;
 
       if (from !== to) store.rename(from, to);
 
       return E.OK;
     },
-    path_unlink_file: (dirfd: number, pathPtr: number, pathLen: number) => {
-      const path = resolve(dirfd, pathPtr, pathLen);
-
-      if (path === null) return E.BADF;
+    path_unlink_file: onPath((path) => {
       const row = store.row(path);
 
       if (!row) return E.NOENT;
@@ -133,6 +129,6 @@ export function pathImports(fds: FdTable, store: Store, { u8, dv }: Views) {
       store.unlink(path);
 
       return E.OK;
-    },
+    }),
   };
 }

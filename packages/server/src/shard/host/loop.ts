@@ -1,4 +1,3 @@
-// Runs Valkey's event loop: a pass when input arrives (with group commit), and serverCron while clients are connected.
 import type { VfsStats } from "../vfs/types";
 import { SHARD_COMMITS } from "./config";
 import { Gauge } from "./gauge";
@@ -7,7 +6,7 @@ import type { ValkeyExports } from "./types";
 import { sleep } from "../../shared";
 
 export class Loop {
-  readonly commits = new Gauge(); // AOF commits in flight
+  readonly commits = new Gauge();
   readonly #vk: ValkeyExports;
   readonly #sockets: Sockets;
   readonly #vfs: VfsStats;
@@ -17,7 +16,7 @@ export class Loop {
   readonly #hzMs: number;
   #queued = false;
   #timer: ReturnType<typeof setInterval> | null = null;
-  #lastTick = 0; // Date.now() of the last step taken by a waiting batch
+  #lastTick = 0;
 
   constructor(
     vk: ValkeyExports,
@@ -40,10 +39,8 @@ export class Loop {
     return this.#timer !== null;
   }
 
-  // rk_tick runs beforeSleep after the pass, so one call reads, runs, writes the AOF and flushes replies.
   step(): void {
-    // A throw (a wasm trap, a storage error under fd_write) leaves Valkey's memory untrustworthy: `fatal` resets
-    // the object, which reloads from what was committed.
+    // A throw (a wasm trap, a storage error under fd_write) leaves Valkey's memory untrustworthy.
     try {
       this.#vk.rk_tick();
     } catch (e) {
@@ -61,8 +58,7 @@ export class Loop {
     if (this.commits.count < SHARD_COMMITS) queueMicrotask(() => this.#wake());
   }
 
-  // Group commit: while a commit is in flight its replies are held by the output gate anyway, so input that
-  // arrives meanwhile waits for it and then runs in one pass, with one commit.
+  // Group commit: the output gate holds a commit's replies anyway, so input that arrives meanwhile waits for it.
   #wake(): void {
     this.#queued = false;
     const writes = this.#vfs.writes;
@@ -80,8 +76,7 @@ export class Loop {
     }
   }
 
-  // serverCron runs only while clients are connected, so an idle object can be evicted. Its data is in SQLite,
-  // and Valkey expires stale keys lazily after it reloads. In memory, not an alarm: an alarm would wake it.
+  // serverCron runs only while clients are connected, so an idle object can be evicted; an alarm would wake it.
   updateTimer(): void {
     const clients = this.#sockets.clients().length > 0;
 
@@ -92,7 +87,6 @@ export class Loop {
     }
   }
 
-  /** Steps until `done()`: a few passes at once, then (a blocking command, a backlog) at most one per ms. */
   async stepUntil(done: () => boolean): Promise<void> {
     for (let i = 0; i < 6 && !done(); i++) this.step();
 

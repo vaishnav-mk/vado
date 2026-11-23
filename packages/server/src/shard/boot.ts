@@ -1,4 +1,3 @@
-// Boots a shard that isn't dropped: its schema, Valkey, and its role.
 import type { DurabilityScheduler } from "durability";
 import type { DrizzleSqliteDODatabase } from "drizzle-orm/durable-sqlite";
 import type { Flavour } from "../catalog/types";
@@ -17,7 +16,6 @@ import { Upgrader } from "./upgrade";
 import { valkeyArgs } from "./valkey-args";
 import { deployedAt } from "./version";
 
-/** A shard that isn't dropped. Exactly one of `primary` and `replica` is set. */
 export interface LiveShard {
   host: ValkeyHost;
   flavour: Flavour;
@@ -26,7 +24,6 @@ export interface LiveShard {
   replica: ReplicaRole | null;
 }
 
-// Shard class k's rewriter class; replica classes (8 and up) have none.
 const REWRITERS = [
   "REWRITER",
   "REWRITER1",
@@ -56,6 +53,7 @@ export function bootShard(
 ): LiveShard {
   const name = ctx.id.name ?? "";
   const replica = isReplicaName(name);
+  const flavour = flavourOf(name);
 
   migrate(ctx.storage, [...shardMigrations, ...replicationMigrations]);
 
@@ -70,7 +68,7 @@ export function bootShard(
 
     return {
       host,
-      flavour: flavourOf(name),
+      flavour,
       upgrader,
       primary: null,
       replica: new ReplicaRole(ctx, host, (t) => upgrader.restartFor(t)),
@@ -84,5 +82,5 @@ export function bootShard(
   const upgrader: Upgrader = new Upgrader(ctx, env, db, host, { rewriter, retryAt });
   host.onInput = () => upgrader.checkVersion();
 
-  return { host, flavour: flavourOf(name), upgrader, primary, replica: null };
+  return { host, flavour, upgrader, primary, replica: null };
 }

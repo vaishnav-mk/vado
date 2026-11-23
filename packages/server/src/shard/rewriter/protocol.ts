@@ -1,6 +1,4 @@
-// The rewriter's socket protocol, which old shards speak to new rewriters: the shard sends a JSON line (the request),
-// then the files; the rewriter answers with a JSON line (the base's size, or an error), the base, and a JSON line with
-// its checksum.
+// Old shards speak this to new rewriters: request line, files; then size line, base, checksum line back.
 import { concat } from "../../protocol/resp";
 import { decoder, encoder } from "../../shared";
 
@@ -20,7 +18,6 @@ export type RewriteLine = RewriteRequest | RewriteHead | RewriteTail;
 
 export const line = (message: RewriteLine): Uint8Array => encoder.encode(JSON.stringify(message) + "\n");
 
-// FNV-1a of the base, sent after it: the shard installs only a base that arrived exactly as it was sent.
 export const FNV0 = 2166136261;
 
 export function fnv(hash: number, bytes: Uint8Array): number {
@@ -29,8 +26,7 @@ export function fnv(hash: number, bytes: Uint8Array): number {
   return hash >>> 0;
 }
 
-/** A JSON line (after the bytes already in `acc`), and whatever arrived after it. The peer is our own code, of
- *  this or an earlier version, so the line is the message its type says. */
+// The peer is our own code, of this or an earlier version, so the line is the message its type says.
 export async function readLine<T extends RewriteLine>(
   reader: ReadableStreamDefaultReader<Uint8Array>,
   acc: Uint8Array = new Uint8Array(0),
@@ -46,4 +42,29 @@ export async function readLine<T extends RewriteLine>(
     if (done) throw new Error("connection closed");
     acc = concat([acc, value]);
   }
+}
+
+export async function readExactly(
+  reader: ReadableStreamDefaultReader<Uint8Array>,
+  rest: Uint8Array,
+  size: number,
+  piece: (bytes: Uint8Array) => Promise<void> | void,
+): Promise<Uint8Array> {
+  let bytes = rest;
+
+  for (let got = 0; got < size;) {
+    if (!bytes.length) {
+      const next = await reader.read();
+
+      if (next.done) throw new Error(`connection closed after ${got} of ${size} bytes`);
+      bytes = next.value;
+    }
+
+    const take = bytes.subarray(0, size - got);
+    await piece(take);
+    got += take.length;
+    bytes = bytes.subarray(take.length);
+  }
+
+  return bytes;
 }

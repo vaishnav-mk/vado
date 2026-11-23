@@ -5,12 +5,7 @@ import type { Sockets } from "./sockets";
 import type { ByteSocket, DrainReport, HostSocket, InputSink } from "./types";
 import { encoder } from "../../shared";
 
-/**
- * One TCP client as one Valkey client fd; resolves when Valkey closes the fd. A quiet socket (a replica's stream
- * from its primary) isn't client activity, and what it hasn't run when it ends is dropped: the primary copies the
- * replica afresh, and old commands must not run after that copy's FLUSHALL. `farewell` is written last if drain()
- * closes the socket: it tells the client that nothing it got no reply to ran.
- */
+// A quiet socket's leftover input is dropped at its end: old commands must not run after the next copy's FLUSHALL.
 export async function serve(
   sockets: Sockets,
   loop: Loop,
@@ -46,13 +41,11 @@ async function readInput(
   quiet: boolean,
 ): Promise<void> {
   for (;;) {
-    // Backpressure: a client that isn't reading its replies stops being read.
     while (!s.eof && !sockets.draining && (s.inflight > CLIENT_HIGH_WATER || sockets.total > SHARD_HIGH_WATER)) {
       await sockets.paused(s);
     }
 
-    // From drain() on, input is dropped and only drain() ends the client: an end here could free it in Valkey
-    // with replies still unsent.
+    // From drain() on, only drain() ends the client: an end here could free it in Valkey with replies unsent.
     if (sockets.draining) return;
     const { value, done } = await reader.read();
 
@@ -78,11 +71,7 @@ async function readInput(
   loop.schedule();
 }
 
-/**
- * Stops client input, answers everything Valkey has read, then closes every client socket (each after its
- * farewell). Afterwards a command a client got no reply to never ran, and every reply's write is committed. Input
- * received but not yet read by Valkey is dropped, so this is quick. Internal clients (RPC batches) finish.
- */
+// Afterwards a command a client got no reply to never ran, and every reply's write is committed.
 export async function drain(
   sockets: Sockets,
   loop: Loop,
@@ -100,12 +89,10 @@ export async function drain(
 
   sockets.wakeAll();
 
-  // RPC batches already running finish first (the shard refuses new ones): one could unblock a client's BLPOP
-  // while that client is being closed, and the element would be popped with no reply.
+  // A running batch could unblock a client's BLPOP while it closes, popping an element with no reply.
   await within(batches.zero(), 5000);
 
-  // Valkey writes a reply in the pass after the command, big ones over several passes, and the host never refuses
-  // a write: a pass that writes nothing leaves no reply unsent.
+  // The host never refuses a write, so a pass that writes nothing leaves no reply unsent.
   for (let i = 0, writes = -1; i < 1000 && writes !== sockets.writes; i++) {
     writes = sockets.writes;
     loop.step();
@@ -114,7 +101,7 @@ export async function drain(
   await loop.commits.zero();
   await sync?.();
 
-  for (const s of clients) s.eof = true; // Valkey frees each client, with nothing left to send
+  for (const s of clients) s.eof = true;
 
   for (let i = 0; i < 4; i++) loop.step();
   const finished = Promise.all(clients.map((s) => s.finished.promise)).then(() => {});

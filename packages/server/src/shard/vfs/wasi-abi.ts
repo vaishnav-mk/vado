@@ -1,4 +1,3 @@
-// WASI preview1 numbers the Vfs speaks, and its fd table.
 import type { OpenFd } from "./types";
 
 export const PREOPEN_FD = 3;

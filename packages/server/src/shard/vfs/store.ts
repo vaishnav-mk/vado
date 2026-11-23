@@ -1,4 +1,3 @@
-// Files as chunk rows in SQLite, and the cache of file nodes that open fds share.
 import { concat } from "../../protocol/resp";
 import { growLastRow, indexRows, pushRow, rowAt } from "./chunks";
 import { VFS_CHUNK, VFS_TAIL } from "./config";
@@ -63,7 +62,7 @@ export class Store {
     return this.#nodes.values();
   }
 
-  /** Queues `bytes` (which the node now owns) at the end of the file; written at VFS_CHUNK or `writeThrough`. */
+  // The node now owns `bytes`.
   append(n: FileNode, bytes: Uint8Array, writeThrough: boolean): void {
     n.pending.push(bytes);
     n.pendingLen += bytes.length;
@@ -107,14 +106,12 @@ export class Store {
     n.pendingLen = 0;
   }
 
-  // The last row, if it still has room to grow in place.
   #lastTail(key: string): Chunk | null {
     const last = this.#q.lastChunk.get({ key });
 
     return last && last.data.length < VFS_TAIL ? last : null;
   }
 
-  /** Reads into `dst` from `pos`; returns the bytes read. */
   readAt(n: FileNode, pos: number, dst: Uint8Array): number {
     const rows = this.#rows(n);
     let done = 0;
@@ -143,7 +140,6 @@ export class Store {
     return done;
   }
 
-  // Row index for reads, built on first read and kept up to date by flush.
   #rows(n: FileNode) {
     this.flush(n);
     n.rows ??= indexRows(this.#q.chunkRows.all({ key: n.key }));
@@ -151,7 +147,6 @@ export class Store {
     return n.rows;
   }
 
-  /** Replaces the file's contents with `bytes` (owned). */
   rewrite(n: FileNode, bytes: Uint8Array): void {
     this.#q.deleteChunks.run({ key: n.key });
     Object.assign(n, { nextSeq: 0, size: 0, pendingLen: 0, rows: null, cache: null, tail: null });
@@ -216,7 +211,6 @@ export class Store {
     return this.#q.children.all({ pattern: prefix + "%" }).filter((r) => !r.path.slice(prefix.length).includes("/"));
   }
 
-  /** Deletes about `bytes` of deleted files' chunks (at least one row). Returns whether any are left. */
   sweep(bytes: number): boolean {
     const trash = this.#q.firstTrash.get();
 

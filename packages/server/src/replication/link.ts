@@ -1,23 +1,19 @@
-// One replica of a primary: its socket, what is queued or unacknowledged on it, and its markers.
 import type { Hint } from "../catalog/types";
 import { concat } from "../protocol/resp";
 import { REPL_BACKLOG, REPL_RETRY_MS } from "./config";
 import type { Mark, ReplicaPhase, ReplicaStatus, ReplicaStub, ReplicatorHost } from "./types";
 import { MARK, PongCounter } from "./wire";
-import { messageOf } from "../shared";
+import { messageOf, noop } from "../shared";
 
 export class ReplicaLink {
   readonly region: Hint;
   phase: ReplicaPhase = "idle";
   retryAt = 0;
   since = 0;
-  /** Bytes queued while copying. */
   queued = 0;
-  /** Bytes sent but not yet written to the socket. */
   inflight = 0;
   marks: Mark[] = [];
-  /** WAITs that started before it was live. */
-  waiting: (() => void)[] = [];
+  waiting: (() => void)[] = []; // WAITs that started before it was live
   ready = false;
   lagMs: number | null = null;
   colo: string | null = null;
@@ -61,7 +57,6 @@ export class ReplicaLink {
     this.error = null;
   }
 
-  /** An append during the copy: sent once the files are. */
   enqueue(bytes: Uint8Array): void {
     this.#queue.push(bytes);
     this.queued += bytes.length;
@@ -70,14 +65,13 @@ export class ReplicaLink {
     if (this.queued > REPL_BACKLOG) this.drop("fell too far behind while copying");
   }
 
-  /** Appends queued before the copy took its file sizes are in the files. */
+  // Appends queued before the copy took its file sizes are in the files.
   discardQueue(): void {
     this.#host.release(this.queued);
     this.#queue = [];
     this.queued = 0;
   }
 
-  /** The next queued append while the copy goes on. */
   nextQueued(): Uint8Array | undefined {
     const bytes = this.phase === "copying" ? this.#queue.shift() : undefined;
 
@@ -89,7 +83,6 @@ export class ReplicaLink {
     return bytes;
   }
 
-  /** Dials the replica, starts reading its markers, and returns the stream's writer. */
   open(stub: ReplicaStub, dial: string): WritableStreamDefaultWriter<Uint8Array> {
     const socket = stub.connect(dial);
     const writer: WritableStreamDefaultWriter<Uint8Array> = socket.writable.getWriter();
@@ -114,8 +107,7 @@ export class ReplicaLink {
     this.send(MARK);
   }
 
-  // One socket write at a time: each waits for the output gate and a turn of the event loop, so appends that arrive
-  // meanwhile go out together as one write.
+  // One socket write at a time: appends that arrive while one waits for the output gate go out together.
   send(bytes: Uint8Array): void {
     this.inflight += bytes.length;
     this.#host.hold(bytes.length);
@@ -146,7 +138,6 @@ export class ReplicaLink {
     );
   }
 
-  // Each "+PONG" answers the oldest marker. The first after the copy makes the replica serve reads.
   async #readMarks(socket: Socket): Promise<void> {
     const reader = socket.readable.getReader();
     const pongs = new PongCounter();
@@ -159,9 +150,7 @@ export class ReplicaLink {
 
         for (let n = pongs.count(value); n > 0; n--) await this.#answered();
       }
-    } catch {
-      // The socket closed.
-    }
+    } catch {}
 
     // It's gone already: no need to tell it.
     if (this.#socket === socket) this.drop("replica closed the connection", false);
@@ -189,9 +178,9 @@ export class ReplicaLink {
     if (this.phase === "idle") return;
 
     // A close from this end doesn't reach the replica, so tell it: it must not serve data that stopped updating.
-    if (tell) this.stub?.retire().catch(() => {});
-    this.#writer?.abort(why).catch(() => {});
-    this.#socket?.close().catch(() => {});
+    if (tell) this.stub?.retire().catch(noop);
+    this.#writer?.abort(why).catch(noop);
+    this.#socket?.close().catch(noop);
     this.#host.release(this.inflight + this.queued);
     this.phase = "idle";
     this.#socket = null;

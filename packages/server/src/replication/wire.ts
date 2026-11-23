@@ -1,4 +1,4 @@
-// The bytes a primary sends its replicas, and what comes back. Old primaries stream to new replicas: keep them.
+// Old primaries stream to new replicas: keep these bytes.
 import { command, concat } from "../protocol/resp";
 
 const REPLY_OFF = command(["CLIENT", "REPLY", "OFF"]);
@@ -10,15 +10,11 @@ export const MARK = concat([
   command(["CLIENT", "REPLY", "OFF"]),
 ]);
 
-// The stream's connection is the import source (replicas run with import-mode): to it no key is ever expired.
-// Redis lacks the command (its import-mode treats every write as the stream's); with replies off the error is unseen.
+// Redis lacks IMPORT-SOURCE (its import-mode treats every write as the stream's); with replies off the error is unseen.
 export const START = concat([REPLY_OFF, command(["CLIENT", "IMPORT-SOURCE", "ON"]), command(["FLUSHALL"])]);
-
-export const COPY_CHUNK = 1 << 20;
 
 const PONG = "+PONG\r\n";
 
-/** Counts the "+PONG" replies in a replica's bytes, however they are split. */
 export class PongCounter {
   #carry = "";
   #decoder = new TextDecoder();

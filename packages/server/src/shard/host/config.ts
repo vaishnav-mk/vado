@@ -11,5 +11,5 @@ export const SHARD_COMMITS = 2;
 // Objects of one class on one machine can share an isolate; shard i of a new database uses class i % SHARD_CLASSES.
 export const SHARD_CLASSES = 8;
 
-// Idle internal clients kept per RESP protocol for RPC batches.
+// Idle internal clients kept per RESP protocol: reuse saves an accept, create, QUIT and free per RPC batch.
 export const POOL_MAX = 64;

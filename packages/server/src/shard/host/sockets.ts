@@ -1,4 +1,3 @@
-// Valkey's client fds (the `host` socket imports), and the byte budget that pauses reading them.
 import type { Views } from "../vfs/types";
 import { CLIENT_LOW_WATER, SHARD_HIGH_WATER, SHARD_LOW_WATER } from "./config";
 import type { HostSocket, SocketEvents, SocketWriter } from "./types";
@@ -14,15 +13,14 @@ export class Sockets {
   #nextFd = FD_BASE;
   readonly #free: number[] = []; // closed fds, reused first: Valkey rejects fds past its setsize
   total = 0; // unacknowledged reply bytes across all clients, plus held bytes
-  writes = 0; // reply writes so far, to see when Valkey has nothing left to send
-  draining = false; // drain(): client input stops, and clients close once answered
-  readonly #stalled = new Set<() => void>(); // readers paused by the total budget
+  writes = 0;
+  draining = false;
+  readonly #stalled = new Set<() => void>();
 
   #allocate(): number {
     return this.#free.pop() ?? this.#nextFd++;
   }
 
-  /** A new client fd, queued for Valkey's accept. */
   add(writer: SocketWriter, internal: boolean): HostSocket {
     const socket: HostSocket = {
       fd: this.#allocate(),
@@ -56,7 +54,6 @@ export class Sockets {
     this.wake(null);
   }
 
-  /** Waits while `socket` or the whole object has too many reply bytes unacknowledged. */
   paused(socket: HostSocket): Promise<void> {
     return new Promise((resolve) => {
       if (this.total > SHARD_HIGH_WATER) this.#stalled.add(resolve);
@@ -120,7 +117,6 @@ export class Sockets {
         const s = this.open.get(fd);
 
         if (!s || s.eof) return -1;
-        // Valkey hands us everything; serve() stops reading while too many reply bytes are unacknowledged.
         this.writes++;
         s.inflight += len;
         this.total += len;

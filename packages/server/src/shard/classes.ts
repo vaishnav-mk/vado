@@ -29,7 +29,6 @@ export class ValkeyShard7 extends ValkeyShard {
   static override readonly shardClass = 7;
 }
 
-// Read replicas: class 8 + k holds the replicas of class k's shards (replicaBinding).
 export class ValkeyShard8 extends ValkeyShard {
   static override readonly shardClass = 8;
 }

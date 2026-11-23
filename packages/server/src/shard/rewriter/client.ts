@@ -1,15 +1,12 @@
-import { aofFiles } from "../../replication/aof-files";
+import { aofFiles, fileChunks } from "../../replication/aof-files";
 import type { ValkeyHost } from "../host/valkey-host";
 import { AOF_HELPER_TIMEOUT_MS } from "../config";
 import type { RewriteLog } from "../types";
 import { VFS_CHUNK } from "../vfs/config";
-import { FNV0, fnv, line, readLine } from "./protocol";
+import { FNV0, fnv, line, readExactly, readLine } from "./protocol";
 import type { RewriteHead, RewriteTail } from "./protocol";
+import { sleep } from "../../shared";
 
-const yieldTurn = () => new Promise((resolve) => setTimeout(resolve, 0));
-
-/** Shard side: writes the base for the rewrite Valkey just started to `tmp` (RDB if `rdb`), via a rewriter's stub.
- *  `sync` resolves once storage has every write so far. Phase times and sizes go in `log`. */
 export async function rewriteByHelper(
   host: ValkeyHost,
   stub: Pick<DurableObjectStub, "connect">,
@@ -35,9 +32,9 @@ export async function rewriteByHelper(
 
     // Reading the files is synchronous SQLite work: yield between chunks so requests keep running.
     for (const [path, size] of files)
-      for (let pos = 0; pos < size; pos += VFS_CHUNK) {
-        await writer.write(host.readFile(path, pos, VFS_CHUNK));
-        await yieldTurn();
+      for (const chunk of fileChunks(host, path, size)) {
+        await writer.write(chunk);
+        await sleep(0);
       }
 
     log.sentMs = Date.now() - t0;
@@ -49,38 +46,24 @@ export async function rewriteByHelper(
     log.baseBytes = head.size;
     host.removeFile(tmp); // one left by a rewrite that a restart cut short
     host.appendFile(tmp, new Uint8Array(0)); // the file must exist even when the base is empty
-
-    // Every reply waits for the storage writes before it, so take the base one chunk's commit at a time: a reply
-    // then waits for at most one chunk, not for all of the base that arrived ahead of it.
     let got = 0;
     let synced = 0;
     let sum = FNV0;
-    let bytes = rest;
 
-    for (;;) {
-      if (bytes.length) {
-        const take = bytes.subarray(0, head.size - got);
-        host.appendFile(tmp, take);
-        sum = fnv(sum, take);
-        got += take.length;
-        bytes = bytes.subarray(take.length);
+    // Every reply waits for the storage writes before it, so commit a chunk at a time, not the whole base at once.
+    const after = await readExactly(reader, rest, head.size, async (piece) => {
+      host.appendFile(tmp, piece);
+      sum = fnv(sum, piece);
+      got += piece.length;
 
-        if (got - synced >= VFS_CHUNK) {
-          await sync();
-          synced = got;
-        }
+      if (got - synced >= VFS_CHUNK) {
+        await sync();
+        synced = got;
       }
+    });
 
-      if (got >= head.size) break;
-      const next = await reader.read();
-
-      if (next.done) break;
-      bytes = next.value;
-    }
-
-    if (got !== head.size) throw new Error(`base cut short: ${got} of ${head.size} bytes`);
     log.receivedMs = Date.now() - t0;
-    const [tail] = await readLine<RewriteTail>(reader, bytes);
+    const [tail] = await readLine<RewriteTail>(reader, after);
     log.tailMs = Date.now() - t0;
 
     if (tail.sum !== sum) throw new Error("base checksum mismatch");

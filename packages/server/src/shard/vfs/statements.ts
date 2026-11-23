@@ -29,11 +29,13 @@ function counting(storage: VfsStorage, stats: VfsStats): DurableObjectStorage {
   return client as DurableObjectStorage;
 }
 
-/** Every statement the Vfs runs, built once: the hot ones run inside wasm fd_write on every AOF append. */
+// Built once: the hot ones run inside wasm fd_write on every AOF append.
 export function prepareStatements(storage: VfsStorage, stats: VfsStats) {
   const db = drizzle(counting(storage, stats));
 
-  const chunkAt = and(eq(vfsChunk.path, key), eq(vfsChunk.seq, seq));
+  const ofKey = eq(vfsChunk.path, key);
+  const chunkAt = and(ofKey, eq(vfsChunk.seq, seq));
+  const rowLengths = () => db.select({ seq: vfsChunk.seq, len: length }).from(vfsChunk).where(ofKey);
 
   return {
     updateChunk: db
@@ -46,26 +48,21 @@ export function prepareStatements(storage: VfsStorage, stats: VfsStats) {
       .values({ path: key, seq, data: sql.placeholder("data") })
       .prepare(),
     readChunk: db.select({ data: vfsChunk.data }).from(vfsChunk).where(chunkAt).limit(1).prepare(),
-    chunkRows: db
-      .select({ seq: vfsChunk.seq, len: length })
-      .from(vfsChunk)
-      .where(eq(vfsChunk.path, key))
-      .orderBy(asc(vfsChunk.seq))
-      .prepare(),
+    chunkRows: rowLengths().orderBy(asc(vfsChunk.seq)).prepare(),
     lastChunk: db
       .select({ seq: vfsChunk.seq, data: vfsChunk.data })
       .from(vfsChunk)
-      .where(eq(vfsChunk.path, key))
+      .where(ofKey)
       .orderBy(desc(vfsChunk.seq))
       .limit(1)
       .prepare(),
     lastSeq: db
       .select({ seq: sql<number | null>`max(${vfsChunk.seq})` })
       .from(vfsChunk)
-      .where(eq(vfsChunk.path, key))
+      .where(ofKey)
       .limit(1)
       .prepare(),
-    deleteChunks: db.delete(vfsChunk).where(eq(vfsChunk.path, key)).prepare(),
+    deleteChunks: db.delete(vfsChunk).where(ofKey).prepare(),
     node: db
       .select({ isDir: vfsNode.isDir, key: fileKey, size: fileSize })
       .from(vfsNode)
@@ -94,16 +91,10 @@ export function prepareStatements(storage: VfsStorage, stats: VfsStats) {
     trash: db.insert(vfsTrash).values({ key }).onConflictDoNothing().prepare(),
     firstTrash: db.select({ key: vfsTrash.key }).from(vfsTrash).limit(1).prepare(),
     untrash: db.delete(vfsTrash).where(eq(vfsTrash.key, key)).prepare(),
-    trashRows: db
-      .select({ seq: vfsChunk.seq, len: length })
-      .from(vfsChunk)
-      .where(eq(vfsChunk.path, key))
-      .orderBy(desc(vfsChunk.seq))
-      .limit(4096)
-      .prepare(),
+    trashRows: rowLengths().orderBy(desc(vfsChunk.seq)).limit(4096).prepare(),
     deleteChunksFrom: db
       .delete(vfsChunk)
-      .where(and(eq(vfsChunk.path, key), gte(vfsChunk.seq, seq)))
+      .where(and(ofKey, gte(vfsChunk.seq, seq)))
       .prepare(),
     clear: [db.delete(vfsChunk).prepare(), db.delete(vfsNode).prepare(), db.delete(vfsTrash).prepare()],
   };

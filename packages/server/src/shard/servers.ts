@@ -12,10 +12,8 @@ export const WASM: Partial<Record<Flavour, WebAssembly.Module>> = redisBuild
 
 export const FLAVOURS: Flavour[] = redisBuild ? ["valkey", "redis"] : ["valkey"];
 
-/** What an object runs, from its name: a Redis database's objects have a "redis" segment (shardName). */
 export const flavourOf = (name: string): Flavour => (name.split(".").includes("redis") ? "redis" : "valkey");
 
-/** The server an object named `name` boots. */
 export function serverOf(name: string): WebAssembly.Module {
   const module = WASM[flavourOf(name)];
 

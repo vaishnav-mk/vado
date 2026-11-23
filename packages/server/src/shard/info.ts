@@ -1,4 +1,3 @@
-/** The `field:value` lines of an INFO reply (its raw bytes as text: the bulk header line has no colon). */
 export function infoFields(text: string) {
   const fields: Record<string, string> = {};
 

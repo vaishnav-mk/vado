@@ -1,8 +1,9 @@
+import { VFS_CHUNK } from "../shard/vfs/config";
+import { decoder } from "../shared";
 import type { AofEntry, AofFiles, ReplicatorHost } from "./types";
 
 export const MANIFEST = "aof/appendonly.aof.manifest";
 
-/** The AOF files as of now, from the manifest: the base, the incr files in order, and every entry with its line. */
 export function aofFiles(host: Pick<ReplicatorHost, "fileSize" | "readFile">): AofFiles {
   const size = host.fileSize(MANIFEST);
   const bytes = size === null ? null : host.readFile(MANIFEST, 0, size);
@@ -11,7 +12,7 @@ export function aofFiles(host: Pick<ReplicatorHost, "fileSize" | "readFile">): A
   const entries: AofEntry[] = [];
   const incrs = [];
 
-  for (const line of new TextDecoder().decode(bytes).split("\n")) {
+  for (const line of decoder.decode(bytes).split("\n")) {
     if (!line.startsWith("file ")) continue;
     const words = line.trim().split(/\s+/);
     const entry = { path: `aof/${words[1]}`, type: words[words.indexOf("type") + 1], line };
@@ -21,4 +22,15 @@ export function aofFiles(host: Pick<ReplicatorHost, "fileSize" | "readFile">): A
   }
 
   return { base: entries.find((e) => e.type === "b")?.path, incrs, entries };
+}
+
+// Never past `size`: bytes appended since then reach the reader another way, and would run twice.
+export function* fileChunks(host: Pick<ReplicatorHost, "readFile">, path: string, size: number): Generator<Uint8Array> {
+  for (let pos = 0; pos < size; pos += VFS_CHUNK) {
+    const bytes = host.readFile(path, pos, Math.min(VFS_CHUNK, size - pos));
+
+    if (!bytes) throw new Error(`${path} is gone`);
+
+    yield bytes;
+  }
 }

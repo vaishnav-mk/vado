@@ -6,7 +6,6 @@ import { encoder } from "../../shared";
 
 const PREOPEN = encoder.encode(PREOPEN_NAME);
 
-/** WASI imports on fds (fd_write is the host's: stdio and files share it). */
 export function fdImports(fds: FdTable, store: Store, { u8, dv }: Views) {
   return {
     fd_prestat_get: (fd: number, ptr: number) => {

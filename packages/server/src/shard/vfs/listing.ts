@@ -1,7 +1,6 @@
 import type { Statements } from "./statements";
 import type { FileEntry } from "./types";
 
-/** Every file and directory with its stored size and rows: scanned once, then kept up to date by appends. */
 export class Listing {
   readonly #statements: Statements;
   #entries: FileEntry[] | null = null;
@@ -26,7 +25,6 @@ export class Listing {
     return this.#entries.map((e) => ({ ...e }));
   }
 
-  /** Chunks under `key` gained `bytes` bytes in `rows` new rows. */
   grew(key: string, bytes: number, rows: number): void {
     const entry = this.#files.get(key);
 
@@ -36,7 +34,6 @@ export class Listing {
     }
   }
 
-  /** Anything else changed: scan again on the next call. */
   reset(): void {
     this.#entries = null;
     this.#files.clear();

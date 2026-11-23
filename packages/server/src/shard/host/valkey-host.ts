@@ -1,5 +1,3 @@
-// Runs one Valkey (patched: host-supplied argv, fork-free AOF rewrite) in a Durable Object: sockets from
-// connect(socket) become Valkey client fds, and files live in the object's SQLite (Vfs).
 import { VFS_SWEEP_BYTES, VFS_SWEEP_MS } from "../vfs/config";
 import { viewsOf } from "../vfs/memory";
 import type { FileEntry, VfsStorage } from "../vfs/types";
@@ -20,7 +18,7 @@ import type {
   ValkeyExports,
 } from "./types";
 import { wasiImports } from "./wasi";
-import { decoder, encoder, sleep } from "../../shared";
+import { decoder, encoder, messageOf, sleep } from "../../shared";
 
 const wasm: { Memory: unknown; Tag?: unknown } = WebAssembly;
 
@@ -29,9 +27,9 @@ const Tag = wasm.Tag as TagConstructor;
 
 export class ValkeyHost {
   onRewrite: RewriteHook | null = null;
-  rewriting: Promise<void> | null = null; // while a rewrite taken by onRewrite runs
-  rewriteDoneMs: number | null = null; // the last one's finish: Valkey's swap plus its storage commit
-  lastActive = 0; // Date.now() of the last client input on a socket (not a quiet one), or set by the shard for RPCs
+  rewriting: Promise<void> | null = null;
+  rewriteDoneMs: number | null = null;
+  lastActive = 0; // not moved by quiet sockets
   onInput: (() => void) | null = null;
   readonly #vk: ValkeyExports;
   readonly #vfs: Vfs;
@@ -81,14 +79,14 @@ export class ValkeyHost {
 
     if (argv.length > this.#vk.rk_args_cap()) throw new Error("valkey args too long");
     views.u8().set(argv, this.#vk.rk_args_ptr());
-    const rc = this.#vk.rk_boot_args(argv.length); // full init, including loading the AOF
+    const rc = this.#vk.rk_boot_args(argv.length);
 
     if (rc !== 0) throw new Error(`valkey boot failed (${rc})`);
     this.#loop = new Loop(this.#vk, this.#sockets, this.#vfs.stats, sync, fatal, log);
     this.#internal = new Internal(this.#sockets, this.#loop);
   }
 
-  /** Bytes held for something other than replies (a primary's replication stream): reading pauses on them too. */
+  // Replication bytes: client reading pauses on them too.
   hold(n: number): void {
     this.#sockets.hold(n);
   }
@@ -97,7 +95,6 @@ export class ValkeyHost {
     this.#sockets.release(n);
   }
 
-  /** Runs `bytes` (exactly `count` commands) on a pooled internal client and returns their `count` replies. */
   execBatch(bytes: Uint8Array, count: number, proto: Protocol = 2): Promise<Uint8Array> {
     return this.#internal.execBatch(bytes, count, proto);
   }
@@ -110,7 +107,6 @@ export class ValkeyHost {
     return drain(this.#sockets, this.#loop, this.#internal.batches, this.#sync);
   }
 
-  // Deletes deleted files' chunks a little at a time, in the background.
   async #sweep(): Promise<void> {
     if (this.#sweeping) return;
     this.#sweeping = true;
@@ -120,7 +116,7 @@ export class ValkeyHost {
 
       while (this.#vfs.sweep(VFS_SWEEP_BYTES)) await sleep(VFS_SWEEP_MS);
     } catch (e) {
-      this.#log(`vfs sweep: ${e instanceof Error ? e.message : String(e)}`);
+      this.#log(`vfs sweep: ${messageOf(e)}`);
     } finally {
       this.#sweeping = false;
     }

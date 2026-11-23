@@ -1,16 +1,15 @@
-// The WASI imports that aren't files: the environment, the clock, stdio, and stubs for what Valkey never calls.
 import { iovecs } from "../vfs/memory";
 import type { Views } from "../vfs/types";
 import type { Vfs } from "../vfs/vfs";
+import { decoder } from "../../shared";
 
 const EBADF = 8;
 const ENOSYS = 52;
 const enosys = () => ENOSYS;
 
 export function wasiImports({ u8, dv }: Views, vfs: Vfs, log: (line: string) => void) {
-  const decoder = new TextDecoder();
   const partial = ["", "", ""]; // stdout and stderr: the line so far
-  // Workers clocks advance only across I/O, and Valkey reads the clock ~10 times a step.
+  // The clock advances only across I/O, and Valkey reads it ~10 times a step.
   let clockMs = -1;
   let clockNs = 0n;
 
