@@ -2,6 +2,7 @@ import type { ReactNode } from "react";
 import { Grid, LayerCard, Meter, Text } from "@cloudflare/kumo";
 import { bytes, ms, num, plural } from "../lib/format";
 import { replicaCounts, replicaLine } from "../lib/replicas";
+import { useViewer } from "./Guard";
 import type { LiveState } from "../lib/types";
 
 // Titles must fit one line, or the six inner panels stop lining up.
@@ -37,6 +38,8 @@ export function Stats({ state, reads }: { state: LiveState | null; reads: number
     waiting = "–",
     writes = t?.writes ?? 0;
 
+  const { signIn } = useViewer();
+
   const shards = state?.db?.shards ?? state?.shards?.length ?? 0;
 
   const probe = state?.probe,
@@ -53,7 +56,9 @@ export function Stats({ state, reads }: { state: LiveState | null; reads: number
   const read = `${where ? `From ${where}` : "Reads"}${target ? ` to ${target}` : ""}.`,
     write =
       probe?.writes === false
-        ? "Sign in to time writes."
+        ? signIn
+          ? "Sign in to time writes."
+          : "Writes aren't timed here."
         : `Writes ${ms(probe?.writeMs)}${copy && probed?.city ? `, to ${probed.city}` : ""}.`;
 
   const reps = replicaCounts(state?.shards);

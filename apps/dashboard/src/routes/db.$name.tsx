@@ -6,7 +6,7 @@ import { Header } from "../components/Header";
 import { getDatabase, listDatabases, listOptions } from "../server/admin";
 import { useDark } from "../lib/hooks";
 import { useLive } from "../lib/live";
-import { useSignedIn } from "../components/Guard";
+import { useViewer } from "../components/Guard";
 import type { Database, Options } from "../lib/types";
 
 export const Route = createFileRoute("/db/$name")({
@@ -24,8 +24,9 @@ export const Route = createFileRoute("/db/$name")({
 });
 
 function Page() {
-  const { db, databases, options } = Route.useLoaderData();
-  const { name } = Route.useParams();
+  const { db, databases, options } = Route.useLoaderData(),
+    { name } = Route.useParams(),
+    { user } = useViewer();
 
   if (!db) {
     return (
@@ -36,7 +37,11 @@ function Page() {
             icon={<MagnifyingGlassIcon size={32} />}
             title={`There's no database named ${name}`}
             description={
-              databases.length ? "Pick one from the list above, or create a new one." : "Create one with New database."
+              databases.length
+                ? `Pick one from the list above${user ? ", or create a new one" : ""}.`
+                : user
+                  ? "Create one with New database."
+                  : "Connect a client with AUTH <name> <password> to create one."
             }
           />
         </main>
@@ -48,7 +53,7 @@ function Page() {
 }
 
 function LivePage({ db, databases, options }: { db: Database; databases: Database[]; options: Options }) {
-  const live = useLive(db.name, !!useSignedIn()),
+  const live = useLive(db.name, !!useViewer().user),
     dark = useDark();
 
   return (

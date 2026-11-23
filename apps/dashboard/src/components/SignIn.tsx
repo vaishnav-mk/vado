@@ -2,11 +2,13 @@
 import { LinkButton, Tooltip } from "@cloudflare/kumo";
 import { SignInIcon, SignOutIcon } from "@phosphor-icons/react";
 import { useLocation } from "@tanstack/react-router";
-import { useSignedIn } from "./Guard";
+import { useViewer } from "./Guard";
 
 export function SignIn() {
-  const user = useSignedIn(),
+  const { user, signIn } = useViewer(),
     here = useLocation().pathname;
+
+  if (!signIn) return null;
 
   if (user) {
     return (

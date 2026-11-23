@@ -2,6 +2,7 @@ import { createFileRoute, redirect } from "@tanstack/react-router";
 import { Empty } from "@cloudflare/kumo";
 import { DatabaseIcon } from "@phosphor-icons/react";
 import { Header } from "../components/Header";
+import { useViewer } from "../components/Guard";
 import { listDatabases, listOptions } from "../server/admin";
 
 export const Route = createFileRoute("/")({
@@ -17,7 +18,8 @@ export const Route = createFileRoute("/")({
 });
 
 function NoDatabases() {
-  const { options } = Route.useLoaderData();
+  const { options } = Route.useLoaderData(),
+    { user } = useViewer();
 
   return (
     <>
@@ -26,7 +28,11 @@ function NoDatabases() {
         <Empty
           icon={<DatabaseIcon size={32} />}
           title="No databases yet"
-          description="Create one with New database. Its numbers show up here as soon as it has any."
+          description={
+            user
+              ? "Create one with New database. Its numbers show up here as soon as it has any."
+              : "Connect a client with AUTH <name> <password> to create one."
+          }
         />
       </main>
     </>

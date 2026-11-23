@@ -1,7 +1,7 @@
 import type { ReactNode } from "react";
 import { createRootRoute, HeadContent, Outlet, Scripts } from "@tanstack/react-router";
 import { TooltipProvider } from "@cloudflare/kumo";
-import { SignedIn } from "../components/Guard";
+import { Viewer } from "../components/Guard";
 import { me } from "../server/access";
 import css from "../styles.css?url";
 
@@ -23,7 +23,7 @@ export const Route = createRootRoute({
       { rel: "icon", type: "image/svg+xml", href: FAVICON },
     ],
   }),
-  loader: async () => ({ user: await me() }),
+  loader: () => me(),
   shellComponent: Shell,
   component: Root,
 });
@@ -44,15 +44,13 @@ function Shell({ children }: { children: ReactNode }) {
 }
 
 function Root() {
-  const { user } = Route.useLoaderData();
-
   return (
-    <SignedIn.Provider value={user}>
+    <Viewer.Provider value={Route.useLoaderData()}>
       <TooltipProvider>
         <div className="min-h-screen bg-kumo-canvas text-kumo-default">
           <Outlet />
         </div>
       </TooltipProvider>
-    </SignedIn.Provider>
+    </Viewer.Provider>
   );
 }
