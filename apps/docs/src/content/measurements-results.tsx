@@ -80,7 +80,7 @@ export const RESULT_SECTIONS: DocSection[] = [
   },
   {
     id: "cold-starts",
-    title: "Cold starts and deploys",
+    title: "Cold starts",
     content: (
       <>
         <Table
@@ -90,16 +90,6 @@ export const RESULT_SECTIONS: DocSection[] = [
             ["Next SET", "49-62 ms", "50-66 ms"],
             ["First GET after an abort, 16 MB of data", "75-395 ms", "161-293 ms"],
             ["First GET after an abort, 56 MB of data", "79-353 ms", "146-316 ms"],
-          ]}
-        />
-        <Table
-          headers={["Deploy under load", "Result"]}
-          rows={[
-            ["Shards on the new code", "10-25 s after the deploy"],
-            ["Commands that failed", "None"],
-            ["Slowest reply", "Under 1 s"],
-            ["Replicas on the new code and serving", "Within 35 s"],
-            ["Counters checked at the end", "All correct"],
           ]}
         />
       </>

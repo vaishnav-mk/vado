@@ -1,6 +1,5 @@
 import { WrenchIcon } from "@phosphor-icons/react";
 import { Code, Table } from "../components/blocks";
-import { DocLink } from "../components/doc-link";
 import { BENCH_SECTION } from "./operations-bench";
 import { server, source } from "./sources";
 import type { Doc } from "./types";
@@ -11,9 +10,9 @@ export const operations: Doc = {
   group: "Run it",
   icon: WrenchIcon,
   description:
-    "Deploy, configure, create databases with a placement, sign in to the dashboard, drive the bench API, and upgrade without breaking running shards.",
+    "Deploy, configure, create databases with a placement, watch the dashboard, drive the bench API, and upgrade without breaking running shards.",
   keywords:
-    "deploy configure settings secrets env vars VALKEY_MAXMEMORY LOCATION_HINT dashboard access sign in bench api token upgrade migrations rollback",
+    "deploy configure settings secrets env vars VALKEY_MAXMEMORY LOCATION_HINT dashboard bench api token upgrade migrations rollback",
   sections: [
     {
       id: "deploy",
@@ -22,13 +21,12 @@ export const operations: Doc = {
         <>
           <Code label="From a checkout">
             {
-              "npx wrangler secret put VALKEY_PASSWORD\nnpx wrangler secret put BENCH_TOKEN      # optional: turns on the bench API\nnpm run deploy -- --var ACCESS_TEAM_DOMAIN:https://<team>.cloudflareaccess.com --var ACCESS_AUD:<tag>\n\nVADO_REDIS=1 npm run deploy              # carry the Redis flavour too"
+              "npx wrangler secret put VALKEY_PASSWORD\nnpx wrangler secret put BENCH_TOKEN      # optional: turns on the bench API\nnpm run deploy\n\nVADO_REDIS=1 npm run deploy              # carry the Redis flavour too"
             }
           </Code>
           <p>
-            Open connections keep the old router code until they end. Busy shards restart onto the new code within about
-            30 s without failing commands, and idle ones get it when they next start. Wait a minute after a deploy
-            before measuring anything.
+            Open connections keep the old router code until they end. Busy shards restart onto the new code after they
+            drain, and idle ones get it when they next start. Wait a minute after a deploy before measuring anything.
           </p>
         </>
       ),
@@ -42,7 +40,6 @@ export const operations: Doc = {
           rows={[
             ["VALKEY_PASSWORD (secret)", "unset", "Makes AUTH mandatory and turns on /ws"],
             ["BENCH_TOKEN (secret)", "unset", "Bearer token for the bench API; unset turns it off"],
-            ["ACCESS_TEAM_DOMAIN, ACCESS_AUD", "required", "Dashboard sign-in with Cloudflare Access"],
             ["SHARD_EPOCHS", '[{"from":0,"shards":1}]', "Shard count by creation time. Append, never edit"],
             ["LOCATION_HINT", "unset", "Region for new shards without a regions list, and every pub/sub shard"],
             ["VALKEY_MAXMEMORY", "64mb", "Per shard. Keep it at or under 64 MB: the memory limit is 128 MB"],
@@ -79,24 +76,13 @@ export const operations: Doc = {
     },
     {
       id: "dashboard",
-      title: "Dashboard sign-in",
+      title: "Dashboard",
       content: (
-        <>
-          <p>
-            The dashboard is the Worker's own URL. Anyone can watch: live numbers come over <code>/live</code> from the
-            database's Watcher, and carry counts, sizes, rates and city names, never keys, values or client addresses.
-          </p>
-          <p>
-            Changes need signing in through the Access application on <code>/signin</code> (
-            <DocLink slug="quick-start" hash="sign-in">
-              setup
-            </DocLink>
-            ). Every change verifies the Access token against the team's signing keys, <code>ACCESS_TEAM_DOMAIN</code>{" "}
-            as issuer and <code>ACCESS_AUD</code> as audience, before it runs. Signed in, you can create databases, run
-            a command and see which shard and replica answered, restart a shard, and start test traffic, which stops by
-            itself after 10 minutes. The dashboard refuses KEYS, FLUSHALL and FLUSHDB; those belong in a client.
-          </p>
-        </>
+        <p>
+          The dashboard is the Worker's own URL. It shows each database's shards, its replicas on a globe, where traffic
+          enters, response times and a timeline. Live numbers come over <code>/live</code> from the database's Watcher,
+          and carry counts, sizes, rates and city names, never keys, values or client addresses.
+        </p>
       ),
     },
     BENCH_SECTION,
@@ -131,7 +117,6 @@ export const operations: Doc = {
   sources: [
     source("wrangler.jsonc"),
     server("env.d.ts"),
-    server("admin/access.ts"),
     server("admin/admin.ts"),
     server("bench/bench.ts"),
     source("AGENTS.md"),

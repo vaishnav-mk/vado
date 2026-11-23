@@ -9,7 +9,7 @@ export const durability: Doc = {
   group: "How it works",
   icon: HardDrivesIcon,
   description:
-    "Every acknowledged write is in SQLite before its reply leaves. Group commit keeps that cheap under load, a helper object compacts the AOF, and deploys restart shards without failing commands.",
+    "Every acknowledged write is in SQLite before its reply leaves. Group commit keeps that cheap under load, a helper object compacts the AOF, and a deploy restarts each shard once it has answered what it read.",
   keywords:
     "durability aof appendfsync sqlite vfs write-through group commit rewrite rewriter fork reset LOST deploy restart drain",
   sections: [
@@ -131,8 +131,7 @@ export const durability: Doc = {
           <p>
             The second greeting tells the router that no command still waiting for a reply has run, so it sends them all
             again, in order, to the new copy. The one exception is a transaction whose MULTI ran and EXEC didn't: its
-            EXEC gets the lost-connection error. Replicas keep serving throughout. In tests, shards were on new code 10
-            to 25 s after a deploy, and no command failed.
+            EXEC gets the lost-connection error. Replicas keep serving throughout.
           </p>
         </>
       ),

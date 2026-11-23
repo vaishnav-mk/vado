@@ -11,7 +11,7 @@ export const security: Doc = {
   description:
     "Who can connect, what clients may change, how data travels, where copies live, and what the bench token and the dashboard allow.",
   keywords:
-    "security auth password per-database rate limit constant time CONFIG SET allowed tls spectrum transport replicas data location bench token dashboard access at rest",
+    "security auth password per-database rate limit constant time CONFIG SET allowed tls spectrum transport replicas data location bench token dashboard at rest",
   sections: [
     {
       id: "authentication",
@@ -113,8 +113,7 @@ export const security: Doc = {
           <p>
             The bench API is off unless <code>BENCH_TOKEN</code> is set, and with the token anyone can do anything to
             any database. The dashboard lists every database's name and anyone can watch one; watching reads one key a
-            second for response times, and writes it only while someone signed in watches. Changes check the Access
-            token on every call, and the router's own checks still apply to commands run from the dashboard.
+            second for response times.
           </p>
           <Note>
             <p>
@@ -131,7 +130,6 @@ export const security: Doc = {
     server("router/secrets.ts"),
     server("router/command-sets.ts"),
     server("catalog/names.ts"),
-    server("admin/access.ts"),
     server("bench/bench.ts"),
   ],
 };

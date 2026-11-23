@@ -43,8 +43,8 @@ export const introduction: Doc = {
             them.
           </li>
           <li>
-            <strong>Deploys that fail no commands.</strong> Busy shards restart onto new code after answering what they
-            have read.
+            <strong>Restarts onto new code.</strong> After a deploy, busy shards answer what they have read, then
+            restart.
           </li>
           <li>
             <strong>A password per database</strong>, and databases that can be dropped for good.
@@ -91,10 +91,6 @@ export const introduction: Doc = {
             alt="The dashboard watching a 64-shard database with a read replica of every shard in every region"
           />
           <p className="note">A 64-shard database with a replica of every shard in every region.</p>
-          <p>
-            Anyone can watch. People you let in through Cloudflare Access can also create databases, run commands,
-            restart shards and start test traffic.
-          </p>
         </>
       ),
     },
@@ -104,7 +100,7 @@ export const introduction: Doc = {
       content: (
         <CardLinks
           items={[
-            { slug: "quick-start", title: "Deploy it", text: "One button, three settings, then connect a client." },
+            { slug: "quick-start", title: "Deploy it", text: "One button and a password, then connect a client." },
             {
               slug: "architecture",
               title: "See every part",

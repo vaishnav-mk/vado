@@ -92,26 +92,6 @@ export function Flow({ items }: { items: string[] }) {
   );
 }
 
-export interface Metric {
-  value: string;
-  label: string;
-  note: string;
-}
-
-export function Metrics({ items }: { items: Metric[] }) {
-  return (
-    <div className="metrics">
-      {items.map((item) => (
-        <div className="metric" key={item.label}>
-          <div className="metric-value">{item.value}</div>
-          <p className="metric-label">{item.label}</p>
-          <small>{item.note}</small>
-        </div>
-      ))}
-    </div>
-  );
-}
-
 export interface Card {
   slug: string;
   title: string;

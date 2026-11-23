@@ -1,5 +1,5 @@
 import { ChartBarIcon } from "@phosphor-icons/react";
-import { Metrics, Note, Table } from "../components/blocks";
+import { Note, Table } from "../components/blocks";
 import { RESULT_SECTIONS } from "./measurements-results";
 import { server, source } from "./sources";
 import type { Doc } from "./types";
@@ -15,13 +15,6 @@ export const measurements: Doc = {
     "limits measurements benchmarks throughput latency memory 64 MB request size cpu cold start deploy rewrite replicas failure tests",
   intro: (
     <>
-      <Metrics
-        items={[
-          { value: "255-304k", label: "SET/s on 16 shards", note: "Through the router, 8 load generators" },
-          { value: "0 missing", label: "After aborting every shard", note: "50,000 acknowledged writes, twice" },
-          { value: "10-25 s", label: "To new code after a deploy", note: "With no failed commands" },
-        ]}
-      />
       <p>
         Most numbers come from the bench API, which runs its clients inside Cloudflare: load generators through the
         router, Sender objects in each of the nine regions, or straight to one shard. Latency over TCP came from one
