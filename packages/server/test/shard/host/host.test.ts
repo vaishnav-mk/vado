@@ -6,8 +6,9 @@ import { viewsOf } from "../../../src/shard/vfs/memory";
 import { Vfs } from "../../../src/shard/vfs/vfs";
 import { Gauge } from "../../../src/shard/host/gauge";
 import { received } from "../../../src/shard/host/internal";
+import { Loop } from "../../../src/shard/host/loop";
 import { Sockets } from "../../../src/shard/host/sockets";
-import type { PooledClient } from "../../../src/shard/host/types";
+import type { PooledClient, ValkeyExports } from "../../../src/shard/host/types";
 import { wasiImports } from "../../../src/shard/host/wasi";
 
 const encoder = new TextEncoder();
@@ -67,4 +68,42 @@ test("a gauge resolves at zero", async () => {
   gauge.down();
   await waiting;
   assert.equal(done, true);
+});
+
+test("a loop never steps Valkey again once it has thrown", () => {
+  let ticks = 0,
+    fatal = 0;
+
+  const rk_tick = () => {
+    ticks++;
+    throw new Error("trap");
+  };
+
+  const vk: ValkeyExports = {
+    memory: new WebAssembly.Memory({ initial: 1 }),
+    _initialize: () => {},
+    rk_args_cap: () => 0,
+    rk_args_ptr: () => 0,
+    rk_boot_args: () => 0,
+    rk_next_timeout_ms: () => 100,
+    rk_rewrite_done: () => 0,
+    rk_tick,
+  };
+
+  const stats = { writes: 0, writeBytes: 0, reads: 0, readBytes: 0, rowsWritten: 0 };
+
+  const loop = new Loop(
+    vk,
+    new Sockets(),
+    stats,
+    undefined,
+    () => fatal++,
+    () => {},
+  );
+
+  assert.throws(() => loop.step(), /trap/);
+  assert.throws(() => loop.step(), /trap/);
+
+  assert.equal(ticks, 1);
+  assert.equal(fatal, 1);
 });

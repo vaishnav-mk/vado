@@ -93,11 +93,15 @@ export class RpcUpstream extends BaseUpstream implements Upstream {
       return;
     }
 
-    // The next command gets a fresh upstream, and stub.
+    // The next command gets a fresh upstream, and stub; nothing more goes on this one.
     this.dead = true;
     const reply = lostOr(cause, () => this.owner.dropped());
+    const queued = this.#out.reduce((n, part) => n + part.length, 0);
+    const rest = this.#pending;
+    this.#pending = [];
+    this.#out = [];
 
-    for (const cb of cbs) cb(reply);
-    this.#done(bytes);
+    for (const cb of [...cbs, ...rest]) cb(reply);
+    this.#done(bytes + queued);
   }
 }

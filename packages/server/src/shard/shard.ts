@@ -93,9 +93,13 @@ export class ValkeyShard extends DurableObject<Env> {
 
     if (!shard) return;
     this.#shard = null;
-    await shard.primary?.stop();
-    await bury(this.ctx.storage, this.#db);
-    void resetSoon(this.ctx, "dropped"); // Valkey still holds the data in memory
+
+    try {
+      await shard.primary?.stop();
+      await bury(this.ctx.storage, this.#db);
+    } finally {
+      void resetSoon(this.ctx, "dropped"); // Valkey still holds the data in memory
+    }
   }
 
   async waitReplicas(n: number, ms: number): Promise<number> {

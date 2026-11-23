@@ -14,6 +14,7 @@ export class Loop {
   readonly #fatal: ((error: Error) => void) | undefined;
   readonly #log: (line: string) => void;
   readonly #hzMs: number;
+  #broken: Error | null = null;
   #queued = false;
   #timer: ReturnType<typeof setInterval> | null = null;
   #lastTick = 0;
@@ -40,11 +41,15 @@ export class Loop {
   }
 
   step(): void {
+    // Queued wakes and batches must not run it again before the reset lands.
+    if (this.#broken) throw this.#broken;
+
     // A throw (a wasm trap, a storage error under fd_write) leaves Valkey's memory untrustworthy.
     try {
       this.#vk.rk_tick();
     } catch (e) {
       const error = e instanceof Error ? e : new Error(String(e));
+      this.#broken = error;
       this.#log(`rk_tick threw: ${error.stack}`);
       this.#fatal?.(error);
       throw error;
@@ -67,7 +72,7 @@ export class Loop {
     if (this.#sync && this.#vfs.writes !== writes) {
       this.commits.up();
       this.#sync()
-        .catch(() => {})
+        .catch((e: Error) => this.#log(`sync failed: ${e.stack}`))
         .finally(() => {
           this.commits.down();
 
