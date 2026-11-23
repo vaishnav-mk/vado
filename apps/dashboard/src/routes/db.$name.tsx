@@ -12,7 +12,7 @@ import type { Database, Options } from "../lib/types";
 export const Route = createFileRoute("/db/$name")({
   loader: async ({ params }) => {
     const [db, databases, options] = await Promise.all([
-      getDatabase({ data: { name: params.name } }),
+      getDatabase({ data: { name: params.name } }).catch(() => null),
       listDatabases(),
       listOptions(),
     ]);

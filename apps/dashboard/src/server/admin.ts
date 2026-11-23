@@ -3,17 +3,18 @@ import { createServerFn } from "@tanstack/react-start";
 import { env } from "cloudflare:workers";
 import * as v from "valibot";
 import { Admin, FLAVOURS } from "@vado/server";
+import { DB_NAME, DB_NAME_RULE } from "@vado/server/catalog/names.ts";
 import type { CommandResult, Database, Options, TestView } from "../lib/types";
 import { requireUser } from "./access";
 
 const admin = () => new Admin(env);
 
-const name = v.pipe(v.string(), v.minLength(1), v.maxLength(63));
+const name = v.pipe(v.string(), v.regex(DB_NAME, DB_NAME_RULE));
 
 export const listDatabases = createServerFn({ method: "GET" }).handler((): Promise<Database[]> => admin().databases());
 
 export const getDatabase = createServerFn({ method: "GET" })
-  .validator(v.object({ name: v.pipe(v.string(), v.maxLength(200)) }))
+  .validator(v.object({ name }))
   .handler(({ data }): Promise<Database | null> =>
     admin()
       .database(data.name)
