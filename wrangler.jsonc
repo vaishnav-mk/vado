@@ -85,7 +85,7 @@
     { "tag": "v9", "new_sqlite_classes": ["Watcher"] },
   ],
   "vars": {
-    // Sign-in to the dashboard with Cloudflare Access: the team domain and the application's audience tag (README.md#sign-in).
+    // Sign-in to the dashboard with Cloudflare Access: the team domain and the application's audience tag (https://vado-docs.vaishnav.one/docs/quick-start#sign-in).
     "ACCESS_TEAM_DOMAIN": "",
     "ACCESS_AUD": "",
   },

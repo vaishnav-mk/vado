@@ -44,13 +44,9 @@ compiles Valkey with the shims in `wasi/`, links, and runs `wasm-opt`. Every run
 
 ## Allocator
 
-The build uses wasi-libc's dlmalloc. zmalloc asks it for `malloc_usable_size` instead of keeping an 8-byte size prefix
-per allocation.
-
-A mimalloc build was tried and measured in production with the bench `frag` probe
-([measurements](../../docs/measurements.md)): linear memory was 1.6-4.3x Valkey's `used_memory` with mimalloc, against
-1.08-1.29x with dlmalloc (flat across rounds of deleting and rewriting half the keys), and it started at 34 MB instead
-of 2.6 MB because it allocates in arenas of at least 16 MiB. wasm memory never shrinks, so the option was removed.
+wasi-libc's dlmalloc. zmalloc asks it for `malloc_usable_size` instead of keeping a size prefix per allocation. A
+mimalloc build used 1.6-4.3x Valkey's `used_memory` in linear memory, against 1.08-1.29x with dlmalloc, and wasm memory
+never shrinks, so it was dropped ([measurements](https://vado-docs.vaishnav.one/docs/measurements)).
 
 ## Reproducibility
 

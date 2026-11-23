@@ -90,8 +90,9 @@ Rules for anyone, human or agent, changing this repo. Paths starting `server/` a
 
 | Path | What |
 | --- | --- |
-| `src/server.ts` | The Worker's entry: `worker()` from `@vado/server`, the dashboard loaded on the first page request, and every Durable Object class exported by name |
-| `src/` | The dashboard: TanStack Start, React, `@cloudflare/kumo`. `src/server/` holds the server functions that call `Admin`; `src/lib/live.ts` reads `/live` |
+| `wrangler.jsonc` | The Worker's config, at the root because the Deploy to Cloudflare button reads it there. `main` is `apps/dashboard/src/server.ts`; `npm run deploy` builds the dashboard and deploys `apps/dashboard/dist/server/wrangler.json` |
+| `apps/dashboard/` | The dashboard (TanStack Start, React, `@cloudflare/kumo`) and the Worker's entry, `src/server.ts`: `worker()` from `@vado/server`, the dashboard loaded on the first page request, and every Durable Object class exported by name. `src/server/` holds the server functions that call `Admin`; `src/lib/live.ts` reads `/live` |
+| `apps/docs/` | The documentation site: TanStack Start, its own Worker (`vado-docs`), pages in `src/content/` |
 | `server/index.ts` | The database's side of the Worker: `connect()`, `/ws`, `/live`, the bench API, and the `Admin` export |
 | `server/migrate.ts` | Applies an object's `DurableMigrations` list ([SQL](#sql)) |
 | `server/isolate-cache.ts` | `IsolateCache`: values fetched once per isolate ([isolate cache](#isolate-cache)) |
@@ -120,14 +121,8 @@ Rules for anyone, human or agent, changing this repo. Paths starting `server/` a
 
 ## Structure
 
-- Tunables live in each directory's `config.ts`, each with a comment saying why it has its value:
-  `server/router/config.ts` (router and WebSocket ingress, `PULSE_MS`), `server/shard/config.ts` (AOF rewrites:
-  `AOF_REWRITE_MIN`, `AOF_REWRITE_IDLE_MS`, `AOF_REWRITE_CAP`, `AOF_CHECK_MS`, `AOF_HELPER_TIMEOUT_MS`,
-  `AOF_HELPER_RETRY_MS`; restarts onto newer code), `server/shard/host/config.ts` (`SHARD_COMMITS`, `SHARD_CLASSES`,
-  the shard's high and low marks), `server/shard/vfs/config.ts` (`VFS_CHUNK`, `VFS_TAIL`, `VFS_SWEEP_BYTES`,
-  `VFS_SWEEP_MS`), `server/replication/config.ts` (`REPL_BACKLOG`, `REPL_TICK_MS`, `REPL_RETRY_MS`, `REPL_STUCK_MS`,
-  `REPL_IDLE_MS`, `READ_YOUR_WRITES_MS`) and `server/admin/config.ts` (`WATCH_MS`, `WATCH_HISTORY`,
-  `WATCH_RATE_POLLS`, `TEST_TRAFFIC_MS`). Protocol constants stay in the module that speaks the protocol.
+- Each tunable in a `config.ts` has a comment saying why it has its value. Protocol constants stay in the module that
+  speaks the protocol.
 - Durable Object methods are RPC: routers running older code call them during a deploy, so keep names and signatures
   stable and make changes additive. That covers `ValkeyShard` (including `replicate`, `replicaReady`, `snapshot`,
   `commitProbe`), `Catalog`, `Pulse` (`report`, `snapshot`), `Sender` (`run`, `loop`, `stop`), `Watcher` (`note`,
@@ -139,8 +134,8 @@ Rules for anyone, human or agent, changing this repo. Paths starting `server/` a
   (`server/shard/primary.ts`, with `Replicator` and `Rewrites`), `ReplicaRole` and `Upgrader`.
 - A database's shard count, regions, replicas and classes are fixed when it is created. Change capacity for new
   databases by appending to `SHARD_EPOCHS`, never by editing an existing epoch.
-- New Durable Object classes need a migration tag in `wrangler.jsonc`, and a named export in `src/server.ts` (wrangler
-  reads those names to type the bindings).
+- New Durable Object classes need a migration tag in `wrangler.jsonc`, and a named export in
+  `apps/dashboard/src/server.ts` (wrangler reads those names to type the bindings).
 - Keep shard classes and rewriter classes in step: `ValkeyShard<k>` (binding `SHARD<k>`) finds `ValkeyRewriter<k>`
   (`REWRITER<k>`) by binding name (`REWRITERS` in `server/shard/boot.ts`). Adding classes means bindings and a
   migration for both. Never remove a shard class: a database keeps shard `i` in class `i % classes`, as recorded in
@@ -181,7 +176,7 @@ and friends) keeps it that way.
 `/live?db=<name>` is a `DurabilitySocket` on that database's `Watcher` (`server/admin/watcher/watcher.ts`). Inbound,
 the page asks for a `snapshot` (history, events, state); outbound, the Watcher sends a `tick` per poll, and keeps
 `WATCH_REPLAY` of them for a page that reconnects. The page's side is `DurabilitySocketClient` from
-`durability/client`, in `src/lib/live.ts`. The Worker sets whether the viewer is signed in, kept as socket metadata.
+`durability/client`, in `apps/dashboard/src/lib/live.ts`. The Worker sets whether the viewer is signed in, kept as socket metadata.
 Keep `/live` read-only, and never send keys, values or client addresses on it.
 
 ## Isolate cache
@@ -201,17 +196,14 @@ never wait on another request. Use it for any new per-isolate value; never cache
 
 ## Bench endpoints
 
-Tests are the `tests` map in `server/bench/bench.ts`, built from `catalogTests`, `shardProbes`, `dataTests` and
-`loadTests`; [operations](docs/operations.md#the-bench-api) lists them all. `send?region=<hint>&sender=<k>` runs any
-test from a Sender object in that region. `commit`, `staleness`, `ryw`, `replicate` and `rpcbatch` probe commits,
-replica lag, read-your-writes, replication cost and the RPC path; `frag`, `rewrite` and `vfs` probe memory against
-`used_memory`, a rewrite's cost to the shard, and storage commit times for writes and deletes. `throughput` takes
-`keys=<m>` to reuse m keys per connection.
+Tests are the `tests` map in `server/bench/bench.ts`; [operations](https://vado-docs.vaishnav.one/docs/operations#bench)
+lists them. `send?region=<hint>&sender=<k>` runs any test from a Sender object in that region.
 
 ## The dashboard
 
-The dashboard is `src/`, in the same Worker, deployed with it (`npm run deploy`). Its server functions
-(`src/server/admin.ts`) check the shape of every input with valibot and call `Admin` in-process. Watching is public;
+The dashboard is `apps/dashboard`, in the same Worker, deployed with it (`npm run deploy`). Its server functions
+(`apps/dashboard/src/server/admin.ts`) check the shape of every input with valibot and call `Admin` in-process.
+Watching is public;
 anything that changes something needs a signed-in session, checked against Cloudflare Access on every call.
 
 ## Commits
@@ -223,7 +215,7 @@ One change per commit, with a short lowercase imperative subject (`bound unauthe
 ```sh
 npm run check   # vp check (oxfmt; oxlint with anti-slop and @durability/lint, type-aware), tsrs --noEmit --fast
 npm test        # vp test: unit tests in plain Node
-npm run build   # vp build
+npm run build   # vp build in apps/dashboard
 ```
 
 For behaviour changes, run `test/e2e.sh` against a deployment of your own (its header lists `BASE`, `TOKEN`, `PW`

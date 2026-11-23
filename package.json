@@ -39,7 +39,7 @@
         "description": "The password clients send with `AUTH <database> <password>`. It also opens WebSocket access (`/ws`). Generate one with `openssl rand -hex 32`."
       },
       "ACCESS_TEAM_DOMAIN": {
-        "description": "Your Zero Trust team domain, like `https://<team>.cloudflareaccess.com`. See [Sign in](https://github.com/vaishnav-mk/vado#sign-in)."
+        "description": "Your Zero Trust team domain, like `https://<team>.cloudflareaccess.com`. See [sign in](https://vado-docs.vaishnav.one/docs/quick-start#sign-in)."
       },
       "ACCESS_AUD": {
         "description": "The **Application Audience (AUD) tag** of the Access application on `/signin`."
