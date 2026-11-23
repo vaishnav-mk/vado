@@ -8,6 +8,7 @@ import { replicaRegion } from "../../catalog/placement";
 import { shardOfSlot, slotOf } from "../../protocol/slots";
 import { coloOf } from "../../replication/regions";
 import { commands } from "../../router/command-table";
+import { replicaResting } from "../../router/isolate";
 import { encoder, messageOf } from "../../shared";
 import { PROBE_KEY, WATCH_HISTORY, WATCH_MS, WATCH_REPLAY } from "../config";
 import type { EventKind, LiveSnapshot, LiveState, Point, TestLevel, TestView, Tick } from "../live-types";
@@ -164,9 +165,12 @@ export class Watcher extends DurableObject<Env> {
       ]);
 
       reading.watcher = place(colo);
+      const shard = shardOfSlot(slotOf(encoder.encode(PROBE_KEY)), record.shards);
+
+      // A replica read that just failed went to the primary, as the probe's next ones do for a while.
       reading.probeAt = {
-        shard: shardOfSlot(slotOf(encoder.encode(PROBE_KEY)), record.shards),
-        replica: colo ? replicaRegion(record, colo) : null,
+        shard,
+        replica: colo && !replicaResting(this.#name, shard, at) ? replicaRegion(record, colo) : null,
       };
 
       const seen = this.#shards.see(
