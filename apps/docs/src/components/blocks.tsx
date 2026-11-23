@@ -40,8 +40,48 @@ export function Code({ children, label = "Example" }: { children: string; label?
   );
 }
 
-export function Note({ children }: { children: ReactNode }) {
-  return <aside className="notice">{children}</aside>;
+export function Note({ children, title }: { children: ReactNode; title?: string }) {
+  return (
+    <aside className="notice">
+      {title !== undefined && <strong className="notice-title">{title}</strong>}
+      {children}
+    </aside>
+  );
+}
+
+/** Numbered steps, for an order that matters. */
+export function Steps({ items }: { items: ReactNode[] }) {
+  return (
+    <ol className="steps">
+      {items.map((item, index) => (
+        <li key={index}>{item}</li>
+      ))}
+    </ol>
+  );
+}
+
+export function Checklist({ items }: { items: ReactNode[] }) {
+  return (
+    <ul className="checklist">
+      {items.map((item, index) => (
+        <li key={index}>{item}</li>
+      ))}
+    </ul>
+  );
+}
+
+/** A two-column list of short terms and what they mean; one column on phones. */
+export function Facts({ items }: { items: [ReactNode, ReactNode][] }) {
+  return (
+    <dl className="facts">
+      {items.map(([term, value], index) => (
+        <div key={index}>
+          <dt>{term}</dt>
+          <dd>{value}</dd>
+        </div>
+      ))}
+    </dl>
+  );
 }
 
 export function Table({ headers, rows }: { headers: string[]; rows: ReactNode[][] }) {

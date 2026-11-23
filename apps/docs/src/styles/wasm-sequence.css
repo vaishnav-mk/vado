@@ -1,0 +1,200 @@
+/* The WebAssembly page's AOF rewrite sequence and patch cards; wasm.css has the origin colours they use. */
+.sequence {
+  padding: 16px 18px 18px;
+  background: var(--paper);
+}
+
+.sequence-heads,
+.doc .sequence ol {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px 24px;
+}
+
+.sequence-heads span {
+  text-align: center;
+  padding: 6px 8px;
+  border: 1px solid var(--origin-ink);
+  border-radius: 7px;
+  background: var(--origin-tint);
+  color: var(--origin-ink);
+  font-size: 12px;
+  font-weight: 550;
+}
+
+.doc .sequence ol {
+  list-style: none;
+  margin: 0;
+  padding: 10px 0 0;
+  /* the two lifelines */
+  background:
+    linear-gradient(var(--line), var(--line)) calc(25% - 6px) 0 / 1px 100% no-repeat,
+    linear-gradient(var(--line), var(--line)) calc(75% + 6px) 0 / 1px 100% no-repeat;
+}
+
+.doc .sequence li {
+  position: relative;
+  margin: 0;
+  display: flex;
+  gap: 8px;
+  align-items: baseline;
+  font-size: 12px;
+  line-height: 1.55;
+  color: var(--soft);
+}
+
+.sequence-number {
+  flex-shrink: 0;
+  display: grid;
+  place-items: center;
+  width: 18px;
+  height: 18px;
+  border: 1px solid var(--line);
+  border-radius: 50%;
+  background: var(--card);
+  font: 9.5px var(--font-mono);
+  color: var(--deep);
+}
+
+.doc .sequence-note {
+  padding: 8px 11px;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  background: var(--card);
+}
+
+.sequence-note[data-lane="module"] {
+  grid-column: 1;
+}
+
+.sequence-note[data-lane="host"] {
+  grid-column: 2;
+}
+
+.doc .sequence-arrow {
+  grid-column: 1 / -1;
+  padding: 2px calc(25% - 6px) 14px;
+}
+
+/* the arrow from one lifeline to the other, under the label */
+.sequence-arrow::after {
+  content: "";
+  position: absolute;
+  left: calc(25% - 6px);
+  right: calc(25% - 6px);
+  bottom: 5px;
+  height: 0;
+  border-top: 1.5px solid var(--accent);
+}
+
+.sequence-arrow::before {
+  content: "";
+  position: absolute;
+  bottom: 1px;
+  border: 5px solid transparent;
+}
+
+.sequence-arrow[data-lane="module"]::before {
+  right: calc(25% - 6px);
+  border-left: 7px solid var(--accent);
+  border-right: 0;
+}
+
+.sequence-arrow[data-lane="host"]::before {
+  left: calc(25% - 6px);
+  border-right: 7px solid var(--accent);
+  border-left: 0;
+}
+
+/* Patch cards */
+.patch-group-title {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0 10px;
+  margin: 26px 0 10px;
+  font-size: 14px;
+  font-weight: 550;
+  color: var(--ink);
+}
+
+.patch-group-title span {
+  font-size: 12px;
+  font-weight: 400;
+  color: var(--muted);
+}
+
+.patch-list {
+  display: grid;
+  gap: 8px;
+}
+
+.patch {
+  padding: 11px 15px 12px;
+  border: 1px solid var(--line);
+  border-left: 3px solid var(--accent);
+  border-radius: 8px;
+  background: var(--card);
+}
+
+.patch-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 4px;
+}
+
+.doc .patch-head code {
+  background: none;
+  padding: 0;
+  font-size: 12.5px;
+  font-weight: 500;
+  overflow-wrap: anywhere;
+}
+
+.patch-size {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  flex-shrink: 0;
+  font: 10.5px var(--font-mono);
+  color: var(--muted);
+}
+
+.patch-size i {
+  display: block;
+  height: 5px;
+  min-width: 2px;
+  border-radius: 3px;
+  background: var(--accent);
+}
+
+.patch dl {
+  display: grid;
+  grid-template-columns: 36px 1fr;
+  gap: 2px 10px;
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.6;
+}
+
+.patch dt {
+  font: 10.5px/20.8px var(--font-mono);
+  color: var(--muted);
+}
+
+.patch dd {
+  margin: 0;
+  color: var(--soft);
+}
+
+@media (max-width: 767px) {
+  .sequence {
+    padding: 12px;
+  }
+
+  .doc .sequence-arrow {
+    padding: 2px 4px 14px;
+  }
+}

@@ -3,9 +3,12 @@
 @import "./styles/base.css";
 @import "./styles/doc.css";
 @import "./styles/blocks.css";
+@import "./styles/lists.css";
 @import "./styles/diagrams.css";
 @import "./styles/slots.css";
 @import "./styles/server.css";
+@import "./styles/wasm.css";
+@import "./styles/wasm-sequence.css";
 
 @theme inline {
   --color-paper: var(--paper);

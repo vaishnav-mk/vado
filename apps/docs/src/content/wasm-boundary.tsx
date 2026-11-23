@@ -1,4 +1,4 @@
-import { Table } from "../components/blocks";
+import { Facts, Note } from "../components/blocks";
 import { DocLink } from "../components/doc-link";
 import { ByServer } from "../components/server";
 import type { DocSection } from "./types";
@@ -6,39 +6,49 @@ import type { DocSection } from "./types";
 export const BOUNDARY_SECTIONS: DocSection[] = [
   {
     id: "imports",
-    title: "What the module imports",
+    title: "What the host provides",
     content: (
       <>
         <p>
           <code>interface.txt</code> in each build directory lists every import and export, sorted, as printed by{" "}
           <code>packages/wasm/interface.mjs</code>. It is the contract with the host in{" "}
-          <code>packages/server/src/shard/host/</code>: instantiation fails if an import is missing.
+          <code>packages/server/src/shard/host/</code>.
         </p>
-        <Table
-          headers={["Imports", "Host side"]}
-          rows={[
-            [<code>host.socket, listen, accept, read, write, close, poll</code>, "Sockets in sockets.ts (below)"],
+        <Note title="A missing import fails instantiation">
+          <p>
+            The host must provide every import the module lists, or the shard can't create its instance. Change the host
+            and both <code>interface.txt</code> files together.
+          </p>
+        </Note>
+        <Facts
+          items={[
+            [
+              <code>host.socket, listen, accept, read, write, close, poll</code>,
+              <>
+                Sockets, in <code>sockets.ts</code> (<a href="#sockets">below</a>)
+              </>,
+            ],
             [
               <code>host.aof_rewrite</code>,
-              "aof-rewrite.ts: gives the rewrite to the shard's onRewrite hook, or returns 0",
+              <>
+                <code>aof-rewrite.ts</code>: gives the rewrite to the shard's <code>onRewrite</code> hook, or returns 0
+              </>,
             ],
             [<code>env.__c_longjmp</code>, "A WebAssembly.Tag the host creates, for Lua's longjmp"],
             [
               <>
-                <code>fd_*</code>, <code>path_*</code> (files)
+                <code>fd_*</code>, <code>path_*</code>
               </>,
-              "shard/vfs: a file system in the object's SQLite, with one preopened directory, /data",
-            ],
-            [
               <>
-                <code>fd_write</code> on fds 1 and 2
+                Files, in <code>shard/vfs</code>: a file system in the object's SQLite, with one preopened directory,{" "}
+                <code>/data</code>
               </>,
-              "Lines go to the shard's log",
             ],
+            [<code>fd_write</code>, "On fds 1 and 2: lines go to the shard's log"],
             [<code>clock_time_get</code>, "Date.now() for every clock, cached per millisecond"],
             [<code>poll_oneoff, sched_yield</code>, "Return at once: nothing sleeps"],
             [<code>environ_*</code>, "An empty environment"],
-            [<code>proc_exit</code>, "Throws; during a pass, that resets the shard"],
+            [<code>proc_exit</code>, "Throws. During a pass, that resets the shard"],
             [<code>sock_shutdown, path_link, path_readlink</code>, "ENOSYS"],
           ]}
         />
@@ -55,13 +65,18 @@ export const BOUNDARY_SECTIONS: DocSection[] = [
             </p>
           }
         />
-        <p>
-          Files: AOF appends reach SQLite synchronously, by the write or the fsync after it, so a reply leaves only
-          after the bytes behind it are durable (<DocLink slug="durability">Durability</DocLink>). Other files buffer
-          until fsync or close. A file is rows of at most 1 MB, and deleted files' rows are swept in the background. The
-          clock matters because a Workers clock moves only across I/O: during one event loop pass, the server sees time
-          stand still.
-        </p>
+        <h3>Files and the clock</h3>
+        <ul>
+          <li>
+            AOF appends reach SQLite synchronously, by the write or the fsync after it. A reply leaves only after the
+            bytes behind it are durable (<DocLink slug="durability">Durability</DocLink>).
+          </li>
+          <li>Other files buffer until fsync or close.</li>
+          <li>A file is rows of at most 1 MB. Deleted files' rows are swept in the background.</li>
+          <li>
+            A Workers clock moves only across I/O, so during one event loop pass the server sees time stand still.
+          </li>
+        </ul>
       </>
     ),
   },
@@ -71,66 +86,37 @@ export const BOUNDARY_SECTIONS: DocSection[] = [
     content: (
       <>
         <p>
-          wasi-libc has no sockets, so <code>sock_shim.c</code> defines them over the <code>host</code> imports. The
-          host owns the fd numbers: every host socket is at or above 4096, below the event loop's set size, and{" "}
-          <code>socket()</code> asks the host for one. <code>bind()</code> records the port, <code>listen()</code> tells
-          the host which fd is the listener, and <code>accept()</code> takes the next client fd the host queued. Name
-          lookups always answer 127.0.0.1, and <code>connect()</code> fails with <code>ECONNREFUSED</code>, so no
-          outgoing connection is ever made.
+          wasi-libc has no sockets, so <code>sock_shim.c</code> defines them over the <code>host</code> imports.
         </p>
-        <p>
-          The wrapped <code>read</code>, <code>write</code>, <code>writev</code>, <code>close</code> and{" "}
-          <code>fcntl</code> send host fds to the host and everything else to wasi-libc. <code>writev</code> is split
-          into one <code>host.write</code> per buffer; replies over 16 KB use it. <code>pipe()</code> hands out fds from
-          3072 that never have data, for the module pipe the server must create. The host reports a socket readable when
-          it has buffered input or hit EOF, and always writable; it applies backpressure by pausing input instead.
-        </p>
-      </>
-    ),
-  },
-  {
-    id: "no-fork",
-    title: "No threads, no fork",
-    content: (
-      <>
-        <p>
-          The module is single-threaded. Background I/O jobs (closes, fsyncs, lazy frees) run inline when they're
-          submitted, and the server boots with <code>--io-threads 1</code>.{" "}
-          <ByServer
-            valkey=""
-            redis={
-              <>
-                Redis runs a job's completion callback on the next pass, so it never unblocks a client from inside that
-                client's own command.{" "}
-              </>
-            }
-          />
-          <code>rk_tick</code> leaves the module GIL released before each pass, since locking a held mutex would trap.{" "}
-          <code>fork()</code> is a macro for -1, so anything that forks fails as a failed fork would; the shard runs
-          with <code>--save ""</code> and <code>--auto-aof-rewrite-percentage 0</code>.
-        </p>
-        <p>An AOF rewrite, started by the shard with BGREWRITEAOF, goes like this instead:</p>
-        <ol>
+        <ul>
           <li>
-            The server opens a new incremental file as before a fork, then calls <code>host.aof_rewrite</code> with the
-            temp file's name, whether to write RDB, and a generation number. It asks only while the AOF is on: turning
-            the AOF on opens a temp incremental file that isn't in the manifest.
+            The host owns the fd numbers. Every host socket is at or above 4096, below the event loop's set size, and{" "}
+            <code>socket()</code> asks the host for one.
           </li>
           <li>
-            If the host returns 1, the server keeps serving with an AOF child marked as running. The host has a rewriter
-            object rebuild the base from the files before the new incremental file, and writes it to{" "}
-            <code>tmpfile</code>.
+            <code>bind()</code> records the port, <code>listen()</code> tells the host which fd is the listener, and{" "}
+            <code>accept()</code> takes the next client fd the host queued.
           </li>
           <li>
-            The host calls <code>rk_rewrite_done(ok, generation)</code>, which finishes the rewrite as the parent does
-            when a child exits. It returns 0 if that rewrite was killed meanwhile, and the host deletes the file.
+            Name lookups always answer 127.0.0.1, and <code>connect()</code> fails with <code>ECONNREFUSED</code>. No
+            outgoing connection is ever made.
           </li>
-          <li>If the host returns 0, the server rewrites inline and blocks until done.</li>
-        </ol>
-        <p>
-          <code>waitpid()</code> always returns 0, so the fake child never seems to exit on its own, and{" "}
-          <code>kill()</code> fails with <code>ESRCH</code>, so killing a rewrite doesn't wait for a process.
-        </p>
+          <li>
+            The wrapped <code>read</code>, <code>write</code>, <code>writev</code>, <code>close</code> and{" "}
+            <code>fcntl</code> send host fds to the host and everything else to wasi-libc.
+          </li>
+          <li>
+            <code>writev</code> is split into one <code>host.write</code> per buffer. Replies over 16 KB use it.
+          </li>
+          <li>
+            <code>pipe()</code> hands out fds from 3072 that never have data, for the module pipe the server must
+            create.
+          </li>
+          <li>
+            The host reports a socket readable when it has buffered input or hit EOF, and always writable. It applies
+            backpressure by pausing input instead.
+          </li>
+        </ul>
       </>
     ),
   },

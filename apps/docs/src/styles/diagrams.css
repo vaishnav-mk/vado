@@ -147,7 +147,7 @@
   flex-wrap: wrap;
 }
 
-.diagram-legend span {
+.diagram-legend > span {
   display: inline-flex;
   align-items: center;
   gap: 6px;

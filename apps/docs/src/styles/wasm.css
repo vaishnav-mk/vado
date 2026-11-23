@@ -1,0 +1,239 @@
+/* Who wrote it: the selected server's colour for upstream code, the accent for ours, grey for the toolchain. */
+[data-origin="upstream"] {
+  --origin-ink: var(--server-ink);
+  --origin-tint: var(--server-tint);
+}
+
+[data-origin="ours"] {
+  --origin-ink: var(--accent);
+  --origin-tint: var(--tint);
+}
+
+[data-origin="toolchain"] {
+  --origin-ink: var(--muted);
+  --origin-tint: var(--wash);
+}
+
+.origin-key {
+  display: inline-block;
+  width: 11px;
+  height: 11px;
+  border-radius: 3px;
+  border: 1.5px solid var(--origin-ink);
+  background: var(--origin-tint);
+}
+
+/* Build pipeline */
+.pipeline {
+  display: grid;
+  grid-template-columns: 1fr auto 1.25fr auto 1fr;
+  gap: 10px;
+  align-items: stretch;
+  padding: 18px;
+  background: var(--paper);
+}
+
+.pipeline-arrow {
+  align-self: center;
+  width: 16px;
+  height: 16px;
+  color: var(--accent);
+}
+
+.pipeline-stage {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.pipeline-stage-title {
+  font-size: 11px;
+  font-weight: 550;
+  color: var(--muted);
+}
+
+.doc .pipeline ol {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  flex: 1;
+}
+
+.doc .pipeline-step {
+  margin: 0;
+  padding: 9px 11px 10px;
+  border: 1px solid var(--line);
+  border-left: 3px solid var(--origin-ink);
+  border-radius: 7px;
+  background: var(--card);
+  display: grid;
+  gap: 3px;
+  font-size: 11.5px;
+  line-height: 1.5;
+  color: var(--soft);
+}
+
+.pipeline-step strong {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 12.5px;
+}
+
+.pipeline-number {
+  display: grid;
+  place-items: center;
+  width: 17px;
+  height: 17px;
+  border-radius: 50%;
+  background: var(--origin-tint);
+  color: var(--origin-ink);
+  font: 500 9.5px var(--font-mono);
+  flex-shrink: 0;
+}
+
+/* Layers */
+.layers {
+  display: grid;
+  gap: 12px;
+  padding: 18px;
+  background: var(--paper);
+}
+
+.layer-box {
+  display: grid;
+  gap: 8px;
+  padding: 12px;
+  border: 1px dashed var(--line);
+  border-radius: 10px;
+}
+
+.layer-box-title {
+  font-size: 11px;
+  font-weight: 550;
+  color: var(--muted);
+}
+
+.layer-box-title code {
+  margin-right: 6px;
+}
+
+.layer {
+  display: grid;
+  gap: 3px;
+  align-content: start;
+  padding: 10px 13px;
+  border: 1px solid color-mix(in srgb, var(--origin-ink) 35%, var(--line));
+  border-left: 3px solid var(--origin-ink);
+  border-radius: 7px;
+  background: var(--origin-tint);
+  font-size: 12px;
+  line-height: 1.55;
+  color: var(--soft);
+}
+
+.layer > strong {
+  font-size: 13px;
+  font-weight: 550;
+}
+
+.layer[data-origin="toolchain"] {
+  background: var(--card);
+}
+
+.layer-row,
+.layer-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+
+.layer-grid .layer {
+  background: var(--card);
+}
+
+.layer-patches {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 5px;
+  margin-top: 6px;
+  font-size: 11px;
+  color: var(--muted);
+}
+
+.doc .layer-patches code {
+  font-size: 10px;
+  background: var(--card);
+  border: 1px solid var(--origin-ink);
+  color: var(--origin-ink);
+  overflow-wrap: normal;
+}
+
+.boundary {
+  display: grid;
+  grid-template-columns: 1fr 1.25fr;
+  gap: 8px;
+  padding: 12px;
+  border-block: 2px solid var(--ink);
+  background: var(--card);
+}
+
+.boundary-side {
+  display: grid;
+  gap: 6px;
+  align-content: start;
+}
+
+.boundary-title {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  font-weight: 550;
+  color: var(--ink);
+}
+
+.boundary-title svg {
+  color: var(--accent);
+  flex-shrink: 0;
+}
+
+.boundary-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.doc .boundary-list code {
+  font-size: 10px;
+}
+
+@media (max-width: 767px) {
+  .pipeline {
+    grid-template-columns: 1fr;
+    padding: 14px;
+  }
+
+  .pipeline-arrow {
+    justify-self: center;
+    transform: rotate(90deg);
+  }
+
+  .layers {
+    padding: 12px;
+  }
+
+  .layer-box {
+    padding: 9px;
+  }
+
+  .layer-row,
+  .layer-grid,
+  .boundary {
+    grid-template-columns: 1fr;
+  }
+}
