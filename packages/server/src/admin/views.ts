@@ -1,4 +1,4 @@
-// Databases and shards in plain numbers, never a password hash. Browser-safe: the dashboard imports `place`.
+// Browser-safe: the dashboard imports `place`.
 import colos from "../replication/colos.json";
 import { REGION_NAMES } from "../replication/regions";
 import type { DatabaseRecord, DatabaseSummary } from "../catalog/types";
@@ -6,7 +6,6 @@ import type { CommandTable } from "../protocol/types";
 import type { Database, Place, ReplicaState } from "./live-types";
 import type { Calls, ShardLook, ShardReading } from "./types";
 
-// scripts/colos.mjs writes each colo as [city, latitude, longitude].
 const COLOS = new Map(
   Object.entries(colos).map(([colo, [city, lat, lon]]) => [
     colo,
@@ -14,7 +13,6 @@ const COLOS = new Map(
   ]),
 );
 
-/** A colo as a place: its code, city and coordinates (null fields if unknown). */
 export const place = (colo: string | null): Place => {
   const c = colo === null ? undefined : COLOS.get(colo);
 
@@ -31,7 +29,6 @@ export const dbView = (db: DatabaseRecord | DatabaseSummary): Database => ({
   password: "password" in db ? Boolean(db.password) : db.secret !== null,
 });
 
-/** INFO commandstats as reads and writes, by each command's flags. Commands that are neither (PING, INFO) don't count. */
 export function calls(info: Record<string, string>, table: CommandTable): Calls {
   let reads = 0,
     writes = 0;
@@ -49,7 +46,7 @@ export function calls(info: Record<string, string>, table: CommandTable): Calls 
   return { reads, writes };
 }
 
-// "idle" without an error hasn't copied yet (the primary starts on its next tick), so to a person it's copying.
+// "idle" without an error hasn't started copying yet (the primary starts on its next tick).
 const shown = (state: ReplicaState, error: string | null): ReplicaState =>
   state === "idle" && !error ? "copying" : state;
 

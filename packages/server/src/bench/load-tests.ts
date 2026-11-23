@@ -1,12 +1,10 @@
-// Load: throughput, latency, filling a database, connection churn, and stock ioredis.
 import type { RespClient } from "../protocol/resp-client";
 import type { Reply } from "../protocol/types";
 import { connectLocal } from "../router/local";
+import { messageOf } from "../shared";
 import type { Test } from "./types";
-import { failure, num, open, pct } from "./util";
+import { dbName, failure, num, open, pct } from "./util";
 
-// Pipelined SETs across `conns` connections, keys spread over every slot; checks every reply. op=get reads the same
-// keys back; keys=<m> reuses m keys per connection.
 const throughput: Test = async (env, q) => {
   const n = num(q, "n", 100000),
     batch = num(q, "batch", 1000),
@@ -72,7 +70,6 @@ const latency: Test = async (env, q) => {
   return { firstMs: first, n, p50: pct(xs, 0.5), p99: pct(xs, 0.99), max: Math.max(...xs) };
 };
 
-// Fill with `value`-byte strings until Valkey refuses (OOM) or a connection dies.
 const fill: Test = async (env, q) => {
   const c = await open(env, q),
     size = num(q, "value", 65536),
@@ -93,7 +90,7 @@ const fill: Test = async (env, q) => {
       }
     }
   } catch (e) {
-    stop = `connection: ${e instanceof Error ? e.message : String(e)}`;
+    stop = `connection: ${messageOf(e)}`;
   }
 
   c.close();
@@ -110,8 +107,7 @@ const fill: Test = async (env, q) => {
   };
 };
 
-// Connection churn from inside Cloudflare (the router's own connect handler, no TCP ingress in between): n
-// connections, par at a time, each AUTH, SET, GET, close. Compare with test/hammer or a client over TCP.
+// From inside Cloudflare, with no TCP ingress in between: compare with test/hammer over TCP.
 const churn: Test = async (env, q) => {
   const n = num(q, "n", 2000),
     par = num(q, "par", 50),
@@ -133,7 +129,7 @@ const churn: Test = async (env, q) => {
           if (set !== "OK" || get !== `v${i}`) throw new Error(`replies ${JSON.stringify([set, get])}`);
           ok++;
         } catch (e) {
-          if (fails.length < 20) fails.push([i, e instanceof Error ? e.message : String(e)]);
+          if (fails.length < 20) fails.push([i, messageOf(e)]);
         } finally {
           c?.close();
         }
@@ -158,12 +154,11 @@ interface IoredisResult {
   error?: string;
 }
 
-// Stock ioredis inside this Worker, through @vado/client's connector to a router in this isolate. Imported here
-// so nothing else in the Worker loads it.
+// Imported here so nothing else in the Worker loads ioredis.
 const ioredis: Test = async (env, q) => {
   const [{ default: Redis }, { bindingConnector }] = await Promise.all([import("ioredis"), import("@vado/client")]);
 
-  const db = q.get("db") ?? "default",
+  const db = dbName(q),
     k = `io:${Date.now()}`;
 
   const options = {
@@ -199,7 +194,7 @@ const ioredis: Test = async (env, q) => {
     out.pipeline = ((await p.exec()) ?? []).filter(([e, r]) => !e && r === "OK").length;
     out.pipelineMs = Date.now() - t0;
   } catch (e) {
-    out.error = e instanceof Error ? e.message : String(e);
+    out.error = messageOf(e);
   }
 
   a.disconnect();

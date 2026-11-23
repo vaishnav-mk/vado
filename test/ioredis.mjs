@@ -1,48 +1,41 @@
-// Stock ioredis against the TCP Worker. Exercises things a reimplementation usually lacks.
-import Redis from "ioredis";
+// Stock ioredis over TCP: HOST, PORT, PW, DB.
 import assert from "node:assert/strict";
+import { redis, sleep } from "./lib.mjs";
 
-// PORT/PW/DB target another endpoint, e.g. prod through npx vado-shim (AUTH <DB> <PW>).
-const opts = {
-  port: Number(process.env.PORT ?? 6379),
-  host: process.env.HOST ?? "127.0.0.1",
-  maxRetriesPerRequest: 1,
-  password: process.env.PW || undefined,
-  username: process.env.PW ? (process.env.DB ?? "default") : undefined,
-};
+const db = process.env.DB ?? "default";
 
-const a = new Redis(opts),
-  b = new Redis(opts),
-  sub = new Redis(opts);
+const a = redis(db, { maxRetriesPerRequest: 1 }),
+  b = redis(db, { maxRetriesPerRequest: 1 }),
+  sub = redis(db, { maxRetriesPerRequest: 1 });
 
 assert.equal(await a.ping(), "PONG");
 
-assert.equal(await a.flushall(), "OK"); // fan-out to every shard
+assert.equal(await a.flushall(), "OK");
 
 assert.equal(await a.dbsize(), 0);
 
-assert.match(await a.info("server"), /(valkey|redis)_version:/); // either flavour
+assert.match(await a.info("server"), /(valkey|redis)_version:/);
 
-assert.match(await a.info("memory"), /maxmemory:67108864/); // boot config applied
+assert.match(await a.info("memory"), /maxmemory:67108864/);
 
 await a.set("hello", "world");
 
-assert.equal(await b.get("hello"), "world"); // other connection, same DO
+assert.equal(await b.get("hello"), "world");
 
 await a.set("ttl", "x", "PX", 200);
 
-await new Promise((r) => setTimeout(r, 400));
+await sleep(400);
 
-assert.equal(await b.get("ttl"), null); // expiry works
+assert.equal(await b.get("ttl"), null);
 
 assert.deepEqual(await a.multi().incr("n").incr("n").exec(), [
   [null, 1],
   [null, 2],
 ]);
 
-assert.equal(await a.eval("return redis.call('INCRBY', KEYS[1], ARGV[1])", 1, "n", 40), 42); // Lua
+assert.equal(await a.eval("return redis.call('INCRBY', KEYS[1], ARGV[1])", 1, "n", 40), 42);
 
-const popped = b.blpop("q", 2); // blocking command, satisfied by another client
+const popped = b.blpop("q", 2);
 
 await a.lpush("q", "job1");
 
@@ -50,7 +43,7 @@ assert.deepEqual(await popped, ["q", "job1"]);
 
 await a.xadd("s", "*", "k", "v");
 
-assert.equal((await a.xrange("s", "-", "+")).length, 1); // streams
+assert.equal((await a.xrange("s", "-", "+")).length, 1);
 
 const got = new Promise((r) => sub.on("message", (_ch, msg) => r(msg)));
 
@@ -58,7 +51,7 @@ await sub.subscribe("ch");
 
 await a.publish("ch", "hi");
 
-assert.equal(await got, "hi"); // pub/sub
+assert.equal(await got, "hi");
 
 const N = 5000,
   t0 = performance.now();

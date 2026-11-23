@@ -1,20 +1,12 @@
-// What every hammer check shares: settings from the environment, a client, the bench API, retries and results.
-import Redis from "ioredis";
+import { api, redis, sleep } from "../lib.mjs";
 
 export const env = process.env;
-export const CHAOS = env.CHAOS === "1"; // CHAOS=1 aborts shards while the checks run
-
-export const PORT = Number(env.PORT ?? 6379),
-  PW = env.PW || undefined,
-  DB = env.DB ?? "hammer";
+export const CHAOS = env.CHAOS === "1";
+const DB = env.DB ?? "hammer";
 
 export const C = Number(env.C ?? 16),
   SECONDS = Number(env.SECONDS ?? 20);
 
-export const BASE = env.BASE ?? "http://localhost:5173",
-  TOKEN = env.TOKEN ?? "local";
-
-export const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 export const results = [];
 export const errors = {}; // error message -> count, across all checks
 
@@ -24,11 +16,7 @@ export const note = (e) => {
 };
 
 export const R = (o = {}) =>
-  new Redis({
-    port: PORT,
-    host: env.HOST ?? "127.0.0.1",
-    username: PW ? DB : undefined,
-    password: PW,
+  redis(DB, {
     maxRetriesPerRequest: 2,
     retryStrategy: (n) => Math.min(n * 100, 2000),
     enableAutoPipelining: false,
@@ -38,14 +26,28 @@ export const R = (o = {}) =>
     ...o,
   });
 
-export const api = (path) =>
-  fetch(`${BASE}${path}`, { headers: { authorization: `Bearer ${TOKEN}` } }).then((r) => r.json());
+// Runs `op` on every client for `ms`; a failed call (LOST, reconnect) may or may not have applied.
+export async function race(clients, ms, op) {
+  let acked = 0,
+    failed = 0;
 
-export const until = (ms) => {
   const end = Date.now() + ms;
+  await Promise.all(
+    clients.map(async (c) => {
+      while (Date.now() < end) {
+        try {
+          await op(c);
+          acked++;
+        } catch (e) {
+          note(e);
+          failed++;
+        }
+      }
+    }),
+  );
 
-  return () => Date.now() < end;
-};
+  return { acked, failed };
+}
 
 // Setup and final reads retry: under chaos a single LOST shouldn't fail a whole check.
 export const retry = async (f, n = 40) => {
@@ -64,7 +66,6 @@ export function check(name, ok, detail) {
   console.log(`${ok ? "PASS" : "FAIL"} ${name} ${JSON.stringify(detail)}`);
 }
 
-// Background chaos: abort one random shard (or all) every few seconds while the checks run.
 export const chaosState = { runs: 0, stop: false };
 
 export async function chaos() {

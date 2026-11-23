@@ -1,10 +1,7 @@
-// Differential test of the sharding router: the same seeded command stream runs against a 1-shard
-// and an N-shard database; replies must match (after sorting replies that are unordered sets).
-// Usage: node test/differential.mjs [seed] [rounds] [shards]   (BASE, TOKEN env for remote)
+// The same seeded commands on a 1-shard and an N-shard database must get the same replies, unordered sets sorted.
+// BASE, TOKEN, FLAVOUR: node test/differential.mjs [seed] [rounds] [shards]
 import assert from "node:assert/strict";
-
-const BASE = process.env.BASE ?? "http://localhost:5173";
-const TOKEN = process.env.TOKEN ?? "local";
+import { api, createDb } from "./lib.mjs";
 
 const seed = Number(process.argv[2] ?? 1),
   rounds = Number(process.argv[3] ?? 40),
@@ -97,13 +94,7 @@ const gens = [
 ];
 
 async function call(db, cmds) {
-  const res = await fetch(`${BASE}/run?db=${db}`, {
-    method: "POST",
-    headers: { authorization: `Bearer ${TOKEN}` },
-    body: JSON.stringify(cmds),
-  });
-
-  const body = await res.json();
+  const body = await api(`/run?db=${db}`, { method: "POST", body: JSON.stringify(cmds) });
 
   if (body.error) throw new Error(`${db}: ${body.error}`);
 
@@ -141,17 +132,7 @@ const norm = (c, r) => {
   return r;
 };
 
-// FLAVOUR=redis compares two Redis databases instead of two Valkey ones.
-const setup = async (db, n) =>
-  (
-    await (
-      await fetch(`${BASE}/db?db=${db}&shards=${n}${process.env.FLAVOUR ? `&flavour=${process.env.FLAVOUR}` : ""}`, {
-        headers: { authorization: `Bearer ${TOKEN}` },
-      })
-    ).json()
-  ).db;
-
-console.log(await setup(dbA, 1), await setup(dbB, shards));
+console.log((await createDb(dbA, 1)).db, (await createDb(dbB, shards)).db);
 
 let checked = 0,
   crossSlotRejections = 0;
@@ -174,7 +155,6 @@ for (let round = 0; round < rounds; round++) {
     if (b.some((r) => r?.err?.startsWith("CROSSSLOT"))) {
       crossSlotRejections++;
 
-      // keep databases aligned: re-run the command on A only if B rejected it entirely
       if (cmds[0][0] === "MULTI") continue;
     }
 

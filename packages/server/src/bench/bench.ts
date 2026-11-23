@@ -1,10 +1,10 @@
-// Tests and probes that run inside Cloudflare, for BENCH_TOKEN holders: GET /<test>?db=<name>&via=router|shard&...
 import { sameSecret } from "../router/secrets";
 import { catalogTests } from "./catalog-tests";
 import { dataTests } from "./data-tests";
 import { loadTests } from "./load-tests";
 import { shardProbes } from "./shard-probes";
 import type { Test } from "./types";
+import { dbName } from "./util";
 
 const tests = new Map<string, Test>(
   Object.entries({ ...catalogTests, ...shardProbes, ...dataTests, ...loadTests } satisfies Record<string, Test>),
@@ -29,7 +29,7 @@ export async function bench(req: Request, env: Env): Promise<Response> {
   if (!tests.has(name)) return new Response(`tests: ${[...tests.keys()].join(", ")}`, { status: 404 });
   const q = url.searchParams;
   q.set("via", q.get("via") ?? "router");
-  q.set("db", q.get("db") ?? "default");
+  q.set("db", dbName(q));
 
   try {
     return Response.json({

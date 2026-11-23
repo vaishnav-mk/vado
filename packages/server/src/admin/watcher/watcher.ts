@@ -1,13 +1,12 @@
-// One per watched database, behind GET /live?db=<name>. While anyone watches it polls every shard and ready replica
-// once a second, and sends every watcher the same picture. Memory only, but for the running test: a view of now,
-// and an eviction just starts the history again.
+// Memory only but for the running test: an eviction just starts the history again.
 import { DurableObject } from "cloudflare:workers";
 import { DurabilityAlarms } from "durability";
 import { DurabilitySocket, event } from "durability/socket";
 import * as v from "valibot";
-import { current } from "../../catalog/databases";
+import { existing } from "../../catalog/databases";
 import { coloOf } from "../../replication/regions";
 import { commands } from "../../router/command-table";
+import { messageOf } from "../../shared";
 import { WATCH_HISTORY, WATCH_MS, WATCH_REPLAY } from "../config";
 import type { EventKind, LiveSnapshot, LiveState, Point, TestLevel, TestView, Tick } from "../live-types";
 import { shardSnapshots } from "../snapshot";
@@ -19,7 +18,6 @@ import { Shards } from "./shards";
 import { buildState, keep, point, type Reading } from "./state";
 import { TestTraffic } from "./test-traffic";
 
-/** Set by the Worker on /live for a watcher signed in with Cloudflare Access. */
 export const SIGNED_IN = "x-vado-signed-in";
 
 export interface LiveMetadata {
@@ -96,19 +94,15 @@ export class Watcher extends DurableObject<Env> {
     return this.#alarms.alarm(info);
   }
 
-  /** Something someone did from the dashboard, for the timeline. */
   note(kind: EventKind, text: string): void {
     this.#log.add({ level: "info", kind, text });
   }
 
-  /** The dashboard is about to restart shard `i`: say how long it takes to come back. */
   restarting(i: number): void {
     this.#shards.asked(i);
     this.#log.add({ level: "info", kind: "action", text: `Restarting shard ${i}`, shard: i });
   }
 
-  /** Starts test traffic: `level` senders per region, from `from` (a region or "everywhere"). It stops by itself
-   *  after TEST_TRAFFIC_MS, or when nobody is watching. */
   startTest(level: TestLevel, from: string): Promise<TestView> {
     return this.#test.start(level, from);
   }
@@ -153,9 +147,9 @@ export class Watcher extends DurableObject<Env> {
     };
 
     try {
-      const record = await current(this.env, this.#name);
+      const record = await existing(this.env, this.#name);
 
-      if (!record || record.dropped) throw new Error(`There is no database named ${this.#name}`);
+      if (!record) throw new Error(`There is no database named ${this.#name}`);
       reading.db = dbView(record);
 
       const [looks, table, pulse, colo] = await Promise.all([
@@ -177,7 +171,7 @@ export class Watcher extends DurableObject<Env> {
       reading.shards = seen.shards;
       reading.entries = this.#entries.see(pulse.isolates, this.#name);
     } catch (e) {
-      reading.error = e instanceof Error ? e.message : String(e);
+      reading.error = messageOf(e);
     }
 
     reading.writes = this.#prober.writes;

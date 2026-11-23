@@ -1,9 +1,7 @@
-// Queues and pub/sub: a reliable BLMOVE queue, and every published message received.
-import { C, CHAOS, check, note, R, retry, sleep } from "./harness.mjs";
+import { sleep } from "../lib.mjs";
+import { C, CHAOS, check, note, R, retry } from "./harness.mjs";
 
-// Reliable-queue pattern: BLMOVE into a per-consumer processing list in the same slot, so a pop
-// whose reply is lost (shard reset after the move) leaves the item in that list, not gone. Every
-// acknowledged push must end up consumed, in a processing list, or still queued.
+// BLMOVE into a per-consumer processing list in the same slot, so a pop whose reply is lost leaves the item there.
 export async function queue() {
   const P = Math.max(2, C / 2),
     Q = Math.max(2, C / 2),
@@ -43,7 +41,7 @@ export async function queue() {
         if (id) {
           got.push(id);
           await c.lrem(proc(i), 1, id);
-        } // processed: acknowledge
+        }
       } catch (e) {
         note(e);
         popFailed++;
@@ -103,7 +101,7 @@ export async function pubsub() {
       await pub.publish("fan:{p}", String(i));
       sent++;
     } catch (e) {
-      note(e); /* counted below */
+      note(e);
     }
   }
 

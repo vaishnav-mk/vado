@@ -1,12 +1,9 @@
-// Stock ioredis inside a Worker, over the TCP service binding:
-//   const redis = new Redis({ Connector: bindingConnector(env.VALKEY, "mydb") });
-// ioredis needs a Node stream; Duplex.fromWeb wraps the binding's socket. No host or port is dialed.
+// new Redis({ Connector: bindingConnector(env.VALKEY, "mydb") })
 import type { Socket } from "node:net";
 import { Duplex } from "node:stream";
 import type { ReadableWritablePair } from "node:stream/web";
 import { AbstractConnector } from "ioredis";
 
-/** What the connector dials: a service binding, or anything else that opens a socket by address. */
 export interface Dialer {
   connect(address: string): { readable: ReadableStream; writable: WritableStream };
 }

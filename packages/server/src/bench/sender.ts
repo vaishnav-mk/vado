@@ -1,12 +1,10 @@
-// A Durable Object placed in one region, so its connections, and the routers serving them, start there: traffic
-// that enters Cloudflare far from whoever asked for it. run() is one bench test; loop() is the dashboard's test
-// traffic, one round at a time until its deadline or stop().
+// Placed in one region, so its connections, and the routers serving them, start there.
 import { DurableObject } from "cloudflare:workers";
 import { DurabilityAlarms } from "durability";
 import * as v from "valibot";
 import { runTest } from "./bench";
 
-const ROUND = { n: "20000", batch: "500", conns: "4" }; // 20,000 commands over 4 connections
+const ROUND = { n: "20000", batch: "500", conns: "4" };
 const RETRY_MS = 2_000; // after a failed round: a shard restarting, say
 
 const Loop = v.object({
@@ -33,8 +31,7 @@ export class Sender extends DurableObject<Env> {
     return await runTest(q.get("test") ?? "throughput", this.env, q);
   }
 
-  /** Test traffic on database `db` until `until`: write the same `keys` keys, then read them back three times, like
-   *  a cache. The keys never change, so test traffic never grows the database. */
+  // Writes the same `keys` keys, then reads them three times, so test traffic never grows the database.
   async loop(db: string, prefix: string, until: number, keys = 20_000): Promise<void> {
     await this.ctx.storage.put("loop", { id: crypto.randomUUID(), db, prefix, until, keys, round: 0 });
     await this.#alarms.round(Date.now());
@@ -64,7 +61,7 @@ export class Sender extends DurableObject<Env> {
     let next = Date.now();
 
     try {
-      const keys = String(Math.max(1, Math.ceil(loop.keys / Number(ROUND.conns)))); // per connection
+      const keys = String(Math.max(1, Math.ceil(loop.keys / Number(ROUND.conns))));
       const q = new URLSearchParams({ ...ROUND, keys, db: loop.db, prefix: loop.prefix });
 
       if (loop.round % 4) q.set("op", "get");

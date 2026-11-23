@@ -10,6 +10,5 @@ export const dbs = sqliteTable("dbs", {
   classes: integer("classes"),
   secret: text("secret"),
   dropped: integer("dropped"),
-  // "redis", or NULL for Valkey.
   flavour: text("flavour"),
 });

@@ -1,11 +1,9 @@
-// Requests written in tiny pieces and a large value written in 4 KB pieces: the router must rebuild
-// frames across chunks (growing its read buffer in place) without corrupting commands it already
-// parsed, and large frames must cost linear, not quadratic, copying.
-import net from "node:net";
+// Requests in tiny pieces must parse whole, and large frames must cost linear, not quadratic, copying.
+// HOST, PORT, PW, DB.
 import assert from "node:assert/strict";
+import { enc, PW, sleep, tcp } from "./lib.mjs";
 
-const enc = (a) => `*${a.length}\r\n` + a.map((x) => `$${Buffer.byteLength(x)}\r\n${x}\r\n`).join("");
-const s = net.connect(Number(process.env.PORT ?? 6379), process.env.HOST ?? "127.0.0.1");
+const s = tcp();
 
 s.setNoDelay(true);
 
@@ -20,7 +18,7 @@ const until = async (n, ms = 20000) => {
 
   while (buf.length < n) {
     if (Date.now() - t0 > ms) throw new Error(`timeout; got ${buf.length}/${n} bytes`);
-    await new Promise((r) => setTimeout(r, 10));
+    await sleep(10);
   }
 };
 
@@ -28,8 +26,8 @@ const write = (b) => new Promise((r) => s.write(b, () => setImmediate(r)));
 
 await new Promise((r) => s.on("connect", r));
 
-if (process.env.PW) {
-  await write(enc(["AUTH", process.env.DB ?? "default", process.env.PW]));
+if (PW) {
+  await write(enc(["AUTH", process.env.DB ?? "default", PW]));
   await until(5);
   assert.equal(buf, "+OK\r\n");
   buf = "";
@@ -65,8 +63,7 @@ assert.equal(buf.length, expected.length);
 
 assert.ok(buf === expected, "replies differ from what was written");
 
-// Linear copying: an 8 MB value sent in 4 KB pieces (2048 chunks) takes well under a second here;
-// re-copying the partial frame on every chunk made it take many seconds.
+// 8 MB in 4 KB pieces takes well under a second; re-copying the partial frame per chunk took many seconds.
 buf = "";
 
 const mb8 = Buffer.alloc(8 << 20, 113);

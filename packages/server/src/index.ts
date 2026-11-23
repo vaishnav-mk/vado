@@ -1,10 +1,7 @@
-// The database's side of the Worker: connect() takes a client connection (TCP through Spectrum, or a service
-// binding) to a sharding Router; fetch() serves /ws, /live and, with a bearer token, the bench API, and hands every
-// other request to `app` (the dashboard). The Worker's entry module exports the Durable Object classes.
 import { accessUser } from "./admin/access";
 import { SIGNED_IN } from "./admin/watcher/watcher";
 import { bench } from "./bench/bench";
-import { current } from "./catalog/databases";
+import { existing } from "./catalog/databases";
 import { DB_NAME } from "./catalog/names";
 import { live, serve } from "./router/serve";
 import { ACKS, wsSocket } from "./router/websocket";
@@ -19,7 +16,6 @@ export type * from "./admin/live-types";
 
 type IncomingRequest = Request<unknown, IncomingRequestCfProperties>;
 
-/** What serves every request that isn't the database's. */
 export interface App {
   fetch(req: Request, env: Env, ctx: ExecutionContext): Response | Promise<Response>;
 }
@@ -27,12 +23,10 @@ export interface App {
 const upgradeRequired = () => new Response("expected a WebSocket upgrade", { status: 426 });
 const isUpgrade = (req: Request) => req.headers.get("upgrade")?.toLowerCase() === "websocket";
 
-/** The Worker's handlers: the database's, and `app.fetch` for every other request. */
 export const worker = (app: App) => ({
-  // The database is the host the caller dialed: env.VALKEY.connect("<db>:6379"), or AUTH <db> <pass>.
   async connect(socket: Socket, env: Env): Promise<void> {
     const { localAddress, remoteAddress } = await socket.opened;
-    // Spectrum reports an address: IPs and localhost mean "default". A service binding reports the host dialed.
+    // A service binding reports the host dialed (the database); Spectrum reports an IP or localhost.
     const host = (localAddress ?? "").replace(/:\d+$/, "");
     const tcp = !host || host === "localhost" || /^[\d.]+$|^\[/.test(host);
     await serve(
@@ -57,18 +51,14 @@ export const worker = (app: App) => ({
   },
 });
 
-// GET /live?db=<name> upgrades to the database's Watcher socket. Public and read-only: counts, sizes and places,
-// never keys, values or client addresses.
 async function watch(req: Request, env: Env): Promise<Response> {
   const name = new URL(req.url).searchParams.get("db") ?? "";
 
   if (!isUpgrade(req)) return upgradeRequired();
 
-  if (!DB_NAME.test(name)) return new Response("no such database", { status: 404 });
-  const db = await current(env, name).catch(() => null);
-
-  if (!db || db.dropped) return new Response("no such database", { status: 404 });
-  // The Watcher writes its probe key only while someone signed in watches; only this says who is.
+  if (!DB_NAME.test(name) || !(await existing(env, name).catch(() => null)))
+    return new Response("no such database", { status: 404 });
+  // The Watcher writes its probe key only while someone signed in watches; only this header says who is.
   const headers = new Headers(req.headers);
   headers.delete(SIGNED_IN);
 
@@ -77,9 +67,7 @@ async function watch(req: Request, env: Env): Promise<Response> {
   return env.WATCHER.getByName(name).fetch(new Request(req, { headers }));
 }
 
-// GET /ws upgrades to a WebSocket carrying raw RESP (@vado/client's shim turns it back into a local TCP port).
-// Public, so it is only served when VALKEY_PASSWORD makes AUTH mandatory, and the database comes from
-// AUTH <db> <password>: nothing is created for unauthenticated callers.
+// Public, so served only when VALKEY_PASSWORD makes AUTH mandatory: nothing is created for unauthenticated callers.
 function websocket(req: IncomingRequest, env: Env, ctx: ExecutionContext): Response {
   if (!isUpgrade(req)) return upgradeRequired();
 

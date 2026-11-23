@@ -1,9 +1,6 @@
 #!/usr/bin/env node
-// Expose vado's WebSocket ingress as a local TCP port, so stock clients (valkey-cli, redis-cli, ioredis,
-// valkey-benchmark) can reach it: npx vado-shim wss://<your-worker>.workers.dev/ws 6379
-// One TCP connection = one WebSocket. Clients then AUTH <db> <password>. It speaks the "vado-acks" subprotocol:
-// it tells the server how many bytes it has handed to the local client, so a client that stops reading
-// stops the server sending too (packages/server/src/router/websocket.ts).
+// npx vado-shim wss://<your-worker>.workers.dev/ws 6379, then AUTH <db> <password>. WS_HEADER="name: value" adds an
+// upgrade header; WS_DEBUG=1 logs close codes. Acks (vado-acks) stop the server when the local client stops reading.
 import net from "node:net";
 
 const [url = "ws://localhost:5173/ws", port = "6379"] = process.argv.slice(2);
@@ -12,7 +9,6 @@ const ACK_EVERY = 256 << 10; // say how much has been taken at least this often,
 
 const server = net.createServer((sock) => {
   sock.setNoDelay(true);
-  // WS_HEADER="name: value" adds a header to the WebSocket upgrade; WS_DEBUG=1 logs close codes.
   const header = process.env.WS_HEADER?.match(/^([^:]+):\s*(.*)$/);
   const options = { protocols: ["vado-acks"] };
 
@@ -48,7 +44,6 @@ const server = net.createServer((sock) => {
     const b = Buffer.from(e.data),
       upTo = (received += b.length);
 
-    // Once the local client's socket has taken it: if that client stops reading, the acks stop too.
     sock.write(b, () => {
       if (
         ws.protocol !== "vado-acks" ||

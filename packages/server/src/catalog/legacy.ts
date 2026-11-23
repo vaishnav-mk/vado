@@ -8,7 +8,6 @@ const ADDED = [
   ["flavour", "TEXT"],
 ] as const;
 
-/** The part of SqlStorage this needs. */
 export interface ColumnsSql {
   exec(query: string): { toArray(): { name: SqlStorageValue }[] };
 }
@@ -21,7 +20,7 @@ export function addMissingColumns(sql: ColumnsSql): void {
       .map((c) => c.name),
   );
 
-  // No columns: no table yet, and the migration creates it whole.
+  // No table yet: the migration creates it whole.
   if (!columns.size) return;
 
   for (const [name, type] of ADDED) if (!columns.has(name)) sql.exec(`ALTER TABLE dbs ADD COLUMN ${name} ${type}`);

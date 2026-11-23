@@ -1,16 +1,14 @@
-// The catalog of databases, one object named "catalog". A database's shard count is fixed when it is created: by
-// an explicit count, or by the SHARD_EPOCHS entry in force then.
 import { DurableObject } from "cloudflare:workers";
 import { and, asc, eq, isNull, sql } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/durable-sqlite";
 import { SLOTS } from "../protocol/slots";
 import { HINTS } from "../replication/regions";
 import { SHARD_CLASSES } from "../shard/host/config";
-import { FLAVOURS } from "../shard/servers";
 import { epochAt, parseEpochs } from "./epochs";
 import { migrate } from "../migrate";
 import { addMissingColumns } from "./legacy";
 import { catalogMigrations } from "./migrations";
+import { parseFlavour } from "./databases";
 import { DB_NAME, DB_NAME_RULE } from "./names";
 import { dbs } from "./schema";
 import type { DatabaseRecord, DatabaseSummary, Epoch, Flavour, Hint } from "./types";
@@ -39,7 +37,7 @@ export class Catalog extends DurableObject<Env> {
     migrate(ctx.storage, catalogMigrations, addMissingColumns);
   }
 
-  /** The database's record, created on first use. Every setting applies only to a new database. */
+  // Every setting applies only to a new database.
   get(
     name: string,
     shards?: number,
@@ -66,7 +64,7 @@ export class Catalog extends DurableObject<Env> {
     if (!Number.isSafeInteger(classes) || classes < 1 || classes > SHARD_CLASSES)
       throw new Error(`classes must be 1..${SHARD_CLASSES}`);
 
-    if (!FLAVOURS.includes(flavour)) throw new Error(`this build runs ${FLAVOURS.join(" or ")}, not ${flavour}`);
+    const server = parseFlavour(flavour);
 
     const fresh = {
       name,
@@ -76,7 +74,7 @@ export class Catalog extends DurableObject<Env> {
       replicas: replicas ?? null,
       classes,
       secret,
-      flavour: flavour === "valkey" ? null : flavour,
+      flavour: server === "valkey" ? null : server,
     };
 
     this.#db.insert(dbs).values(fresh).run();
@@ -84,14 +82,12 @@ export class Catalog extends DurableObject<Env> {
     return record(fresh);
   }
 
-  /** The database's record, dropped or not, or null: never creates one. */
   find(name: string): DatabaseRecord | null {
     const row = this.#find.get({ name });
 
     return row ? record(row) : null;
   }
 
-  /** Every database not dropped, without password hashes. */
   list(): DatabaseSummary[] {
     return this.#db
       .select({
@@ -111,7 +107,7 @@ export class Catalog extends DurableObject<Env> {
       .map(record);
   }
 
-  /** Marks the database dropped. Its record stays, so the name (and its shards' names) is never reused. */
+  // The record stays, so the name and its shards' names are never reused.
   drop(name: string): void {
     this.#db
       .update(dbs)

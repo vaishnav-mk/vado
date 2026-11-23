@@ -1,12 +1,9 @@
-// Who is signed in, from Cloudflare Access. Access signs a JWT for each request it lets through: the
-// Cf-Access-Jwt-Assertion header on a path it protects, and the CF_Authorization cookie on the rest of the host.
-// The Worker checks it against the team's keys itself (ctx.access doesn't reach a Worker that has static assets).
+// Checked here because ctx.access doesn't reach a Worker that has static assets.
 import { createRemoteJWKSet, jwtVerify } from "jose";
 import * as v from "valibot";
 
 let keys: ReturnType<typeof createRemoteJWKSet> | null = null; // jose fetches, caches and refreshes them
 
-/** The email of the person `request` is signed in as, or null. */
 export async function accessUser(
   request: Request,
   env: Pick<Env, "ACCESS_TEAM_DOMAIN" | "ACCESS_AUD">,

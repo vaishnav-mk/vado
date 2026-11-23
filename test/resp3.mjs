@@ -1,19 +1,16 @@
-// RESP3 through the router: HELLO 3, map replies, pushes for pub/sub, normal commands while subscribed.
-import net from "node:net";
+// RESP3 through the router: HELLO 3, maps, pub/sub pushes, normal commands while subscribed. HOST, PORT, PW, DB.
 import assert from "node:assert/strict";
-
-const enc = (a) => `*${a.length}\r\n` + a.map((x) => `$${Buffer.byteLength(x)}\r\n${x}\r\n`).join("");
+import { enc, PW, sleep, tcp } from "./lib.mjs";
 
 function client() {
-  const s = net.connect(Number(process.env.PORT ?? 6379), process.env.HOST ?? "127.0.0.1");
+  const s = tcp();
   let buf = "";
   s.on("data", (d) => {
     buf += d;
   });
 
-  // PW/DB: authenticate first (prod through npx vado-shim); the +OK is consumed below.
-  if (process.env.PW) {
-    s.write(enc(["AUTH", process.env.DB ?? "default", process.env.PW]));
+  if (PW) {
+    s.write(enc(["AUTH", process.env.DB ?? "default", PW]));
     auths.push(s);
   }
 
@@ -24,7 +21,7 @@ function client() {
 
       while (!pred(buf)) {
         if (Date.now() - t0 > ms) throw new Error(`timeout; got ${JSON.stringify(buf)}`);
-        await new Promise((r) => setTimeout(r, 10));
+        await sleep(10);
       }
 
       return buf;
@@ -55,7 +52,7 @@ const k = `r3:${Date.now()}`;
 
 sub.send(["HELLO", "3"]);
 
-await sub.until((b) => b.startsWith("%") && /valkey|redis/.test(b)); // either flavour
+await sub.until((b) => b.startsWith("%") && /valkey|redis/.test(b));
 
 sub.take();
 
@@ -63,7 +60,7 @@ sub.send(["SUBSCRIBE", "news"], ["SET", k, "1"], ["GET", k], ["HSET", `${k}h`, "
 
 const got = await sub.until((b) => b.includes(">3\r\n$9\r\nsubscribe") && b.includes("%1\r\n"));
 
-assert.match(got, /\+OK\r\n\$1\r\n1\r\n:1\r\n%1\r\n\$1\r\na\r\n\$1\r\n1\r\n/); // normal replies in order, RESP3 map
+assert.match(got, /\+OK\r\n\$1\r\n1\r\n:1\r\n%1\r\n\$1\r\na\r\n\$1\r\n1\r\n/);
 
 sub.take();
 

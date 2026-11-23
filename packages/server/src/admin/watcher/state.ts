@@ -3,7 +3,6 @@ import type { Database, Entry, Health, LiveState, Place, Point, Shard, TestView 
 
 export type ProbeSample = { readMs: number; writeMs: number | null } | { failed: true };
 
-/** One poll's findings, from which buildState makes what the page shows. */
 export interface Reading {
   at: number;
   error: string | null;
@@ -19,7 +18,6 @@ export interface Reading {
 export const median = (xs: number[]): number | null =>
   xs.length ? [...xs].sort((a, b) => a - b)[xs.length >> 1] : null;
 
-/** Appends `x`, keeping the last `n`. */
 export function keep<T>(xs: T[], x: T, n: number): T[] {
   xs.push(x);
 
@@ -28,7 +26,6 @@ export function keep<T>(xs: T[], x: T, n: number): T[] {
   return xs;
 }
 
-/** Per second, between the oldest and newest of `points`. */
 export function rate<K extends string>(points: ({ at: number } & Record<K, number>)[], key: K): number {
   const first = points[0],
     last = points.at(-1);
@@ -88,7 +85,6 @@ export function buildState(r: Reading): LiveState {
 // A tenth is enough, and keeps small rates from rounding to zero.
 const tenth = (x: number) => Math.round(x * 10) / 10;
 
-/** One poll for the charts. `reads` includes what replicas served. */
 export const point = (s: LiveState): Point => ({
   t: s.at,
   reads: tenth(s.totals.reads + s.totals.replicaReads),

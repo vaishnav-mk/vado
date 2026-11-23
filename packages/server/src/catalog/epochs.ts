@@ -1,5 +1,3 @@
-// A database's creation time picks its epoch, which fixes its shard count for life; an epoch that starts later
-// sizes new databases without moving any existing one.
 import { SLOTS } from "../protocol/slots";
 import type { Epoch } from "./types";
 
@@ -15,7 +13,6 @@ function isEpoch(e: unknown): e is Epoch {
   );
 }
 
-/** SHARD_EPOCHS: `[{ from, shards }]` ordered by `from` (ms), the first at 0. Throws on a bad value. */
 export function parseEpochs(raw: string | undefined): Epoch[] {
   if (!raw) return [{ from: 0, shards: 1 }];
   const list: unknown = JSON.parse(raw);
@@ -35,6 +32,5 @@ export function parseEpochs(raw: string | undefined): Epoch[] {
   return epochs;
 }
 
-/** The epoch in force at `time`. */
 export const epochAt = (epochs: Epoch[], time: number): Epoch =>
   epochs.reduce((found, e) => (e.from <= time ? e : found), epochs[0]);

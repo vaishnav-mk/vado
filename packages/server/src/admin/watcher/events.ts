@@ -31,14 +31,12 @@ export interface Rewrite {
   error: string | null;
 }
 
-/** What changed across a database's shards in one poll. */
 export interface Changes {
   restarts: Restart[];
   replicas: ReplicaChange[];
   rewrites: Rewrite[];
 }
 
-/** The timeline, newest first. The same text again within EVENT_REPEAT_MS counts up (same id, a later t). */
 export class EventLog {
   readonly events: LiveEvent[] = [];
   #fresh: LiveEvent[] = [];
@@ -63,7 +61,6 @@ export class EventLog {
     this.#fresh.push(added);
   }
 
-  /** The events added or counted up since the last call. */
   fresh(): LiveEvent[] {
     const out = this.#fresh;
     this.#fresh = [];
@@ -139,7 +136,6 @@ function rewrites(all: Rewrite[]): EventInput[] {
 
 const replicaOf = (r: ReplicaChange) => `The replica of shard ${r.i} in ${REGION_NAMES[r.region] ?? r.region}`;
 
-// Each group of replica changes: which ones, its level, and its text for many or for one.
 const REPLICA_GROUPS: {
   pick: (r: ReplicaChange) => boolean;
   level: EventLevel;
@@ -188,8 +184,7 @@ function replicas(all: ReplicaChange[]): EventInput[] {
   });
 }
 
-/** One poll's changes as a few readable events rather than one per shard (a new database's shards all compact at
- *  once, say). */
+// A few events rather than one per shard: a new database's shards all compact at once, say.
 export const summarize = (changes: Changes, shardCount: number): EventInput[] => [
   ...restarts(changes.restarts, shardCount),
   ...rewrites(changes.rewrites),

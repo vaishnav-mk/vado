@@ -1,6 +1,6 @@
-// Data shapes: sorted sets, big values, expiry, pipelines and key churn.
 import crypto from "node:crypto";
-import { C, CHAOS, check, env, note, R, retry, SECONDS, sleep, until } from "./harness.mjs";
+import { sleep } from "../lib.mjs";
+import { C, CHAOS, check, env, note, R, race, retry, SECONDS } from "./harness.mjs";
 
 export async function zset() {
   const clients = Array.from({ length: C }, () => R());
@@ -10,23 +10,10 @@ export async function zset() {
 
   await retry(() => clients[0].del(z));
 
-  let acked = 0,
-    failed = 0;
-
-  const go = until((SECONDS * 1000) / 8);
-  await Promise.all(
-    clients.map(async (c) => {
-      while (go()) {
-        try {
-          await c.zincrby(z, 1, `m${Math.floor(Math.random() * members)}`);
-          acked++;
-        } catch (e) {
-          note(e);
-          failed++;
-        }
-      }
-    }),
+  const { acked, failed } = await race(clients, (SECONDS * 1000) / 8, (c) =>
+    c.zincrby(z, 1, `m${Math.floor(Math.random() * members)}`),
   );
+
   const all = await retry(() => clients[0].zrange(z, 0, -1, "WITHSCORES"));
   let sum = 0;
 
@@ -77,7 +64,7 @@ export async function expiry() {
   const n = 200;
   const p = c.pipeline();
 
-  // 2 s: long enough for the first MGET's retries under chaos (a shard reset between the SETs and the MGET)
+  // 2 s: long enough for the first MGET's retries under chaos
   for (let i = 0; i < n; i++) p.set(`exp:${i}`, "x", "PX", 2000);
   await p.exec();
   const live = (await retry(() => c.mget(...Array.from({ length: n }, (_, i) => `exp:${i}`)))).filter(Boolean).length;

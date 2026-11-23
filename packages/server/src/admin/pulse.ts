@@ -1,4 +1,3 @@
-// Live activity: each isolate running routers reports its open connections, and a Watcher reads the latest of each.
 // Memory only: a reset loses one report interval.
 import { DurableObject } from "cloudflare:workers";
 import { PULSE_STALE_MS } from "./config";

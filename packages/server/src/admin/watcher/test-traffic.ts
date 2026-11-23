@@ -1,8 +1,8 @@
-// The dashboard's test traffic on one database: Senders in each chosen region, each looping on its own keys until
-// TEST_TRAFFIC_MS has passed or stop(). The running test is stored, so a restarted Watcher can still show and stop it.
+// Stored, so a restarted Watcher can still show and stop the running test.
 import * as v from "valibot";
-import { current } from "../../catalog/databases";
+import { existing } from "../../catalog/databases";
 import { REGION_NAMES, WORLD } from "../../replication/regions";
+import { noop } from "../../shared";
 import { TEST_KEYS_PER_SHARD, TEST_SENDERS, TEST_TRAFFIC_MS } from "../config";
 import type { TestLevel, TestView } from "../live-types";
 import type { EventLog } from "./events";
@@ -55,19 +55,18 @@ export class TestTraffic {
 
     if (!regions.length) throw new Error("from is everywhere or a region");
     await this.stop(false);
-    const record = await current(this.#env, this.#db);
+    const record = await existing(this.#env, this.#db);
 
-    if (!record || record.dropped) throw new Error(`There is no database named ${this.#db}`);
+    if (!record) throw new Error(`There is no database named ${this.#db}`);
 
     const since = Date.now(),
       until = since + TEST_TRAFFIC_MS;
 
     const senders = regions.flatMap((region) => Array.from({ length: TEST_SENDERS[level] }, (_, k) => ({ region, k })));
 
-    // Each sender writes its own keys, so share a budget that grows with the shards: a 1-shard database stays well
-    // inside its memory however many senders there are.
+    // Senders share a budget that grows with the shards, so a 1-shard database stays inside its memory.
     const keys = Math.max(100, Math.floor((record.shards * TEST_KEYS_PER_SHARD) / senders.length));
-    this.#test = { level: level, from, since, until, senders };
+    this.#test = { level, from, since, until, senders };
     await this.#storage.put("test", this.#test);
     await Promise.all(
       senders.map(({ region, k }) => this.#sender(region, k).loop(this.#db, `test-${region}${k}-`, until, keys)),
@@ -78,7 +77,7 @@ export class TestTraffic {
       text: `Test traffic started: ${level}, from ${from === "everywhere" ? "everywhere" : REGION_NAMES[from]}`,
     });
 
-    return { level: level, from, since, until, senders: senders.length };
+    return { level, from, since, until, senders: senders.length };
   }
 
   async stop(say = true, why = "Test traffic stopped"): Promise<null> {
@@ -88,20 +87,14 @@ export class TestTraffic {
     if (!t) return null;
     this.#test = null;
     await this.#storage.delete("test");
-    await Promise.all(
-      t.senders.map(({ region, k }) =>
-        this.#sender(region, k)
-          .stop()
-          .catch(() => {}),
-      ),
-    );
+    await Promise.all(t.senders.map(({ region, k }) => this.#sender(region, k).stop().catch(noop)));
 
     if (say) this.#log.add({ level: "info", kind: "test", text: why });
 
     return null;
   }
 
-  /** Forgets a test past its deadline: its senders stop themselves. */
+  // Its senders stop themselves at the deadline.
   async expire(at: number): Promise<void> {
     if (!this.#test || at < this.#test.until) return;
     this.#test = null;

@@ -1,9 +1,8 @@
-// What clients see during a deploy. CONNS connections per database loop over INCR (a write), GET of their own
-// key (read-your-writes) and GET of a prefilled key (a replica read), for SECONDS; deploy meanwhile, from
-// another shell. Prints errors in 5 s buckets, the slowest replies, and checks every counter:
-// acked <= final <= acked + lost (a LOST INCR may or may not have run). Exits 1 if a counter is off.
-// Usage: HOST=<host> [PORT=6379] PW=<password> [SECONDS=240] [CONNS=16] node test/deploy.mjs db1 [db2 ...]
+// What clients see during a deploy: run it, deploy from another shell, and every counter must end in
+// [acked, acked + lost], since a LOST INCR may or may not have run.
+// HOST=<host> [PORT=6379] PW=<password> [SECONDS=240] [CONNS=16] node test/deploy.mjs db1 [db2 ...]
 import net from "node:net";
+import { enc, sleep } from "./lib.mjs";
 
 const { HOST, PORT = "6379", PW, SECONDS = "240", CONNS = "16" } = process.env;
 
@@ -11,10 +10,7 @@ const dbs = process.argv.slice(2),
   end = Date.now() + Number(SECONDS) * 1000,
   t0 = Date.now();
 
-const enc = (a) => `*${a.length}\r\n` + a.map((x) => `$${Buffer.byteLength(x)}\r\n${x}\r\n`).join("");
-const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
-
-// The end of the RESP frame at i, or -1 if it isn't all here yet.
+// -1 if the frame at i isn't all here yet.
 function frameEnd(b, i) {
   const le = b.indexOf("\r\n", i);
 
@@ -35,12 +31,11 @@ function frameEnd(b, i) {
     }
 
     return j;
-  } // *
+  }
 
   return le + 2;
 }
 
-// One reply at a time per connection.
 function open(db) {
   return new Promise((resolve, reject) => {
     const s = net.connect(Number(PORT), HOST);
@@ -183,7 +178,7 @@ const results = await Promise.all(
   ),
 );
 
-// Final counters, read on the primary (MULTI runs there).
+// MULTI runs on the primary.
 let bad = 0;
 
 for (const db of dbs) {

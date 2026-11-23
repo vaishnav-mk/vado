@@ -1,16 +1,15 @@
-// What storage, rewrites, memory and the RPC path cost on shard 0.
 import { database } from "../catalog/databases";
 import { shardStub } from "../catalog/placement";
 import { command, concat } from "../protocol/resp";
 import { decodeAll } from "../protocol/decode";
 import type { Test } from "./types";
-import { failure, liveStats, num, open, text } from "./util";
-import { sleep } from "../shared";
+import { messageOf, sleep } from "../shared";
+import { dbName, failure, liveStats, num, open, pct, text } from "./util";
 
-const shardZero = async (env: Env, q: URLSearchParams) =>
-  shardStub(env, await database(env, q.get("db") ?? "default"), 0);
+const shardZero = async (env: Env, q: URLSearchParams) => shardStub(env, await database(env, dbName(q)), 0);
 
-// How long the shard's storage takes to confirm a write, from inside the object.
+const mb = (bytes: number) => +(bytes / 2 ** 20).toFixed(1);
+
 const commit: Test = async (env, q) => {
   const stub = await shardZero(env, q);
   await stub.stats(); // learn its colo
@@ -19,18 +18,14 @@ const commit: Test = async (env, q) => {
   return { colo: r.colo, p50: r.ms[r.ms.length >> 1], min: r.ms[0], max: r.ms.at(-1) };
 };
 
-// Storage commit times for writing two mb MB files, then deleting the first (in the middle of the database) and the
-// second (at its end).
 const vfs: Test = async (env, q) => await (await shardZero(env, q)).vfsProbe(num(q, "mb", 32));
 
-// BGREWRITEAOF while another client PINGs in a loop. replyMs is when the command answered; totalMs is when no
-// rewrite is in progress any more.
 const rewrite: Test = async (env, q) => {
   const stub = await shardZero(env, q),
     c = await open(env, q);
 
   const lat: number[] = [],
-    slow: [number, number][] = []; // [ms after BGREWRITEAOF was sent, ping ms] for pings over 150 ms
+    slow: [number, number][] = []; // [ms after BGREWRITEAOF, ping ms]
 
   let stop = false,
     t0 = 0;
@@ -70,20 +65,16 @@ const rewrite: Test = async (env, q) => {
     replyMs,
     totalMs,
     pings: lat.length,
-    p50: lat[lat.length >> 1],
-    p99: lat[Math.floor(lat.length * 0.99)],
+    p50: pct(lat, 0.5),
+    p99: pct(lat, 0.99),
     max: lat.at(-1),
     slow,
-    base: base && { path: base.path, MB: +(base.size / 2 ** 20).toFixed(1) },
+    base: base && { path: base.path, MB: mb(base.size) },
     helper: st.lastRewrite && { ...st.lastRewrite, at: st.lastRewrite.at - t0 },
   };
 };
 
-// Fragmentation: n keys with seeded random value sizes in [min, max], then `rounds` times delete a random half and
-// rewrite it with sizes in [min2, max2] (default [min, max]). After each round: Valkey's used_memory vs the wasm
-// memory it grew (which never shrinks, and is what counts against the isolate's memory). type=hash keeps the values
-// as fields of small hashes (100 per key), which grow and shrink by realloc; rand=1 makes them incompressible.
-// Run with via=shard.
+// Wasm memory never shrinks, and it is what counts against the isolate's memory. Run with via=shard.
 const frag: Test = async (env, q) => {
   const n = num(q, "n", 150000),
     min = num(q, "min", 16),
@@ -126,8 +117,8 @@ const frag: Test = async (env, q) => {
 
     return {
       round,
-      usedMB: +(used / 2 ** 20).toFixed(1),
-      wasmMB: +(wasm / 2 ** 20).toFixed(1),
+      usedMB: mb(used),
+      wasmMB: mb(wasm),
       wasmPerUsed: +(wasm / used).toFixed(2),
       allocator: /mem_allocator:(\S+)/.exec(info)?.[1],
     };
@@ -159,7 +150,7 @@ const frag: Test = async (env, q) => {
   return { n, min, max, min2, max2, type: hash ? "hash" : "string", rounds, memory: out };
 };
 
-// "+OK\r\n" frames in a reply.
+// Counts "+OK\r\n" frames.
 function oks(r: Uint8Array): number {
   let n = 0;
 
@@ -168,7 +159,7 @@ function oks(r: Uint8Array): number {
   return n;
 }
 
-// One execRaw (the router's RPC mode) of k SETs straight to shard 0: are all k replies there?
+// execRaw is the router's RPC mode.
 const rpcbatch: Test = async (env, q) => {
   const k = num(q, "k", 1000),
     par = num(q, "par", 1);
@@ -186,9 +177,7 @@ const rpcbatch: Test = async (env, q) => {
     bodyBytes: body.length,
     ms: Date.now() - t0,
     results: rs.map((r) =>
-      r.status === "fulfilled"
-        ? { bytes: r.value.length, frames: oks(r.value) }
-        : { error: String(r.reason instanceof Error ? r.reason.message : r.reason) },
+      r.status === "fulfilled" ? { bytes: r.value.length, frames: oks(r.value) } : { error: messageOf(r.reason) },
     ),
   };
 };

@@ -4,7 +4,6 @@ import type { PulseSnapshot } from "../types";
 import { place } from "../views";
 import { keep, rate } from "./state";
 
-/** Where clients connect: each router isolate's commands per second on one database, summed per colo. */
 export class Entries {
   #isolates = new Map<string, { at: number; commands: number }[]>();
 
@@ -38,7 +37,7 @@ export class Entries {
     return byColo
       .entries()
       .map(([colo, e]) => ({ ...place(colo), ops: e.ops, conns: e.conns }))
-      .filter((e) => Boolean(e.city)) // a colo without a city can't be drawn
+      .filter((e) => Boolean(e.city)) // a colo without a city can't be drawn on the map
       .toArray();
   }
 }

@@ -1,5 +1,3 @@
-// What the last polls saw of each shard: instance, version, call counts and replica states, so a poll can tell a
-// restart from a deploy, take rates, and see what changed.
 import { MEMORY_HIGH, MEMORY_OK, WATCH_RATE_POLLS } from "../config";
 import type { Place, Replica, ReplicaState, Shard, ShardDown } from "../live-types";
 import type { ShardReading } from "../types";
@@ -36,18 +34,17 @@ const NOWHERE: Place = { colo: null, city: null, lat: null, lon: null };
 
 export class Shards {
   #tracked = new Map<number, Tracked>();
-  #asked = new Map<number, number>(); // shard -> when the dashboard asked it to restart
+  #asked = new Map<number, number>(); // when the dashboard asked each shard to restart
 
   get size(): number {
     return this.#tracked.size;
   }
 
-  /** The dashboard is about to restart shard `i`. */
   asked(i: number, at = Date.now()): void {
     this.#asked.set(i, at);
   }
 
-  /** Shards may restart while nobody watches: start over rather than report restarts and rates from then. */
+  // Shards may restart while nobody watches: start over rather than report restarts and rates from then.
   clear(): void {
     this.#tracked.clear();
   }

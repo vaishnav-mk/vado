@@ -1,10 +1,9 @@
-// What the dashboard is shown: /live (the Watcher) and Admin's replies. Types only, so the browser can import it.
+// Types only, so the browser can import it.
 import type { Flavour } from "../catalog/types";
 import type { TypedReply } from "../protocol/types";
 
 export type { TypedReply };
 
-/** A Cloudflare location as a place. Fields are null when unknown. */
 export interface Place {
   colo: string | null;
   city: string | null;
@@ -12,7 +11,6 @@ export interface Place {
   lon: number | null;
 }
 
-/** A catalog record without its password hash (dbView). */
 export interface Database {
   name: string;
   created: number;
@@ -23,7 +21,7 @@ export interface Database {
   password: boolean;
 }
 
-/** One poll, for the charts. `reads` includes what replicas served. */
+// `reads` includes what replicas served.
 export interface Point {
   t: number;
   reads: number;
@@ -37,7 +35,7 @@ export type EventLevel = "info" | "success" | "warning" | "error";
 
 export type EventKind = "action" | "test" | "deploy" | "restart" | "replica" | "rewrite" | "memory";
 
-/** A timeline entry. A repeat comes again with the same id, a later t and a higher count. */
+// A repeat comes again with the same id, a later t and a higher count.
 export interface LiveEvent {
   id: number;
   t: number;
@@ -94,7 +92,6 @@ export interface ShardDown extends Place {
 
 export type Shard = ShardUp | ShardDown;
 
-/** Where clients connect: one Cloudflare location, its commands per second and open connections. */
 export interface Entry extends Place {
   ops: number;
   conns: number;
@@ -125,7 +122,7 @@ export interface Totals {
   replicaLagMs: number;
 }
 
-/** Response time measured by the Watcher from its colo; `writes` says whether writes were measured (signed in). */
+// `writes`: whether writes were measured, which needs someone signed in watching.
 export interface Probe {
   readMs: number | null;
   writeMs: number | null;
@@ -133,7 +130,6 @@ export interface Probe {
   failed: number;
 }
 
-/** Everything the page shows, as of `at`. */
 export interface LiveState {
   at: number;
   error: string | null;
@@ -148,21 +144,19 @@ export interface LiveState {
   test: TestView | null;
 }
 
-/** The /live `tick` event: one poll. `events` are the new or counted-up ones since the last tick. */
+// `events` are the new or counted-up ones since the last tick.
 export interface Tick {
   point: Point;
   events: LiveEvent[];
   state: LiveState;
 }
 
-/** The /live `snapshot` call: the whole picture, for a page that connects or resyncs. */
 export interface LiveSnapshot {
   history: Point[];
   events: LiveEvent[];
   state: LiveState | null;
 }
 
-/** What Admin.command says about one command. */
 export interface CommandResult {
   reply: TypedReply;
   ms: number;

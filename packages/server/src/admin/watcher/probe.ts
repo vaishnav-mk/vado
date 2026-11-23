@@ -1,5 +1,4 @@
-// Response time: a GET on a connection that only reads (so it reads from a replica when clients would) and a SET
-// on one that only writes, kept open between polls so each is a request, not a connection setup.
+// A reader and a writer kept open between polls, so each sample is a request, and the reader reads where clients would.
 import type { RespClient } from "../../protocol/resp-client";
 import { openLocal } from "../../router/local";
 import { PROBE_KEY, PROBE_STALL_MS, WATCH_RATE_POLLS } from "../config";
@@ -19,7 +18,7 @@ export class Prober {
   #reader: RespClient | null = null;
   #writer: RespClient | null = null;
 
-  /** Writes only when `writes` (someone signed in watches): an anonymous viewer must not write to the database. */
+  // An anonymous viewer must not write to the database.
   async probe(env: Env, db: string, writes: boolean): Promise<void> {
     if (!writes && this.#writer) {
       this.#writer.close();
@@ -52,7 +51,6 @@ export class Prober {
     this.#reader = this.#writer = null;
   }
 
-  /** Nobody watches: close, and forget the samples. */
   stop(): void {
     this.close();
     this.samples.length = 0;

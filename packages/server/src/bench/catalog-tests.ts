@@ -1,16 +1,14 @@
-// Databases and shards: create, drop, reset, look at, and run commands or tests on them.
 import * as v from "valibot";
-import { catalogStub, database, forget, lookup } from "../catalog/databases";
+import { catalogStub, database, forget, lookup, parseFlavour } from "../catalog/databases";
 import { configureReplicas, replicaStub, shardStub } from "../catalog/placement";
 import { shardSnapshots } from "../admin/snapshot";
 import { HINTS, isHint, WORLD } from "../replication/regions";
 import { hashSecret } from "../router/secrets";
-import type { Flavour, Hint } from "../catalog/types";
-import { FLAVOURS } from "../shard/servers";
+import type { Hint } from "../catalog/types";
+import { noop } from "../shared";
 import type { Test } from "./types";
-import { allShards, open } from "./util";
+import { allShards, dbName, open } from "./util";
 
-/** world, or a,b,c: location hints. */
 function hints(v: string): Hint[] {
   const out = v === "world" ? WORLD : v.split(",");
 
@@ -21,20 +19,9 @@ function hints(v: string): Hint[] {
 
 const list = (v: string | null) => (v ? hints(v) : undefined);
 
-function flavour(v: string | null): Flavour | undefined {
-  if (v === null) return undefined;
-  const known = FLAVOURS.find((f) => f === v);
-
-  if (!known) throw new Error(`this build runs ${FLAVOURS.join(" or ")}, not ${v}`);
-
-  return known;
-}
-
 const Commands = v.array(v.array(v.pipe(v.union([v.string(), v.number()]), v.transform(String))));
 
-// regions=world spreads a new database's shards over WORLD; regions=a,b,c over those hints. replicas=world (or
-// a,b,c) keeps a read replica of every shard in each. password=new gives a new database its own password, returned
-// only here; AUTH over TCP or WebSocket then takes only that one (VALKEY_PASSWORD still works through a binding).
+// password=new's password is returned only here; AUTH over TCP or WebSocket then takes only it, not VALKEY_PASSWORD.
 const db: Test = async (env, q) => {
   const password =
     q.get("password") === "new"
@@ -44,16 +31,17 @@ const db: Test = async (env, q) => {
       : null;
 
   const secret = password && (await hashSecret(password));
+  const flavour = q.get("flavour");
 
   const { secret: stored, ...record } = await database(
     env,
-    q.get("db") ?? "default",
+    dbName(q),
     q.get("shards") ? Number(q.get("shards")) : undefined,
     list(q.get("regions")),
     list(q.get("replicas")),
     q.get("classes") ? Number(q.get("classes")) : undefined,
     secret,
-    flavour(q.get("flavour")),
+    flavour === null ? undefined : parseFlavour(flavour),
   );
 
   if (password && stored !== secret) throw new Error("the database already exists, so it keeps the password it has");
@@ -65,12 +53,11 @@ const db: Test = async (env, q) => {
   return password ? { ...out, password } : out;
 };
 
-// The catalog marks it dropped (the name is never reused), then every shard deletes its storage, keeping only a
-// tombstone that refuses to boot, and retires its replicas.
 const drop: Test = async (env, q) => {
-  const db = await lookup(env, q.get("db") ?? "default");
+  const db = await lookup(env, dbName(q));
 
   if (!db) throw new Error("no such database");
+  // Marked first, so the name is never reused even if a shard's drop fails.
   await catalogStub(env).drop(db.name);
   forget(db.name);
   const ids = [...Array.from({ length: db.shards }, (_, i) => i), "pubsub" as const];
@@ -89,50 +76,43 @@ const drop: Test = async (env, q) => {
   return { dropped: db.name, shards: db.shards, failed: failed.flat() };
 };
 
-// Chaos hook: hard-reset one shard (shard=<i>) or all of them, as a crash or deploy would; replica=<region> resets
-// that region's replica of each instead.
 const abort: Test = async (env, q) => {
-  const db = await database(env, q.get("db") ?? "default");
+  const db = await database(env, dbName(q));
   const which = q.get("shard") ?? "all";
   const idx = which === "all" ? Array.from({ length: db.shards }, (_, i) => i) : [Number(which)];
   const replica = q.get("replica");
 
   if (replica !== null && !isHint(replica)) throw new Error(`replica must be one of ${[...HINTS].join(", ")}`);
   await Promise.all(
-    idx.map((i) => (replica ? replicaStub(env, db, i, replica) : shardStub(env, db, i)).abort().catch(() => {})),
+    idx.map((i) => (replica ? replicaStub(env, db, i, replica) : shardStub(env, db, i)).abort().catch(noop)),
   );
 
   return replica ? { aborted: idx, replica } : { aborted: idx };
 };
 
-// A/B on one primary: point its shards' replication at `regions` (none | world | a,b), leaving reads alone.
+// Replication only: reads stay where the record says.
 const replicate: Test = async (env, q) => {
-  const db = await database(env, q.get("db") ?? "default"),
-    v = q.get("regions") ?? "";
-
+  const v = q.get("regions") ?? "";
   const regions = v === "none" ? [] : hints(v);
-  await Promise.all(Array.from({ length: db.shards }, (_, i) => shardStub(env, db, i).replicate(regions)));
+  await allShards(env, dbName(q), (s) => s.replicate(regions));
 
   return { regions };
 };
 
-// Every shard's stats with Valkey's own INFO counters, and its ready replicas'.
 const shards: Test = async (env, q) => {
-  const db = await database(env, q.get("db") ?? "default");
+  const db = await database(env, dbName(q));
 
   return { db, shards: await shardSnapshots(env, db) };
 };
 
 const stats: Test = async (env, q) => ({
-  shards: await allShards(env, q.get("db") ?? "default", async (stub) => {
+  shards: await allShards(env, dbName(q), async (stub) => {
     const { files, ...rest } = await stub.stats();
 
     return { ...rest, files: files.map((f) => `${f.path}:${f.size}/${f.rows}`) };
   }),
 });
 
-// Runs a test (default throughput) from a Sender in `region`, so its traffic enters Cloudflare there. sender=<k>
-// picks one of several Senders in the region, so load can come from many isolates.
 const send: Test = async (env, q) => {
   const hint = q.get("region") ?? "";
 
@@ -145,7 +125,6 @@ const send: Test = async (env, q) => {
   return { region: hint, ...(await env.SENDER.getByName(name, { locationHint: hint }).run(params)) };
 };
 
-// Arbitrary commands: POST [["SET","k","v"],["GET","k"]].
 const run: Test = async (env, q, req) => {
   if (!req) throw new Error("run takes the commands as a POST body");
   const cmds = v.parse(Commands, await req.json());
