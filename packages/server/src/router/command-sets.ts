@@ -36,10 +36,10 @@ export const UNSUPPORTED = new Set([
 ]);
 
 // How data behaves only: durability, memory, networking and auth belong to the service, and shards share memory.
+// No keyspace events (SUBSCRIBE goes to the pub/sub shard) or time limits (the clock stands still during a pass).
 export const CONFIG_SET = new Set([
   "maxmemory-policy",
   "maxmemory-samples",
-  "notify-keyspace-events",
   "hash-max-listpack-entries",
   "hash-max-listpack-value",
   "hash-max-ziplist-entries",
@@ -59,11 +59,7 @@ export const CONFIG_SET = new Set([
   "stream-node-max-entries",
   "lfu-log-factor",
   "lfu-decay-time",
-  "slowlog-log-slower-than",
   "slowlog-max-len",
-  "latency-monitor-threshold",
-  "busy-reply-threshold",
-  "lua-time-limit",
   "activerehashing",
 ]);
 

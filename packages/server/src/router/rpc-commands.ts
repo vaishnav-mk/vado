@@ -1,7 +1,7 @@
 import { arrayOf, bulk, elements, EMPTY, error, integer, str } from "../protocol/resp";
 import { sameBytes } from "./buffer";
 import type { Conn } from "./conn";
-import { bulkText, NOT_INTEGER, NULL_BULK } from "./replies-text";
+import { bulkText, NOT_INTEGER, NULL_BULK, wrongArity } from "./replies-text";
 
 // The cursor is the shard's cursor * shards + the shard index, so it stays one integer.
 export function scan(c: Conn, argv: Uint8Array[]): void {
@@ -53,7 +53,7 @@ export function randomkey(c: Conn): void {
 }
 
 export function wait(c: Conn, argv: Uint8Array[]): void {
-  if (argv.length !== 3) return c.replies.reply(NOT_INTEGER);
+  if (argv.length !== 3) return c.replies.reply(wrongArity("wait"));
 
   const n = Number(str(argv[1])),
     ms = Number(str(argv[2]));

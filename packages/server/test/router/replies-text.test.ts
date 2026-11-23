@@ -51,6 +51,9 @@ test("clients can't change the service's settings", () => {
   for (const setting of ["maxmemory", "appendonly", "appendfsync", "requirepass", "port", "bind", "dir", "save"])
     expect(CONFIG_SET.has(setting), setting).toBe(false);
 
+  for (const setting of ["notify-keyspace-events", "lua-time-limit", "busy-reply-threshold", "slowlog-log-slower-than"])
+    expect(CONFIG_SET.has(setting), setting).toBe(false);
+
   for (const name of ["save", "bgrewriteaof", "acl", "shutdown"]) expect(UNSUPPORTED.has(name), name).toBe(true);
 
   for (const name of ["auth", "hello", "select", "flushall", "scan", "info", "config", "wait"])

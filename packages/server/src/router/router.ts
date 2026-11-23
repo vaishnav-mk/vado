@@ -145,7 +145,7 @@ export class Router extends Conn {
         wait(this, argv);
         break;
       case "waitaof":
-        this.replies.reply(WAITAOF);
+        this.replies.reply(arityError(entry, name, argv) ?? WAITAOF);
         break;
       case "cluster":
         cluster(this, argv);
