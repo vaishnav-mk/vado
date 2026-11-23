@@ -46,7 +46,7 @@ export function wsSocket(ws: WebSocket, acks = false): ClientSocket {
     const data: ArrayBuffer | string = e.data;
 
     if (acks && !(data instanceof ArrayBuffer)) {
-      acked = Math.max(acked, Number(data) || 0);
+      acked = Math.min(sent, Math.max(acked, Number(data) || 0));
 
       if (sent - acked <= WS_UNACKED / 2) wake();
 
