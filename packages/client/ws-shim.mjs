@@ -1,6 +1,6 @@
 #!/usr/bin/env node
-// npx vado-shim wss://<your-worker>.workers.dev/ws 6379, then AUTH <db> <password>. WS_HEADER="name: value" adds an
-// upgrade header; WS_DEBUG=1 logs close codes. Acks (vado-acks) stop the server when the local client stops reading.
+// node packages/client/ws-shim.mjs wss://<your-worker>.workers.dev/ws 6379, then AUTH <db> <password>. WS_HEADER="name: value" adds an
+// upgrade header; closes other than 1000 are logged, and WS_DEBUG=1 logs every close. Acks (vado-acks) stop the server when the local client stops reading.
 import net from "node:net";
 
 const [url = "ws://localhost:5173/ws", port = "6379"] = process.argv.slice(2);
@@ -57,7 +57,7 @@ const server = net.createServer((sock) => {
   };
 
   ws.onclose = (e) => {
-    if (process.env.WS_DEBUG) console.error(`ws close ${e.code} ${e.reason}`);
+    if (e.code !== 1000 || process.env.WS_DEBUG) console.error(`ws close ${e.code} ${e.reason}`);
     sock.destroy();
   };
 
@@ -65,7 +65,7 @@ const server = net.createServer((sock) => {
   sock.on("data", (d) => (ws.readyState === WebSocket.OPEN ? send(d) : early.push(d)));
   sock.on("close", () => {
     clearInterval(timer);
-    ws.close();
+    ws.close(1000);
   });
   sock.on("error", () => ws.close());
 });
