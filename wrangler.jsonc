@@ -5,6 +5,9 @@
   "main": "apps/dashboard/src/server.ts",
   "compatibility_date": "2026-11-01",
   "compatibility_flags": ["nodejs_compat"],
+  // A client connection is one invocation, and every call to a shard over RPC (past the sockets an isolate can hold)
+  // is a subrequest: the default 10,000 would cut a busy connection off.
+  "limits": { "subrequests": 10000000 },
   // Explicit, so a deploy that adds a custom domain keeps the workers.dev URL too.
   "workers_dev": true,
   "durable_objects": {
