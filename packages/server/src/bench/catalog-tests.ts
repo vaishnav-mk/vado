@@ -3,6 +3,7 @@ import { catalogStub, database, forget, lookup, parseFlavour } from "../catalog/
 import { configureReplicas, replicaStub, shardStub } from "../catalog/placement";
 import { shardSnapshots } from "../admin/snapshot";
 import { HINTS, isHint, WORLD } from "../replication/regions";
+import { UNSUPPORTED } from "../router/command-sets";
 import { hashSecret } from "../router/secrets";
 import type { Hint } from "../catalog/types";
 import { noop } from "../shared";
@@ -18,6 +19,9 @@ function hints(v: string): Hint[] {
 }
 
 const list = (v: string | null) => (v ? hints(v) : undefined);
+
+// via=shard goes past the router, which refuses these.
+const RAW_REFUSED = new Set(["config", ...UNSUPPORTED]);
 
 const Commands = v.array(v.array(v.pipe(v.union([v.string(), v.number()]), v.transform(String))));
 
@@ -128,11 +132,16 @@ const send: Test = async (env, q) => {
 const run: Test = async (env, q, req) => {
   if (!req) throw new Error("run takes the commands as a POST body");
   const cmds = v.parse(Commands, await req.json());
-  const c = await open(env, q);
-  const replies = await c.call(...cmds);
-  c.close();
+  const refused = q.get("via") === "shard" && cmds.find(([name = ""]) => RAW_REFUSED.has(name.toLowerCase()));
 
-  return { replies };
+  if (refused) throw new Error(`via=shard doesn't run ${refused[0]}`);
+  const c = await open(env, q);
+
+  try {
+    return { replies: await c.call(...cmds) };
+  } finally {
+    c.close();
+  }
 };
 
 export const catalogTests = { db, drop, abort, replicate, shards, stats, send, run };
