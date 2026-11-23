@@ -79,7 +79,7 @@ export function DocPage({ doc }: { doc: Doc }) {
         <Pager doc={doc} />
         <div className="mt-6 flex justify-between gap-3 text-[10px] text-muted max-md:flex-col">
           <span>vado · Valkey and Redis on Durable Objects · Apache-2.0</span>
-          <span>Independent and experimental. Not an official Cloudflare or Valkey product.</span>
+          <span>Independent and experimental. Not an official Cloudflare, Valkey or Redis product.</span>
         </div>
       </footer>
     </>

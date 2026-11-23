@@ -9,7 +9,7 @@ export const redis: Doc = {
   group: "Run it",
   icon: CubeIcon,
   description:
-    "A database can run Redis 8.12 instead of Valkey. It is opt-in at build time because it doubles the upload and is distributed under the AGPLv3.",
+    "A database can run Redis 8.12.0 instead of Valkey. It is opt-in at build time because it doubles the upload and is distributed under the AGPLv3.",
   keywords: "redis flavour agpl license licence VADO_REDIS build redis.wasm import-mode",
   sections: [
     {
@@ -18,9 +18,9 @@ export const redis: Doc = {
       content: (
         <>
           <p>
-            The flavour is picked when a database is created, in the dashboard's New database dialog or with{" "}
-            <code>flavour=redis</code> on the bench API's <code>/db</code>, and never changes. A Redis database's object
-            names carry a <code>redis</code> segment, so every object boots the right server from its own name.
+            The flavour is picked when a database is created, with <code>flavour=redis</code> on the bench API's{" "}
+            <code>/db</code>, and never changes. A database created on its first AUTH runs Valkey. A Redis database's
+            object names carry a <code>redis</code> segment, so every object boots the right server from its own name.
           </p>
           <p>
             Routing, replication, rewrites and restarts are the same code for both: the two wasm builds have the same
@@ -38,8 +38,9 @@ export const redis: Doc = {
           <Code label="Terminal">{"VADO_REDIS=1 npm run deploy"}</Code>
           <p>
             Without <code>VADO_REDIS=1</code>, the build leaves Redis out and every database runs Valkey. With it, the
-            upload grows from 0.86 MB to 1.77 MB gzipped; startup time didn't measurably change, since wasm compiles
-            lazily.
+            Worker upload grows from 0.86 MB to 1.77 MB gzipped; startup time didn't measurably change, since wasm
+            compiles lazily. On their own, <code>valkey.wasm</code> is 1.94 MB (0.75 MB gzipped) and{" "}
+            <code>redis.wasm</code> is 2.38 MB (0.93 MB gzipped).
           </p>
         </>
       ),

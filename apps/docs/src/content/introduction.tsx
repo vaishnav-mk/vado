@@ -14,16 +14,17 @@ export const introduction: Doc = {
   group: "Start here",
   icon: BookOpenIcon,
   description:
-    "vado runs real Valkey, or Redis if you opt in, compiled to WebAssembly, in Cloudflare Durable Objects. A router in a Worker spreads keys over the shards, so valkey-cli and ioredis see one ordinary server.",
+    "vado runs upstream Valkey, or Redis if you opt in, compiled to WebAssembly with the fewest changes that let it run in Cloudflare Durable Objects. Each shard keeps its append-only file in SQLite and can stream it to replicas; a router in a Worker spreads keys over the shards. An experiment, not a product.",
   keywords: "overview what is vado valkey redis durable objects wasm introduction",
   intro: (
     <>
       <p>
-        Each shard is a Durable Object running the <ServerName /> server itself, version{" "}
-        <ByServer valkey={SERVERS.valkey.version} redis={SERVERS.redis.version} />, with its append-only file (AOF) in
-        the object's SQLite. <strong>Clients see one server.</strong> The router hashes each key to a slot, sends the
-        command to the shard that owns it, and can read from replicas in other regions.
+        Each shard is a Durable Object running the upstream <ServerName /> server, version{" "}
+        <ByServer valkey={SERVERS.valkey.version} redis={SERVERS.redis.version} />, with the fewest changes that let it
+        run on Workers, and its append-only file (AOF) in the object's SQLite. The router hashes each key to a slot,
+        sends the command to the shard that owns it, and can read from replicas in other regions.
       </p>
+      <p>vado is an independent experiment, not a product. Don't keep data in it that you can't lose.</p>
       <ArchitectureDiagram />
     </>
   ),
@@ -36,18 +37,22 @@ export const introduction: Doc = {
           <li>
             <strong>
               <ServerName />
-              's own behaviour.
+              's own code.
             </strong>{" "}
-            Commands, replies and errors come from <ServerName />
-            's code, not a reimplementation. Clients connect over TCP, a WebSocket or a service binding.
+            Most commands run in <ServerName /> itself. The router answers connection, cross-shard and admin commands
+            itself (
+            <DocLink slug="sharding" hash="differences">
+              differences
+            </DocLink>
+            ). Clients connect over TCP, a WebSocket or a service binding.
           </li>
           <li>
             <strong>Durable writes.</strong> A reply leaves only after its AOF entry is committed to SQLite.
           </li>
           <li>
             <strong>Placement you choose.</strong> Shards in the regions you pick, and read replicas in others if you
-            want them. A connection always reads its own writes, and <code>WAIT</code> counts the replicas that have
-            them.
+            want them. After a write, that connection reads the shard from its primary for 2 s, and <code>WAIT</code>{" "}
+            counts the replicas that have the write.
           </li>
           <li>
             <strong>Restarts onto new code.</strong> After a deploy, busy shards answer what they have read, then
@@ -69,12 +74,13 @@ export const introduction: Doc = {
       content: (
         <>
           <p>
-            The AUTH username picks the database, and a new one is created on first use. From a laptop, the WebSocket
-            shim gives any client a local TCP port:
+            The AUTH username picks the database. A database is created on its first AUTH, with 1 shard, Valkey and no
+            replicas. From a checkout, after <code>npm install</code>, the WebSocket shim gives any client a local TCP
+            port. It needs Node 22 or newer:
           </p>
           <Code label="Terminal">
             {
-              'npx vado-shim wss://<your-worker>.workers.dev/ws 6379\nvalkey-cli -p 6379 --user mydb --pass "$VALKEY_PASSWORD"\n127.0.0.1:6379> SET greeting hello\nOK'
+              'node packages/client/ws-shim.mjs wss://<your-worker>.workers.dev/ws 6379\nvalkey-cli -p 6379 --user mydb --pass "$VALKEY_PASSWORD"\n127.0.0.1:6379> SET greeting hello\nOK'
             }
           </Code>
           <p>

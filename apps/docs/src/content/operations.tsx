@@ -1,6 +1,7 @@
 import { WrenchIcon } from "@phosphor-icons/react";
 import { Code, Table } from "../components/blocks";
 import { BENCH_SECTION } from "./operations-bench";
+import { COSTS_SECTION } from "./operations-costs";
 import { server, source } from "./sources";
 import type { Doc } from "./types";
 
@@ -10,9 +11,9 @@ export const operations: Doc = {
   group: "Run it",
   icon: WrenchIcon,
   description:
-    "Deploy, configure, create databases with a placement, watch the dashboard, drive the bench API, and upgrade without breaking running shards.",
+    "Deploy, configure, create databases with a placement, watch the dashboard, drive the bench API, know what it costs, and upgrade without breaking running shards.",
   keywords:
-    "deploy configure settings secrets env vars VALKEY_MAXMEMORY LOCATION_HINT dashboard bench api token upgrade migrations rollback",
+    "deploy configure settings secrets env vars VALKEY_MAXMEMORY LOCATION_HINT dashboard bench api token costs pricing billing duration upgrade migrations rollback",
   sections: [
     {
       id: "deploy",
@@ -57,19 +58,21 @@ export const operations: Doc = {
       content: (
         <>
           <p>
-            Databases are created on first use with the current epoch's shard count, at <code>LOCATION_HINT</code>. To
-            choose the size, placement, replicas or flavour, create it first, through the bench API or the dashboard's
-            New database dialog:
+            A database is created on its first AUTH with its name, running Valkey, with no replicas and the current
+            epoch's shard count (1 unless you set <code>SHARD_EPOCHS</code>), at <code>LOCATION_HINT</code>. The
+            dashboard only watches. To choose the size, placement, replicas or flavour, create the database first
+            through the bench API, after setting its token:
           </p>
           <Code label="Bench API">
             {
-              'curl -H "authorization: Bearer $TOKEN" \\\n  "https://<your-worker>.workers.dev/db?db=mydb&shards=16&regions=world&replicas=world"'
+              'npx wrangler secret put BENCH_TOKEN\ncurl -H "authorization: Bearer $BENCH_TOKEN" \\\n  "https://<your-worker>.workers.dev/db?db=cache&shards=16&flavour=redis"\ncurl -H "authorization: Bearer $BENCH_TOKEN" \\\n  "https://<your-worker>.workers.dev/db?db=mydb&shards=16&regions=world&replicas=world"'
             }
           </Code>
           <p>
             <code>regions</code> and <code>replicas</code> take <code>world</code> or a comma-separated list of hints.{" "}
-            <code>flavour=redis</code> runs Redis, and <code>password=new</code> gives the database its own password,
-            returned once. For an existing database, <code>/db</code> returns its record unchanged.
+            <code>flavour=redis</code> runs Redis, in a build made with <code>VADO_REDIS=1</code>, and{" "}
+            <code>password=new</code> gives the database its own password, returned once. For an existing database,{" "}
+            <code>/db</code> returns its record unchanged.
           </p>
         </>
       ),
@@ -86,6 +89,7 @@ export const operations: Doc = {
       ),
     },
     BENCH_SECTION,
+    COSTS_SECTION,
     {
       id: "upgrading",
       title: "Upgrading safely",

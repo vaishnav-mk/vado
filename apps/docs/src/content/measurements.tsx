@@ -11,7 +11,7 @@ export const measurements: Doc = {
   group: "Run it",
   icon: ChartBarIcon,
   description:
-    "What one shard holds, how fast writes and reads went, and the conditions behind each number. Measured on production in November 2026, on one account.",
+    "What one shard holds, how fast writes and reads went, and the conditions behind each number. Measured on a deployed Worker in November 2026, on one account.",
   keywords:
     "limits measurements benchmarks throughput latency memory 64 MB request size cpu cold start deploy rewrite replicas failure tests",
   intro: (

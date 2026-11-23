@@ -115,8 +115,8 @@ export const durability: Doc = {
       content: (
         <>
           <p>
-            Left alone, the runtime moves a busy object to new code only by resetting it, about 5 minutes after a
-            deploy. So a shard restarts itself as soon as it sees newer code: when a router from the new deploy
+            In our tests, left alone, the runtime moved a busy object to new code only by resetting it, about 5 minutes
+            after a deploy. So a shard restarts itself as soon as it sees newer code: when a router from the new deploy
             connects, or, every 30 s while busy, by asking its rewriter, which always starts on the newest code.
           </p>
           <Flow

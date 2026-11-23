@@ -7,19 +7,21 @@ import type { PatchGroup } from "./wasm-patch-list";
 
 const GROUPS: { group: PatchGroup; title: string; text: string }[] = [
   { group: "run", title: "Needed to run at all", text: "no blocking loop, no fork, no missing fields" },
+  { group: "both", title: "Needed, with a choice on top", text: "part is needed, part we chose" },
   { group: "chosen", title: "Behaviour we chose", text: "it runs without these" },
 ];
 
 function PatchCards({ server }: { server: Server }) {
   const largest = Math.max(...PATCHES[server].map((patch) => patch.added + patch.removed));
   const totals = patchTotals(server);
+  const groups = GROUPS.filter(({ group }) => PATCHES[server].some((patch) => patch.group === group));
 
   return (
     <>
       <p>
         {totals.count} patches, {totals.changed} changed lines in all ({totals.added} added, {totals.removed} removed).
       </p>
-      {GROUPS.map(({ group, title, text }) => (
+      {groups.map(({ group, title, text }) => (
         <div key={group}>
           <h3 className="patch-group-title">
             {title} <span>{text}</span>
@@ -150,7 +152,7 @@ export const PATCH_SECTIONS: DocSection[] = [
           </li>
           <li>
             <strong>Background threads</strong>: bio isn't built. Its jobs (closes, fsyncs, lazy frees) run inline when
-            submitted.
+            submitted. Closing an old AOF file fsyncs it first, as bio's job does.
             <ByServer
               valkey=""
               redis=" A job's completion callback runs on the next pass, so it never unblocks a client from inside that client's own command."

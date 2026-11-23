@@ -9,7 +9,7 @@ export const replicas: Doc = {
   group: "How it works",
   icon: GlobeHemisphereWestIcon,
   description:
-    "Each shard can keep a memory-only copy in other regions, fed from its AOF. Routers read the nearest one, a connection always reads its own writes, and an idle database's replicas sleep.",
+    "Each shard can keep a memory-only copy in other regions, fed from its AOF. Routers read the nearest one, a connection reads from the primary for 2 s after it writes, and an idle database's replicas sleep.",
   keywords: "replicas regions replication read your writes WAIT WAITAOF staleness lag copy stream idle sleep NEAR",
   sections: [
     {
@@ -82,8 +82,9 @@ export const replicas: Doc = {
             <li>No router in the same process saw that replica fail in the last 5 s.</li>
           </ul>
           <p>
-            So a connection reads its own writes while replicas are under 2 s behind. A read on another connection can
-            be one replication lag old: p50 3 to 41 ms, p99 38 to 141 ms across nine regions at light load.
+            So after a write, that connection reads the shard from its primary for 2 seconds. It sees its own writes
+            unless a replica is more than 2 s behind. A read on another connection can be one replication lag old: p50 3
+            to 41 ms, p99 38 to 141 ms across nine regions at light load.
           </p>
           <p>
             <code>WAIT numreplicas timeout</code> returns how many replicas have every write the connection made,
@@ -110,6 +111,10 @@ export const replicas: Doc = {
           <li>
             <strong>The primary resets.</strong> Its replicas keep serving what they have, which may miss its last
             writes, until it copies them again, about 10 s later.
+          </li>
+          <li>
+            <strong>No failover.</strong> A replica is never promoted. While a shard's primary is down, writes to that
+            shard fail with the lost-connection error until it restarts, and the client has to retry them.
           </li>
           <li>
             <strong>The primary stops streaming</strong> to a replica it drops: it tells the replica to reset, so a

@@ -16,7 +16,7 @@ const PARTS: Part[] = [
     title: "How clients reach it",
     meta: "Spectrum · /ws · service binding",
     owns: "Three ways in, all ending at the same router: raw TCP through a Spectrum application, RESP over the /ws WebSocket, or connect() from another Worker.",
-    why: "A Worker's public URL takes HTTP, not raw TCP. Spectrum carries TCP to it, and the shim carries any client over a WebSocket.",
+    why: "A Worker's public URL takes HTTP, not raw TCP. Spectrum, where your plan includes Worker origins, carries TCP to it, and the shim carries any client over a WebSocket.",
     helps: "Stock clients work unchanged on every path. A service binding never leaves Cloudflare.",
     cost: "A WebSocket can't push back on its sender. A client that outruns its router by 16 MB is disconnected, and the shim acknowledges what it has read so the router stops past 8 MB unread.",
   },

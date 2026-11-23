@@ -32,8 +32,9 @@ export const BENCH_SECTION: DocSection = {
       />
       <Note>
         <p>
-          The token can read every shard, run any command past the router's checks, abort shards, drop databases and
-          start load you pay for. Treat it like the password, or leave it unset.
+          <code>BENCH_TOKEN</code> is full control. It can run commands on any database, including straight to a shard
+          past most of the router's filters (<code>via=shard</code> still refuses CONFIG and the unsupported commands),
+          drop databases, abort shards and start load you pay for. Keep it unset unless you need it.
         </p>
       </Note>
     </>

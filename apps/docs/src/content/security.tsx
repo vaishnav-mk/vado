@@ -59,10 +59,9 @@ export const security: Doc = {
         <>
           <p>
             Persistence, memory, networking and auth belong to the service. <code>CONFIG SET</code> takes only settings
-            that change how data behaves: <code>maxmemory-policy</code>, <code>maxmemory-samples</code>,{" "}
-            <code>notify-keyspace-events</code>, the listpack, ziplist, intset, HyperLogLog and stream encoding
-            thresholds, <code>lfu-log-factor</code>, <code>lfu-decay-time</code>, the slowlog and latency monitor
-            settings, <code>busy-reply-threshold</code>, <code>lua-time-limit</code> and <code>activerehashing</code>.
+            that change how data behaves: <code>maxmemory-policy</code>, <code>maxmemory-samples</code>, the listpack,
+            ziplist, intset, HyperLogLog and stream encoding thresholds, <code>lfu-log-factor</code>,{" "}
+            <code>lfu-decay-time</code>, <code>slowlog-max-len</code> and <code>activerehashing</code>.
           </p>
           <p>
             An allowed setting goes to every primary and lasts until that shard restarts. Anything else gets an error.
@@ -77,8 +76,8 @@ export const security: Doc = {
       content: (
         <ul>
           <li>
-            <strong>Spectrum:</strong> turn on TLS. Without it the password and all data cross the internet in plain
-            text.
+            <strong>Spectrum:</strong> turn on TLS, which only Spectrum Enterprise offers for a Worker origin. Without
+            it the password and all data cross the internet in plain text.
           </li>
           <li>
             <strong>WebSocket:</strong> use <code>wss://</code>. The shim's local port is plain text on 127.0.0.1.

@@ -2,6 +2,7 @@ import { GridFourIcon } from "@phosphor-icons/react";
 import { Code, Note, Table } from "../components/blocks";
 import { SlotDiagram } from "../components/diagrams/slots";
 import { DocLink } from "../components/doc-link";
+import { DIFFERENCES_SECTION } from "./sharding-differences";
 import { server } from "./sources";
 import type { Doc } from "./types";
 
@@ -77,7 +78,9 @@ export const sharding: Doc = {
             ["SCAN, KEYS, DBSIZE, FLUSHALL, INFO", "Every shard, 32 at a time, after every earlier reply"],
             ["SCRIPT LOAD, FUNCTION LOAD", "Every shard, so EVALSHA and FCALL work wherever their keys land"],
             ["SUBSCRIBE, PUBLISH", "The database's pub/sub shard"],
-            ["AUTH, HELLO, SELECT, CLIENT, WAIT, WAITAOF, CONFIG", "Answered by the router itself"],
+            ["AUTH, PING, ECHO, HELLO, SELECT, CLIENT, CLUSTER, WAIT, WAITAOF", "Answered by the router itself"],
+            ["CONFIG SET", "Every primary, if the setting is allowed"],
+            ["CONFIG GET, keyless commands", "Shard 0"],
           ]}
         />
       ),
@@ -105,14 +108,13 @@ export const sharding: Doc = {
       content: (
         <>
           <p>
-            Objects of one Durable Object class on one machine can share a process, and with it the memory limit and the
-            single thread. Objects of different classes never do. So the shard is exported as eight classes, and shard{" "}
-            <code>i</code> uses class <code>i % 8</code>: a database's shards 0 to 7 never share a process.
+            Objects that share a process share its memory limit and its single thread. In our tests, objects of one
+            Durable Object class sometimes shared a process: 16 shards in one class ran in 14 processes, one holding 3
+            shards. So the shard is exported as eight classes, and shard <code>i</code> uses class <code>i % 8</code>.
+            With 8 classes, 16 shards ran in 16 processes.
           </p>
           <p>
-            Replicas of class <code>k</code> live in class <code>8 + k</code>, so a replica never shares a process with
-            a primary. In tests, 16 shards in one class ran in 14 processes, one holding 3 shards; with 8 classes they
-            ran in 16.
+            Replicas of class <code>k</code> live in class <code>8 + k</code>, a class no primary uses.
           </p>
         </>
       ),
@@ -135,6 +137,7 @@ export const sharding: Doc = {
         </>
       ),
     },
+    DIFFERENCES_SECTION,
     {
       id: "unsupported",
       title: "Unsupported commands",

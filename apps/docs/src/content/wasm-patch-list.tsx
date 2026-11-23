@@ -1,7 +1,7 @@
 import type { ReactNode } from "react";
 import type { Server } from "./servers";
 
-export type PatchGroup = "run" | "chosen";
+export type PatchGroup = "run" | "both" | "chosen";
 
 export interface Patch {
   file: string;
@@ -90,14 +90,14 @@ export const PATCHES: Record<Server, Patch[]> = {
     MAIN,
     {
       file: "0003-aof-rewrite-without-fork",
-      group: "run",
+      group: "both",
       what: (
         <>
           Valkey's <code>0003</code> and <code>0004</code> in one: offer the rewrite to the host, otherwise rewrite
           inline. Adds <code>rk_rewrite_done</code>.
         </>
       ),
-      why: "There is no fork(). The host can write the base while Redis keeps serving.",
+      why: "There is no fork(), so the inline rewrite is needed. Offering it to the host is a choice: the host can write the base while Redis keeps serving.",
       added: 45,
       removed: 0,
     },

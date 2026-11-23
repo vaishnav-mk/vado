@@ -25,7 +25,10 @@ export const repository: Doc = {
             ],
             ["apps/docs", "This site, deployed as its own Worker, vado-docs"],
             ["packages/server", "The database: router, shards, replication, catalog, admin and the bench API"],
-            ["packages/client", "bindingConnector for ioredis over a service binding, and vado-shim"],
+            [
+              "packages/client",
+              "bindingConnector for ioredis over a service binding, and the WebSocket shim, ws-shim.mjs",
+            ],
             ["packages/wasm", "The Valkey and Redis wasm builds: patches, build scripts and the committed binaries"],
             ["packages/*/test, apps/*/test", "Unit tests, at the same paths as the src files they test"],
             ["test/", "End-to-end tests against a deployed Worker"],
@@ -59,18 +62,19 @@ export const repository: Doc = {
       content: (
         <>
           <p>
-            <code>test/e2e.sh</code> runs every check against a deployed Worker on fresh databases: stock ioredis,
-            RESP3, chunked requests, WATCH across a reset, 1 shard against N, the hammer's invariants, and the bench
-            durability, replica and drop checks.
+            <code>test/e2e.sh</code> runs the automatic checks against a deployed Worker on fresh databases: stock
+            ioredis, RESP3, chunked requests, WATCH across a reset, 1 shard against N, the hammer's invariants, and the
+            bench durability, replica and drop checks.
           </p>
           <Code label="Against your own deployment">
             {
-              "npx vado-shim wss://<your-worker>.workers.dev/ws 6379 &\nBASE=https://<your-worker>.workers.dev TOKEN=<BENCH_TOKEN> PW=<VALKEY_PASSWORD> test/e2e.sh"
+              "node packages/client/ws-shim.mjs wss://<your-worker>.workers.dev/ws 6379 &\nBASE=https://<your-worker>.workers.dev TOKEN=<BENCH_TOKEN> PW=<VALKEY_PASSWORD> test/e2e.sh"
             }
           </Code>
           <p>
             <code>FLAVOUR=redis</code> runs it on Redis, if the Worker carries it. <code>HOST</code> and{" "}
-            <code>PORT</code> point it at another TCP address, such as a Spectrum application.
+            <code>PORT</code> point it at another TCP address, such as a Spectrum application. The shim needs Node 22 or
+            newer. <code>test/deploy.mjs</code> isn't part of it: run it by hand while you deploy from another shell.
           </p>
         </>
       ),

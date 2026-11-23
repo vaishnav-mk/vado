@@ -60,7 +60,11 @@ export const architecture: Doc = {
         <Table
           headers={["Choice", "Benefit", "Cost"]}
           rows={[
-            ["Real Valkey in wasm", "Valkey's behaviour for every command", "64 MB per shard; memory never shrinks"],
+            [
+              "Upstream Valkey in wasm",
+              "Most commands run in Valkey's own code",
+              "64 MB per shard; memory never shrinks",
+            ],
             [
               "AOF in SQLite, appendfsync always",
               "Acknowledged writes survive resets and deploys",
@@ -70,7 +74,7 @@ export const architecture: Doc = {
             ["Rewrites in a helper object", "The shard keeps serving during a rewrite", "Files copied both ways"],
             ["Replicas fed by the AOF", "Nearby reads that don't wait for commits", "Stale reads across connections"],
             ["A router per connection", "Stock clients, no cluster support", "An extra hop; cross-slot limits"],
-            ["Eight shard classes", "A database's first 8 shards never share memory", "More bindings to keep"],
+            ["Eight shard classes", "In our tests, 16 shards ran in 16 processes", "More bindings to keep"],
             ["Size and placement fixed at creation", "Routing is computed, with no directory", "No resharding"],
             ["Backpressure on every hop", "Memory stays bounded under any load", "Overload slows clients down"],
           ]}
