@@ -160,8 +160,13 @@ export function showReply(r: TypedReply, depth = 0): string {
       return `(integer) ${r.value}`;
     case "nil":
       return "(nil)";
-    case "bulk":
-      return JSON.stringify(r.value.length > 4000 ? `${r.value.slice(0, 4000)}…` : r.value);
+    case "bulk": {
+      const text = r.value.length > 4000 ? `${r.value.slice(0, 4000)}…` : r.value;
+
+      // Multi-line text such as INFO reads better raw, the way valkey-cli prints it.
+      return text.includes("\n") ? text.replaceAll("\r\n", "\n").trimEnd() : JSON.stringify(text);
+    }
+
     case "array": {
       if (!r.value.length) return "(empty array)";
       const width = String(r.value.length).length;

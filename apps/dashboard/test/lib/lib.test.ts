@@ -25,6 +25,10 @@ test("showArgv and showReply", () => {
   assert.equal(showReply({ type: "status", value: "OK" }), "OK");
   assert.equal(showReply({ type: "bulk", value: "OK" }), `"OK"`); // GET of a key holding OK, quoted as valkey-cli does
   assert.equal(showReply({ type: "bulk", value: "hello" }), `"hello"`);
+  assert.equal(
+    showReply({ type: "bulk", value: "# Server\r\nredis_version:8.12.0\r\n" }),
+    "# Server\nredis_version:8.12.0",
+  );
   assert.equal(showReply({ type: "nil" }), "(nil)");
   assert.equal(showReply({ type: "integer", value: 3 }), "(integer) 3");
   assert.equal(showReply({ type: "error", value: "ERR nope" }), "(error) ERR nope");

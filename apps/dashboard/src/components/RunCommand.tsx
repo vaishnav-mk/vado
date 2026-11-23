@@ -141,7 +141,7 @@ export function RunCommand({
         )}
         {last && !error && (
           <div className="flex flex-col gap-2">
-            <pre className="max-h-56 overflow-auto rounded-md bg-kumo-recessed p-3 font-mono text-sm break-all whitespace-pre-wrap">
+            <pre className="max-h-96 overflow-auto rounded-md bg-kumo-recessed p-3 font-mono text-sm break-words whitespace-pre-wrap">
               <span className="text-kumo-subtle">{`> ${showArgv(last.argv)}\n`}</span>
               {showReply(last.reply)}
             </pre>
