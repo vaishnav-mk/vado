@@ -113,9 +113,9 @@ export function RunCommand({
               }}
             />
           ))}
-          <div className="flex items-stretch gap-2">
+          <div className="flex items-center gap-2">
             <code
-              className="flex min-w-0 flex-1 items-center rounded-md bg-kumo-recessed px-3 font-mono text-xs text-kumo-subtle"
+              className="flex h-9 min-w-0 flex-1 items-center rounded-lg border border-kumo-line bg-kumo-recessed px-3 font-mono text-xs text-kumo-subtle"
               title={showArgv(argv)}
             >
               <span className="truncate">{parseError ?? (argv.length ? showArgv(argv) : "Type a command")}</span>
