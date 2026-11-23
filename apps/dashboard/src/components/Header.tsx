@@ -10,7 +10,7 @@ import type { Database, LiveState, Options } from "../lib/types";
 function describe(d: Database) {
   const spread = (d.regions?.length ?? 0) > 1 ? " around the world" : "";
 
-  return `${d.name} · ${d.flavour === "redis" ? "Redis" : "Valkey"} · ${plural(d.shards, "shard")}${spread}${d.replicas?.length ? " · replicas" : ""}`;
+  return `${d.name} · ${{ valkey: "Valkey", redis: "Redis", "redis-native": "native Redis" }[d.flavour] ?? d.flavour} · ${plural(d.shards, "shard")}${spread}${d.replicas?.length ? " · replicas" : ""}`;
 }
 
 function Health({ state, connection }: { state: LiveState | null; connection: Connection }) {

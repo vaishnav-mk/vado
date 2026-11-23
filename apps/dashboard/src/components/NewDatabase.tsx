@@ -13,6 +13,7 @@ const SHARDS = { 1: "1 shard", 4: "4 shards", 16: "16 shards", 64: "64 shards" }
 const SERVERS = new Map([
   ["valkey", "Valkey 9.1"],
   ["redis", "Redis 8.12"],
+  ["redis-native", "Redis 8.12, native in a container"],
 ]);
 
 // One field alone fills the row; two share it equally.
