@@ -1,4 +1,5 @@
 import { isHint, REGION_NAMES, WORLD } from "@vado/server/replication/regions.ts";
+import { replicaReads } from "../../lib/replicas";
 import type { LiveState, Replica } from "../../lib/types";
 import type { Row } from "./types";
 
@@ -9,7 +10,7 @@ export function rows(state: LiveState | null): Row[] {
   const order = [
     ...WORLD.filter((r) => present.has(r)),
     ...[...present].filter((r) => !isHint(r) || !WORLD.includes(r)),
-  ]; // west to east
+  ];
 
   return order.map((region) => {
     const cells = shards.map((s) => s.replicas?.find((r) => r.region === region));
@@ -34,13 +35,12 @@ export function rows(state: LiveState | null): Row[] {
       city,
       cells,
       lag: ready.length ? Math.max(...ready.map((r) => r.lagMs ?? 0)) : null,
-      reads: here.reduce((a, r) => a + (r.reads ?? 0), 0),
+      reads: replicaReads(here),
       note,
     };
   });
 }
 
-/** A bar's height (percent): sleeping copies lie flat, copying ones stand half up, serving ones by their lag. */
 export function height(r: Replica | undefined, maxLag: number) {
   if (!r) return 0;
 

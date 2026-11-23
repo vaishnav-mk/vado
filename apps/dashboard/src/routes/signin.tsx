@@ -1,5 +1,3 @@
-// /signin is the path a Cloudflare Access application protects, so a visit gets here signed in and goes back to the
-// page it came from.
 import { createFileRoute, redirect } from "@tanstack/react-router";
 import * as v from "valibot";
 

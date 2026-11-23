@@ -7,12 +7,11 @@ import { COMMAND_PATH_MS, COMMAND_TRAVEL_MS } from "../../lib/config";
 import { hash } from "./geo";
 import type { Arc, Colors, CommandPath, Drawn, Frame, LonLat, Spot } from "./types";
 
-// SAFETY: world-atlas's land-110m.json is a TopoJSON topology whose `land` object is a GeometryCollection; TypeScript
-// infers its JSON with `type: string`, not those literal types.
+// SAFETY: land-110m.json is a topology whose `land` is a GeometryCollection; JSON infers `type: string`.
 const TOPOLOGY = land110 as Topology<{ land: GeometryCollection }>;
 const LAND = feature(TOPOLOGY, TOPOLOGY.objects.land);
 
-/** A Kumo color variable as a color the canvas understands (they're light-dark() values). */
+// Kumo colors are light-dark() values, which a canvas can't parse; a styled probe resolves them.
 function resolve(el: HTMLElement, variable: string, fallback: string) {
   const probe = document.createElement("span");
   probe.style.color = `var(${variable}, ${fallback})`;
@@ -40,7 +39,6 @@ const dot = (f: Frame, p: LonLat, radius: number) => {
   f.ctx.fill();
 };
 
-/** Ocean, hatched land, outline: as Kumo's GlobeMap draws them. */
 export function drawEarth(f: Frame, colors: Colors) {
   const { ctx, path, dpr, size } = f;
 
@@ -75,8 +73,7 @@ export function drawEarth(f: Frame, colors: Colors) {
   ctx.stroke();
 }
 
-/** Streams and traffic: faint great circles, with dots that move as fast as their rate. `phases` keeps where each
- *  stream's dots are, so a new rate changes their speed, not their position. */
+// `phases` keeps where each stream's dots are, so a new rate changes their speed, not their position.
 export function drawArcs(f: Frame, arcs: Arc[], phases: Map<string, number>, dt: number) {
   const { ctx, path, dpr, calm } = f;
 
@@ -110,7 +107,6 @@ export function drawArcs(f: Frame, arcs: Arc[], phases: Map<string, number>, dt:
   ctx.globalAlpha = 1;
 }
 
-/** The last command: a dot crosses from where it entered to whoever answered, then out to the replicas. */
 export function drawCommand(f: Frame, command: CommandPath | null) {
   if (!command) return;
   const age = Date.now() - command.at;
@@ -148,8 +144,6 @@ export function drawCommand(f: Frame, command: CommandPath | null) {
   ctx.globalAlpha = 1;
 }
 
-/** Places, front side only, fading at the edge: the first layer filled, later ones as rings around it. Traffic
- *  pulses softly. Returns where each was drawn. */
 export function drawSpots(f: Frame, spots: Spot[], ocean: string, t: number): Drawn[] {
   const { ctx, dpr, calm } = f,
     drawn: Drawn[] = [];

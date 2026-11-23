@@ -1,4 +1,4 @@
-// What the globe shows, from one live picture. Places are grouped, so 64 shards in 9 cities are 9 markers.
+// Places are grouped, so 64 shards in 9 cities are 9 markers.
 import { place } from "@vado/server/admin/views.ts";
 import { HIGHLIGHT, replicaColor, replicaWords, SHARD, traffic } from "../../lib/colors";
 import { MAX_ENTRY_ARCS, MAX_STREAMS } from "../../lib/config";
@@ -92,8 +92,7 @@ export function scene(state: LiveState | null, last: LastCommand | null, dark: b
         0.3 + 0.3 * Math.min(1, Math.log10(1 + st.rate) / 3),
       ),
     );
-  // Every client talks to every shard, so for shards spread around the world traffic arcs would join every
-  // entry to every city.
+  // Every client talks to every shard, so for widely spread shards these arcs would join everything to everything.
   const targets = [...homes.values()];
 
   if (targets.length <= MAX_ENTRY_ARCS) {
@@ -167,7 +166,6 @@ export function scene(state: LiveState | null, last: LastCommand | null, dark: b
   return { spots: [...spots.values()], arcs, path, center };
 }
 
-/** The globe in one sentence, for its caption and its aria-label. */
 export function summary(state: LiveState | null): string {
   const shards = state?.shards ?? [],
     entries = state?.map?.entries ?? [];

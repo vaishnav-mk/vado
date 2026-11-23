@@ -1,5 +1,4 @@
-// Signing in belongs to Cloudflare Access: an Access application on /signin makes a visit there sign in and come
-// back (routes/signin.tsx), and /cdn-cgi/access/logout signs out of Access on this host.
+// Cloudflare Access owns sign-in: it protects /signin (routes/signin.tsx), and /cdn-cgi/access/logout signs out.
 import { LinkButton, Tooltip } from "@cloudflare/kumo";
 import { SignInIcon, SignOutIcon } from "@phosphor-icons/react";
 import { useLocation } from "@tanstack/react-router";

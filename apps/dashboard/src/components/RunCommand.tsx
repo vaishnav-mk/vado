@@ -5,13 +5,13 @@ import { Guard } from "./Guard";
 import { runCommand } from "../server/admin";
 import { COMMANDS, OTHER, replicationLine, showArgv, showReply, toArgv, type Arg } from "../lib/command";
 import { ms } from "../lib/format";
+import { useAction } from "../lib/hooks";
 import { place } from "@vado/server/admin/views.ts";
 import { REGION_NAMES } from "@vado/server/replication/regions.ts";
 import type { LastCommand, Shard } from "../lib/types";
 
 const ITEMS = Object.fromEntries(Object.keys(COMMANDS).map((c) => [c, c === OTHER ? "Other command" : c]));
 
-/** What happened to a command, in plain sentences. */
 function story(r: LastCommand, shards: Shard[]) {
   const entered = place(r.colo).city,
     shard = r.shard !== null ? shards[r.shard] : undefined;
@@ -55,9 +55,7 @@ export function RunCommand({
   const [cmd, setCmd] = useState<keyof typeof COMMANDS>("GET"),
     [values, setValues] = useState<string[]>([]);
 
-  const [busy, setBusy] = useState(false),
-    [error, setError] = useState<string | null>(null);
-
+  const { busy, error, setError, run } = useAction();
   const args: Arg[] = COMMANDS[cmd];
 
   let argv: string[] = [],
@@ -69,22 +67,15 @@ export function RunCommand({
     parseError = e instanceof Error ? e.message : String(e);
   }
 
-  const submit = async (e: FormEvent) => {
+  const submit = (e: FormEvent) => {
     e.preventDefault();
 
     if (parseError || !argv.length) return;
-    setBusy(true);
-    setError(null);
-
-    try {
+    void run(async () => {
       const before = shards.map((s) => s.replicas?.map((x) => x.state) ?? null);
       const r = await runCommand({ data: { name: db, argv } });
       onResult({ ...r, argv, at: Date.now(), before: r.shard !== null ? (before[r.shard] ?? null) : null });
-    } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
-    }
-
-    setBusy(false);
+    });
   };
 
   return (

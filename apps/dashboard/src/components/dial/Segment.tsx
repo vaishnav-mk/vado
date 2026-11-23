@@ -2,7 +2,6 @@ import { HIGHLIGHT, replicaColor } from "../../lib/colors";
 import type { Shard } from "../../lib/types";
 import { annulus, arcSpan, pt, R_IN, R_OUT, summaryState } from "./geometry";
 
-/** Shard i's arc on the dial, brighter with `level` (0 to 1), with a dot per replica outside it. */
 export function Segment({
   i,
   n,

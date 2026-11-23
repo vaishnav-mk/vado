@@ -17,7 +17,7 @@ export const arc = (id: string, from: LonLat, to: LonLat, color: string, rate: n
   at: geoInterpolate(from, to),
 });
 
-/** A stable number in [0, 1) for a string, so a marker or stream keeps its phase across updates. */
+// Stable per string, so a marker or stream keeps its phase across updates.
 export const hash = (s: string) => {
   let h = 2166136261;
 

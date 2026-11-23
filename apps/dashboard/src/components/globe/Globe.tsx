@@ -1,6 +1,4 @@
-// A spinning globe on a canvas, styled like Kumo's GlobeMap: where traffic enters Cloudflare, the shards, their
-// replicas, the streams of writes to awake replicas, and the last command's path. Frames read only refs; React
-// re-renders for data (once a second) and for the tooltip.
+// Frames read only refs, so React re-renders just for data (once a second) and the tooltip.
 import { useEffect, useMemo, useRef, useState } from "react";
 import { geoDistance, geoOrthographic, geoPath } from "d3-geo";
 import { LayerCard, Text } from "@cloudflare/kumo";
@@ -213,7 +211,6 @@ export function Globe({ state, last, dark }: { state: LiveState | null; last: La
   );
 }
 
-/** A fixed width, kept inside the globe's box, and below the marker when there's no room above it. */
 function GlobeTip({ tip, width }: { tip: Tip; width: number }) {
   const below = tip.y < 120,
     left = Math.max(4, Math.min(width - TIP_WIDTH - 4, tip.x - TIP_WIDTH / 2));

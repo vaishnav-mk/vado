@@ -1,10 +1,10 @@
 import type { ReactNode } from "react";
 import { Grid, LayerCard, Meter, Text } from "@cloudflare/kumo";
-import { bytes, ms, num } from "../lib/format";
+import { bytes, ms, num, plural } from "../lib/format";
 import { replicaCounts, replicaLine } from "../lib/replicas";
 import type { LiveState } from "../lib/types";
 
-// Short titles keep every card on one title line, so all six inner panels line up and fill their cards.
+// Titles must fit one line, or the six inner panels stop lining up.
 function Stat({
   title,
   value,
@@ -32,11 +32,9 @@ function Stat({
   );
 }
 
-export function Stats({ state }: { state: LiveState | null }) {
+export function Stats({ state, reads }: { state: LiveState | null; reads: number }) {
   const t = state?.totals,
-    waiting = "–";
-
-  const reads = (t?.reads ?? 0) + (t?.replicaReads ?? 0),
+    waiting = "–",
     writes = t?.writes ?? 0;
 
   const shards = state?.db?.shards ?? state?.shards?.length ?? 0;
@@ -66,7 +64,7 @@ export function Stats({ state }: { state: LiveState | null }) {
       <Stat
         title="Keys"
         value={t ? (t.keys ?? 0).toLocaleString("en") : waiting}
-        hint={shards ? `Over ${shards} shard${shards === 1 ? "" : "s"}` : undefined}
+        hint={shards ? `Over ${plural(shards, "shard")}` : undefined}
       />
       <Stat title="Memory" value={t ? bytes(t.memory) : waiting}>
         {t && (

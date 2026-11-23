@@ -1,5 +1,4 @@
-// Reading is public; every change checks who is signed in first. valibot checks shape and size here; Admin enforces
-// the exact rules (names, shard counts, regions) and its messages reach the page as they are.
+// valibot bounds shape and size; Admin enforces the exact rules, and its messages reach the page as they are.
 import { createServerFn } from "@tanstack/react-start";
 import { env } from "cloudflare:workers";
 import * as v from "valibot";
@@ -13,7 +12,6 @@ const name = v.pipe(v.string(), v.minLength(1), v.maxLength(63));
 
 export const listDatabases = createServerFn({ method: "GET" }).handler((): Promise<Database[]> => admin().databases());
 
-/** Database `name`, or null if there is none (or the name can't be one). */
 export const getDatabase = createServerFn({ method: "GET" })
   .validator(v.object({ name: v.pipe(v.string(), v.maxLength(200)) }))
   .handler(({ data }): Promise<Database | null> =>
@@ -22,7 +20,6 @@ export const getDatabase = createServerFn({ method: "GET" })
       .catch(() => null),
   );
 
-/** The regions a database can use, and the servers this build runs. */
 export const listOptions = createServerFn({ method: "GET" }).handler((): Options => ({
   regions: admin().regions(),
   flavours: FLAVOURS,

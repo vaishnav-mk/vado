@@ -1,5 +1,3 @@
-// The shard dial: every key hashes to one of 16,384 slots, and each shard owns one arc of them. Brighter arcs are
-// busier; dots fly from the middle into each shard as fast as its traffic; dots outside are its replicas.
 import { useRef, useState } from "react";
 import { LayerCard, Text } from "@cloudflare/kumo";
 import { REPLICA, SHARD, traffic } from "../../lib/colors";

@@ -1,4 +1,3 @@
-// Colors shared by the dial, the globe, the charts and the legends.
 import { ChartPalette } from "@cloudflare/kumo";
 import type { ReplicaState } from "./types";
 
@@ -14,7 +13,6 @@ export const REPLICA: Record<ReplicaState, string> = {
   idle: "#DC2626",
 };
 
-/** What each replica state means, in plain words. */
 const REPLICA_WORDS: Record<ReplicaState, string> = {
   ready: "Ready",
   copying: "Copying",

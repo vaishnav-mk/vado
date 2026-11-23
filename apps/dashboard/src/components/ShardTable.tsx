@@ -1,10 +1,12 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef } from "react";
 import { Badge, LayerCard, Meter, RefreshButton, Table, Text, Tooltip } from "@cloudflare/kumo";
 import { Guard } from "./Guard";
 import { restartShard } from "../server/admin";
 import { bytes, bytesOf, duration, ms, num } from "../lib/format";
+import { replicaReads } from "../lib/replicas";
 import { replicaWords } from "../lib/colors";
 import { RESTARTING_MS } from "../lib/config";
+import { useAction } from "../lib/hooks";
 import type { Replica, Shard } from "../lib/types";
 
 function Status({ s, now }: { s: Shard; now: number }) {
@@ -40,7 +42,6 @@ function Status({ s, now }: { s: Shard; now: number }) {
   );
 }
 
-/** One line: "9 ready, up to 226 ms behind", "9 asleep", "3 of 9 ready, up to 40 ms behind". */
 function replicaLine(replicas: Replica[]) {
   const n = replicas.length,
     ready = replicas.filter((r) => r.state === "ready");
@@ -56,21 +57,7 @@ function replicaLine(replicas: Replica[]) {
 }
 
 function Restart({ db, i }: { db: string; i: number }) {
-  const [busy, setBusy] = useState(false),
-    [error, setError] = useState<string | null>(null);
-
-  const run = async () => {
-    setBusy(true);
-    setError(null);
-
-    try {
-      await restartShard({ data: { name: db, shard: i } });
-    } catch (e) {
-      setError(e instanceof Error ? e.message : String(e));
-    }
-
-    setBusy(false);
-  };
+  const { busy, error, run } = useAction();
 
   return (
     <Guard action="restart a shard">
@@ -86,7 +73,7 @@ function Restart({ db, i }: { db: string; i: number }) {
             className={error ? "text-kumo-danger" : undefined}
             onClick={(e) => {
               e.stopPropagation();
-              void run();
+              void run(() => restartShard({ data: { name: db, shard: i } }));
             }}
           />
         </Tooltip>
@@ -162,7 +149,7 @@ export function ShardTable({
                     <Status s={s} now={now} />
                   </Table.Cell>
                   <Table.Cell className="text-right tabular-nums">
-                    {s.ok ? num(s.reads + s.replicas.reduce((a, r) => a + (r.reads ?? 0), 0)) : "–"}
+                    {s.ok ? num(s.reads + replicaReads(s.replicas)) : "–"}
                   </Table.Cell>
                   <Table.Cell className="text-right tabular-nums">{s.ok ? num(s.writes) : "–"}</Table.Cell>
                   <Table.Cell className="text-right tabular-nums">

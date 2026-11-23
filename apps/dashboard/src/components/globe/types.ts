@@ -9,8 +9,7 @@ export interface Layer {
   alpha?: number;
 }
 
-/** One place on the globe. Its layers are drawn inside out (shards, replicas, traffic), each later one as a ring
- *  around the earlier ones, so traffic entering in the same city as the shards still shows. */
+// Later layers are rings around earlier ones, so traffic entering in the shards' city still shows.
 export interface Spot {
   at: LonLat;
   title: string;
@@ -42,7 +41,6 @@ export interface Scene {
   center: LonLat | null;
 }
 
-/** A spot as drawn this frame, in CSS pixels, for hit testing. */
 export interface Drawn {
   x: number;
   y: number;
@@ -65,7 +63,6 @@ export interface Colors {
   landFill: string;
 }
 
-/** What one frame draws with. `fade` is 1 on the visible side, falling to 0 at the edge. */
 export interface Frame {
   ctx: CanvasRenderingContext2D;
   path: GeoPath;

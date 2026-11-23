@@ -36,7 +36,7 @@ export function Dashboard({
   return (
     <main className="mx-auto flex max-w-7xl flex-col gap-6 px-6 py-6">
       {state?.error && <Banner variant="error" title="Can't reach the database" description={state.error} />}
-      <Stats state={state} />
+      <Stats state={state} reads={reads} />
       <Grid variant="1-2" gap="base">
         <ShardDial
           shards={shards}

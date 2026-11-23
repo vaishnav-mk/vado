@@ -1,17 +1,14 @@
-// "Run a command": the common commands' arguments, typed fields to argv, and replies shown as valkey-cli does.
 import { ms, plural } from "./format";
 import type { ReplicaState, TypedReply } from "./types";
 
 export interface Arg {
   name: string;
   placeholder: string;
-  /** Several values in one field, separated by spaces ("quote" a value that has spaces). */
   many?: boolean;
 }
 
 export const OTHER = "Other" as const; // as const, or the command Select's value type widens to string
 
-/** Command -> its arguments, in order. Other is a whole command line. */
 export const COMMANDS = {
   GET: [{ name: "Key", placeholder: "greeting" }],
   SET: [
@@ -68,7 +65,7 @@ const ESCAPES = new Map([
   ["r", "\r"],
 ]);
 
-/** Splits a line into arguments like valkey-cli: spaces separate, "double" quotes allow \" \\ \n \t \r \xHH, 'single' quotes are literal but for \'. */
+// valkey-cli's quoting, so a line pasted from it means the same here.
 export function splitArgs(line: string): string[] {
   const out: string[] = [];
   let i = 0;
@@ -136,7 +133,6 @@ export function splitArgs(line: string): string[] {
   return out;
 }
 
-/** The argv for `command` with `values` typed in its fields. Fields that take one value are taken as typed. */
 export function toArgv(command: keyof typeof COMMANDS, values: string[]): string[] {
   if (command === OTHER) return splitArgs(values[0] ?? "");
   const args: Arg[] = COMMANDS[command];
@@ -151,11 +147,9 @@ export function toArgv(command: keyof typeof COMMANDS, values: string[]): string
   return argv;
 }
 
-/** How valkey-cli would show argv: arguments with spaces or quotes in double quotes. */
 export const showArgv = (argv: string[]) =>
   argv.map((a) => (a === "" || /[\s"'\\]/.test(a) ? JSON.stringify(a) : a)).join(" ");
 
-/** A reply as valkey-cli prints it. */
 export function showReply(r: TypedReply, depth = 0): string {
   switch (r.type) {
     case "status":
@@ -179,7 +173,7 @@ export function showReply(r: TypedReply, depth = 0): string {
   }
 }
 
-/** Only "Copied to N of M" when the replicas were ready to take it; otherwise what they were doing. */
+// Sleeping or copying replicas didn't take the write yet, so don't say it was copied.
 export function replicationLine(rep: { acked: number; of: number; ms: number }, before: ReplicaState[] | null) {
   const n = rep.of,
     took = ms(rep.ms);

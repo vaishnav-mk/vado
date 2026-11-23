@@ -4,6 +4,7 @@ import { PlayIcon, StopIcon } from "@phosphor-icons/react";
 import { Guard } from "./Guard";
 import { startTest, stopTest } from "../server/admin";
 import { duration } from "../lib/format";
+import { useAction } from "../lib/hooks";
 import type { TestView } from "../lib/types";
 
 const LEVELS = { light: "Light", medium: "Medium", heavy: "Heavy" };
@@ -22,22 +23,7 @@ export function TestTraffic({
   const [level, setLevel] = useState<keyof typeof LEVELS>("medium"),
     [from, setFrom] = useState("everywhere");
 
-  const [busy, setBusy] = useState(false),
-    [error, setError] = useState<string | null>(null);
-
-  const act = async (f: () => Promise<TestView | null>) => {
-    setBusy(true);
-    setError(null);
-
-    try {
-      await f();
-    } catch (e) {
-      setError(e instanceof Error ? e.message : String(e));
-    }
-
-    setBusy(false);
-  };
-
+  const { busy, error, run } = useAction();
   const left = test ? Math.max(0, (test.until - now) / 1000) : 0;
 
   return (
@@ -65,31 +51,20 @@ export function TestTraffic({
           />
         </div>
         <Guard action={test ? "stop test traffic" : "start test traffic"} className="flex">
-          {(disabled) =>
-            test ? (
-              <Button
-                variant="secondary"
-                icon={StopIcon}
-                loading={busy}
-                disabled={disabled}
-                onClick={() => act(() => stopTest({ data: { name: db } }))}
-                className="w-full"
-              >
-                Stop test traffic
-              </Button>
-            ) : (
-              <Button
-                variant="primary"
-                icon={PlayIcon}
-                loading={busy}
-                disabled={disabled}
-                onClick={() => act(() => startTest({ data: { name: db, level, from } }))}
-                className="w-full"
-              >
-                Start test traffic
-              </Button>
-            )
-          }
+          {(disabled) => (
+            <Button
+              variant={test ? "secondary" : "primary"}
+              icon={test ? StopIcon : PlayIcon}
+              loading={busy}
+              disabled={disabled}
+              onClick={() =>
+                run(() => (test ? stopTest({ data: { name: db } }) : startTest({ data: { name: db, level, from } })))
+              }
+              className="w-full"
+            >
+              {test ? "Stop test traffic" : "Start test traffic"}
+            </Button>
+          )}
         </Guard>
         {test && (
           <Text variant="secondary" size="sm">

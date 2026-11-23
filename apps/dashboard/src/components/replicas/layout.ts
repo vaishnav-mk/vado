@@ -1,5 +1,4 @@
-// Each row is its own grid with fixed tracks, so strips line up across rows. On a phone the name and numbers
-// share a line and the strip gets the full width under them.
+// Fixed tracks, so each row's own grid lines its strip up with the other rows.
 export const ROW =
   "grid grid-cols-[minmax(0,1fr)_4rem_4rem] items-center gap-x-4 gap-y-1.5 sm:grid-cols-[13rem_minmax(0,1fr)_4.5rem_4.5rem]";
 

@@ -10,7 +10,6 @@ interface Dot {
   write: boolean;
 }
 
-/** Draws traffic on `canvas`: dots flying from the hub into each shard, reads in `read`, writes in orange. */
 export function useTrafficDots(
   canvas: RefObject<HTMLCanvasElement | null>,
   shards: Shard[],

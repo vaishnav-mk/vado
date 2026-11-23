@@ -1,6 +1,5 @@
 import type { Replica } from "../../lib/types";
 
-/** One region: its copy of every shard, in shard order. */
 export interface Row {
   region: string;
   name: string;

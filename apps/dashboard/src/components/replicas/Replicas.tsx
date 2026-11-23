@@ -1,5 +1,3 @@
-// Read replicas, a row per region (each a copy of the whole database), a bar per shard lined up across regions:
-// color is the replica's state, height how far behind its shard it is, and a bright cap means it serves reads.
 import { useState } from "react";
 import { Badge, LayerCard, Text } from "@cloudflare/kumo";
 import { REPLICA, replicaWords } from "../../lib/colors";

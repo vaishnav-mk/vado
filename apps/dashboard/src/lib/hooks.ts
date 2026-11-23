@@ -13,13 +13,11 @@ const media = (q: string) => ({
 const darkQuery = media("(prefers-color-scheme: dark)");
 const calmQuery = media("(prefers-reduced-motion: reduce)");
 
-/** Whether the system is in dark mode (false while rendering on the server). */
 export const useDark = () => useSyncExternalStore(darkQuery.subscribe, darkQuery.get, () => false);
 
-/** Whether the person asked for less motion. */
 export const useReducedMotion = () => useSyncExternalStore(calmQuery.subscribe, calmQuery.get, () => false);
 
-/** Date.now(), refreshed every `every` ms, so relative times move on even when no data arrives. */
+// Ticks on its own so relative times move on when no data arrives.
 export function useNow(every = 10_000) {
   const [now, setNow] = useState(() => Date.now());
   useEffect(() => {
@@ -29,4 +27,24 @@ export function useNow(every = 10_000) {
   }, [every]);
 
   return now;
+}
+
+export function useAction() {
+  const [busy, setBusy] = useState(false),
+    [error, setError] = useState<string | null>(null);
+
+  const run = async <T>(f: () => Promise<T>) => {
+    setBusy(true);
+    setError(null);
+
+    try {
+      await f();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    }
+
+    setBusy(false);
+  };
+
+  return { busy, error, setError, run };
 }

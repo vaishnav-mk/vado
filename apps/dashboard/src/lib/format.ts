@@ -3,7 +3,6 @@ const compact = (digits: number) => new Intl.NumberFormat("en", { notation: "com
 const C0 = compact(0),
   C1 = compact(1);
 
-/** 0.4, 950, 1.2K, 34K, 1.5M */
 export const num = (n: number | null | undefined) => {
   const v = n ?? 0;
 
@@ -30,7 +29,6 @@ export const bytes = (b: number | null | undefined) => {
         : `${Math.round(v)} B`;
 };
 
-/** "8.6 of 64 MB": both in the unit of the larger. */
 export function bytesOf(used: number | null | undefined, max: number | null | undefined) {
   const u = used ?? 0,
     m = max ?? 0,
@@ -61,7 +59,6 @@ export const clock = (t: number) =>
 
 export const dateTime = (t: number) => new Date(t).toLocaleString([], { dateStyle: "medium", timeStyle: "medium" });
 
-/** "just now", "40 s ago", "2 min ago", "3 h ago" */
 export function ago(t: number, now: number) {
   const s = (now - t) / 1000;
 
@@ -76,7 +73,6 @@ export function ago(t: number, now: number) {
           : `${Math.round(s / 86400)} d ago`;
 }
 
-/** "Frankfurt, Paris and 3 more" */
 export const cities = (xs: string[]) =>
   xs.length > 3
     ? `${xs.slice(0, 3).join(", ")} and ${xs.length - 3} more`
@@ -84,10 +80,7 @@ export const cities = (xs: string[]) =>
       ? `${xs.slice(0, -1).join(", ")} and ${xs.at(-1)}`
       : (xs[0] ?? "");
 
-/**
- * A y axis from 0 with about four steps of 1, 2 or 5 times a power of ten (at least `minStep`), so labels
- * are never repeated. Returns the top and the step.
- */
+// Steps of 1, 2 or 5 times a power of ten, so no two axis labels repeat.
 export function niceAxis(max: number, minStep = 1, steps = 4) {
   const raw = (max > 0 ? max : 1) / steps;
   const mag = 10 ** Math.floor(Math.log10(raw));
@@ -96,7 +89,6 @@ export function niceAxis(max: number, minStep = 1, steps = 4) {
   return { max: Math.max(step, Math.ceil(max / step - 1e-9) * step), step };
 }
 
-/** An axis label at a multiple of `step` (from niceAxis): compact, with just enough decimals. */
 export function axisLabel(v: number, step: number) {
   const digits = (unit: number) => Math.min(3, Math.max(0, Math.ceil(-Math.log10(step / unit) - 1e-9)));
 

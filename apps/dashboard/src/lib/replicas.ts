@@ -1,6 +1,5 @@
-// Asleep is normal and copying takes seconds, so only a lost stream is worth a warning.
 import { plural } from "./format";
-import type { Shard } from "./types";
+import type { Replica, Shard } from "./types";
 
 export interface ReplicaCounts {
   total: number;
@@ -26,7 +25,6 @@ export function replicaCounts(shards: Shard[] | undefined): ReplicaCounts {
   return c;
 }
 
-/** One short line ("9 serving, 567 asleep") and a badge variant for it. */
 export function replicaLine(c: ReplicaCounts) {
   if (c.ready === c.total) return { text: `${plural(c.total, "replica")} serving`, variant: "success" } as const;
 
@@ -39,11 +37,14 @@ export function replicaLine(c: ReplicaCounts) {
     c.asleep && `${c.asleep.toLocaleString("en")} asleep`,
   ].filter(Boolean);
 
+  // Asleep is normal and copying takes seconds, so only a lost stream is worth an error.
   return {
     text: `Replicas: ${parts.join(", ")}`,
     variant: c.lost ? "error" : c.waking ? "warning" : "success",
   } as const;
 }
+
+export const replicaReads = (replicas: Replica[]) => replicas.reduce((a, r) => a + (r.reads ?? 0), 0);
 
 export const SLEEP_NOTE =
   "A shard's replicas sleep after 10 minutes without traffic to that shard, and its next read or write wakes them in a few seconds.";

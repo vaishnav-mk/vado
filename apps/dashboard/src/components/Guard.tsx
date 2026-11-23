@@ -1,11 +1,9 @@
-// Who this page is signed in as (an email, or null), and a wrapper that disables what needs it, saying why.
 import { createContext, useContext, type ReactElement } from "react";
 import { Tooltip } from "@cloudflare/kumo";
 
 export const SignedIn = createContext<string | null>(null);
 export const useSignedIn = () => useContext(SignedIn);
 
-/** Renders `children(disabled)`; when signed out, disabled and with a "Sign in to <action>" tooltip. */
 export function Guard({
   action,
   className = "inline-flex",

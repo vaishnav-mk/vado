@@ -1,5 +1,3 @@
-// The database takes TCP clients, /ws, /live and the bench API; the dashboard serves every other request. It is
-// imported lazily so the Durable Objects, which never serve a page, don't load it.
 import { worker } from "@vado/server";
 
 // Named, not `export *`: wrangler reads these names to type the bindings in worker-configuration.d.ts.
@@ -44,5 +42,6 @@ export { Watcher } from "@vado/server/admin/watcher/watcher.ts";
 export { Sender } from "@vado/server/bench/sender.ts";
 
 export default worker({
+  // Lazily, so the Durable Objects, which never serve a page, don't load the dashboard.
   fetch: async (req: Request) => (await import("@tanstack/react-start/server-entry")).default.fetch(req),
 });

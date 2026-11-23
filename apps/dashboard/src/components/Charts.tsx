@@ -1,4 +1,4 @@
-import { useMemo } from "react";
+import { useMemo, type ComponentProps } from "react";
 import { LayerCard } from "@cloudflare/kumo";
 import { LiveChart, type Series } from "./LiveChart";
 import { Legend } from "./Legend";
@@ -7,6 +7,24 @@ import { ms, num } from "../lib/format";
 import type { Place, Point } from "../lib/types";
 
 const perSecond = (v: number) => `${num(v)}/s`;
+
+function ChartCard({ title, ...chart }: ComponentProps<typeof LiveChart> & { title: string }) {
+  return (
+    <LayerCard>
+      <LayerCard.Secondary className="flex items-center justify-between gap-3">
+        {title}
+        <span className="flex gap-4">
+          {chart.series.map((s) => (
+            <Legend key={s.id} color={s.color} label={s.name} />
+          ))}
+        </span>
+      </LayerCard.Secondary>
+      <LayerCard.Primary>
+        <LiveChart {...chart} />
+      </LayerCard.Primary>
+    </LayerCard>
+  );
+}
 
 export function Throughput({ history, dark }: { history: Point[]; dark: boolean }) {
   const series = useMemo<Series[]>(
@@ -18,18 +36,14 @@ export function Throughput({ history, dark }: { history: Point[]; dark: boolean 
   );
 
   return (
-    <LayerCard>
-      <LayerCard.Secondary className="flex items-center justify-between gap-3">
-        Commands per second
-        <span className="flex gap-4">
-          <Legend color={traffic(dark)} label="Reads" />
-          <Legend color={SHARD} label="Writes" />
-        </span>
-      </LayerCard.Secondary>
-      <LayerCard.Primary>
-        <LiveChart series={series} dark={dark} minStep={0.1} format={perSecond} empty="Waiting for the first numbers" />
-      </LayerCard.Primary>
-    </LayerCard>
+    <ChartCard
+      title="Commands per second"
+      series={series}
+      dark={dark}
+      minStep={0.1}
+      format={perSecond}
+      empty="Waiting for the first numbers"
+    />
   );
 }
 
@@ -51,17 +65,13 @@ export function ResponseTime({
   );
 
   return (
-    <LayerCard>
-      <LayerCard.Secondary className="flex items-center justify-between gap-3">
-        {watcher?.city ? `Response time from ${watcher.city}` : "Response time"}
-        <span className="flex gap-4">
-          <Legend color={traffic(dark)} label="Read" />
-          <Legend color={SHARD} label="Write" />
-        </span>
-      </LayerCard.Secondary>
-      <LayerCard.Primary>
-        <LiveChart series={series} dark={dark} unit=" ms" format={ms} empty="Waiting for the first measurement" />
-      </LayerCard.Primary>
-    </LayerCard>
+    <ChartCard
+      title={watcher?.city ? `Response time from ${watcher.city}` : "Response time"}
+      series={series}
+      dark={dark}
+      unit=" ms"
+      format={ms}
+      empty="Waiting for the first measurement"
+    />
   );
 }

@@ -1,5 +1,4 @@
-// Kumo's lower-level Chart, not TimeseriesChart: that can't turn off ECharts' update animation (every point made
-// the lines flicker) and rounds fractional y ticks into repeated labels. Stable series ids let setOption merge.
+// Not Kumo's TimeseriesChart: it animates every update (the lines flicker) and rounds ticks into repeated labels.
 import { useMemo } from "react";
 import * as echarts from "echarts/core";
 import { LineChart } from "echarts/charts";
@@ -92,7 +91,7 @@ export function LiveChart({
         },
       },
       series: series.map((s) => ({
-        id: s.id,
+        id: s.id, // stable ids let setOption merge instead of redrawing
         name: s.name,
         type: "line" as const,
         data: s.data,

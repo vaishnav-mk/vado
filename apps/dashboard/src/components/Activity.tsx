@@ -1,4 +1,3 @@
-// The timeline: what happened to the shards and replicas, and what was done from this page.
 import { useState } from "react";
 import { Badge, Empty, LayerCard, Tabs, Text, Tooltip } from "@cloudflare/kumo";
 import {

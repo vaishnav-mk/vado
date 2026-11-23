@@ -1,5 +1,5 @@
-// The dial in its 400 by 400 viewBox: shard i owns the arc of hash slots it serves.
 import { SLOTS } from "@vado/server/protocol/slots.ts";
+import { replicaReads } from "../../lib/replicas";
 import type { ReplicaState, Shard } from "../../lib/types";
 
 export const R_IN = 120,
@@ -30,7 +30,6 @@ export function annulus(r0: number, r1: number, a0: number, a1: number) {
   return `M${x0} ${y0}A${r1} ${r1} 0 ${large} 1 ${x1} ${y1}L${x2} ${y2}A${r0} ${r0} 0 ${large} 0 ${x3} ${y3}Z`;
 }
 
-/** All of a shard's replicas as one state: serving if any serves, else copying, reconnecting, or asleep. */
 export const summaryState = (reps: { state: string }[]): ReplicaState =>
   reps.some((r) => r.state === "ready")
     ? "ready"
@@ -40,6 +39,4 @@ export const summaryState = (reps: { state: string }[]): ReplicaState =>
         ? "idle"
         : "asleep";
 
-/** Commands per second a shard and its replicas serve. */
-export const ops = (s: Shard | undefined) =>
-  s?.ok ? (s.reads ?? 0) + (s.writes ?? 0) + s.replicas.reduce((a, r) => a + (r.reads ?? 0), 0) : 0;
+export const ops = (s: Shard | undefined) => (s?.ok ? (s.reads ?? 0) + (s.writes ?? 0) + replicaReads(s.replicas) : 0);
