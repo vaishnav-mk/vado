@@ -64,7 +64,11 @@ export const quickStart: Doc = {
               redis={
                 <>
                   Redis ships only in builds made with <code>VADO_REDIS=1</code>, and its wasm build is{" "}
-                  {SERVERS.redis.licence} (<DocLink slug="redis">what that asks of you</DocLink>).
+                  {SERVERS.redis.licence} (
+                  <DocLink slug="flavours" hash="licence">
+                    what that asks of you
+                  </DocLink>
+                  ).
                 </>
               }
             />

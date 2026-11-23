@@ -136,7 +136,7 @@ export const wasm: Doc = {
           redis={
             <p>
               <code>redis.wasm</code>, its patches and stubs are distributed under the AGPLv3 (
-              <DocLink slug="redis" hash="licence">
+              <DocLink slug="flavours" hash="licence">
                 Redis
               </DocLink>
               ). Anyone running the Redis flavour for others must offer them the pinned tarball,{" "}

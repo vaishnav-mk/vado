@@ -1,11 +1,20 @@
-import { createFileRoute, notFound } from "@tanstack/react-router";
+import { createFileRoute, notFound, redirect } from "@tanstack/react-router";
 import { DocPage } from "../components/doc-page";
 import { docs } from "../content";
 
 const find = (slug: string | undefined) => docs.find((doc) => doc.slug === slug);
 
+// Pages merged into others keep their old links working.
+const MOVED = new Map([
+  ["redis", "flavours"],
+  ["native", "flavours"],
+]);
+
 export const Route = createFileRoute("/docs/$slug")({
   loader: ({ params }) => {
+    const moved = MOVED.get(params.slug);
+
+    if (moved) throw redirect({ to: "/docs/$slug", params: { slug: moved }, statusCode: 301 });
     const doc = find(params.slug);
 
     if (doc === undefined) throw notFound();

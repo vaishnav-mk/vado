@@ -2,11 +2,10 @@ import { architecture } from "./architecture";
 import { durability } from "./durability";
 import { introduction } from "./introduction";
 import { lifecycle } from "./lifecycle";
+import { flavours } from "./flavours";
 import { measurements } from "./measurements";
-import { native } from "./native";
 import { operations } from "./operations";
 import { quickStart } from "./quick-start";
-import { redis } from "./redis";
 import { replicas } from "./replicas";
 import { repository } from "./repository";
 import { security } from "./security";
@@ -26,8 +25,7 @@ export const docs: Doc[] = [
   operations,
   security,
   measurements,
-  redis,
-  native,
+  flavours,
   repository,
 ];
 
