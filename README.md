@@ -2,15 +2,17 @@
 
 Valkey, or Redis, on Cloudflare Durable Objects.
 
-Each shard is a Durable Object running real Valkey 9.1, compiled to WebAssembly, with its append-only file in the
-object's SQLite. A router in the Worker spreads keys over the shards by hash slot, so `valkey-cli`, ioredis and
-`valkey-benchmark` see one ordinary server. The same Worker serves a live dashboard.
+Each shard is a Durable Object running the real server, Valkey 9.1 or Redis 8.12, compiled to WebAssembly, with its
+append-only file in the object's SQLite. A router in the Worker spreads keys over the shards by hash slot, so
+`valkey-cli`, `redis-cli`, ioredis and `valkey-benchmark` see one ordinary server. The same Worker serves a live
+dashboard.
 
 Experimental. An independent project, not an official Cloudflare or Valkey product.
 
 **[Documentation](https://vado-docs.vaishnav.one)**: [quick start](https://vado-docs.vaishnav.one/docs/quick-start),
 [architecture](https://vado-docs.vaishnav.one/docs/architecture), [durability](https://vado-docs.vaishnav.one/docs/durability),
-[operations](https://vado-docs.vaishnav.one/docs/operations), [limits](https://vado-docs.vaishnav.one/docs/measurements).
+[operations](https://vado-docs.vaishnav.one/docs/operations), [limits](https://vado-docs.vaishnav.one/docs/measurements),
+[Redis](https://vado-docs.vaishnav.one/docs/redis), [WebAssembly builds](https://vado-docs.vaishnav.one/docs/wasm).
 
 [![Deploy to Cloudflare](https://deploy.workers.cloudflare.com/button)](https://deploy.workers.cloudflare.com/?url=https://github.com/vaishnav-mk/vado)
 
@@ -28,6 +30,18 @@ valkey-cli -p 6379 --user mydb --pass "$VALKEY_PASSWORD"
 ```
 
 From a checkout: `npm install`, then `npm run deploy`, or `npm run dev` for http://localhost:5173.
+
+## Valkey or Redis
+
+A database picks its server when it's created and keeps it. Both get the same router, sharding, read replicas and
+durability, and the same clients work with either.
+
+- **Valkey 9.1** is in every build, and a database created on first use runs it.
+- **Redis 8.12** is opt-in: deploy with `VADO_REDIS=1 npm run deploy`, then create a Redis database in the dashboard's
+  New database dialog, or with `flavour=redis` on the bench API. The Deploy to Cloudflare button builds Valkey only.
+
+`redis.wasm` is under the AGPLv3, which applies to a Worker that carries it
+([what that asks of you](https://vado-docs.vaishnav.one/docs/redis)).
 
 ## Repository
 
