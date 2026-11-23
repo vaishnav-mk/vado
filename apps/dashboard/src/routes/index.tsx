@@ -7,7 +7,7 @@ import { listDatabases, listOptions } from "../server/admin";
 export const Route = createFileRoute("/")({
   loader: async () => {
     const [databases, options] = await Promise.all([listDatabases(), listOptions()]);
-    const first = databases.find((d) => d.name === "global") ?? databases[0];
+    const first = databases[0];
 
     if (first) throw redirect({ to: "/db/$name", params: { name: first.name } });
 
