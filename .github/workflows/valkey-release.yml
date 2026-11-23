@@ -58,7 +58,7 @@ jobs:
           {
             echo "Valkey [$LATEST](https://github.com/valkey-io/valkey/releases/tag/$LATEST) is out; \`packages/wasm/valkey/build.sh\` pins $CURRENT."
             echo
-            if bash packages/wasm/valkey/update.sh "$LATEST" >update.log 2>&1; then
+            if bash packages/wasm/update.sh valkey "$LATEST" >update.log 2>&1; then
               echo "- Patches: all apply."
               patched=true
             else
@@ -89,7 +89,7 @@ jobs:
             echo
             details "update.sh output" update.log
             [ "$built" = failed ] && details "build.sh output (last 60 lines)" build.log
-            echo "To bump: \`packages/wasm/valkey/update.sh $LATEST\`, fix any patches, rebuild, copy \`packages/wasm/valkey/build/valkey.wasm\` to \`packages/wasm/valkey/valkey.wasm\`, regenerate \`packages/wasm/valkey/interface.txt\` (see wasm/README.md)."
+            echo "To bump: \`packages/wasm/update.sh valkey $LATEST\`, fix any patches, rebuild, copy \`packages/wasm/valkey/build/valkey.wasm\` to \`packages/wasm/valkey/valkey.wasm\`, regenerate \`packages/wasm/valkey/interface.txt\` (see wasm/README.md)."
           } >issue.md
           cat issue.md
           gh issue create --repo "$GITHUB_REPOSITORY" --title "Valkey $LATEST is out" --body-file issue.md

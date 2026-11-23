@@ -151,7 +151,7 @@ export const wasm: Doc = {
     source("packages/wasm/common.sh"),
     source("packages/wasm/valkey/build.sh"),
     source("packages/wasm/redis/build.sh"),
-    source("packages/wasm/valkey/update.sh"),
+    source("packages/wasm/update.sh"),
     source("packages/wasm/valkey/patches"),
     source("packages/wasm/redis/patches"),
     source("packages/wasm/wasi"),

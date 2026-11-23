@@ -16,6 +16,37 @@ git add -A && git commit -qm "earlier patches"
 # edit, then
 git add -A && git diff --cached > <repo>/packages/wasm/${name}/patches/${next}-my-change.patch`;
 
+const upgrade = (name: string, version: string) => (
+  <>
+    <Steps
+      items={[
+        <>
+          Run{" "}
+          <code>
+            packages/wasm/update.sh {name} {version}
+          </code>
+          . It downloads the release tarball into <code>packages/wasm/.cache/</code> and rewrites the version and sha256
+          in <code>{name}/build.sh</code> with the sha256 of what it downloaded.
+        </>,
+        <>
+          Read its patch report. It tries every patch against a scratch tree, applying the ones that fit in order, so
+          one run lists every failure. It exits 1 if any patch fails, and leaves <code>build.sh</code> updated either
+          way.
+        </>,
+        <>
+          Fix each failing patch (<a href="#patching">below</a>).
+        </>,
+        <>Compare the new sha256 with the release: it is only as good as the download.</>,
+        <>
+          Rebuild, copy the module over the committed one and regenerate <code>interface.txt</code>.{" "}
+          <code>update.sh</code> doesn't build.
+        </>,
+      ]}
+    />
+    <Code label="Step 5">{rebuild(name)}</Code>
+  </>
+);
+
 export const CHANGE_SECTIONS: DocSection[] = [
   {
     id: "upgrade",
@@ -24,29 +55,7 @@ export const CHANGE_SECTIONS: DocSection[] = [
       <ByServer
         valkey={
           <>
-            <Steps
-              items={[
-                <>
-                  Run <code>packages/wasm/valkey/update.sh 9.2.0</code>. It downloads the release tarball into{" "}
-                  <code>packages/wasm/.cache/</code> and rewrites <code>VALKEY_VERSION</code> and{" "}
-                  <code>VALKEY_SHA256</code> in <code>build.sh</code> with the sha256 of what it downloaded.
-                </>,
-                <>
-                  Read its patch report. It tries every patch against a scratch tree, applying the ones that fit in
-                  order, so one run lists every failure. It exits 1 if any patch fails, and leaves <code>build.sh</code>{" "}
-                  updated either way.
-                </>,
-                <>
-                  Fix each failing patch (<a href="#patching">below</a>).
-                </>,
-                <>Compare the new sha256 with the release: it is only as good as the download.</>,
-                <>
-                  Rebuild, copy the module over the committed one and regenerate <code>interface.txt</code>.{" "}
-                  <code>update.sh</code> doesn't build.
-                </>,
-              ]}
-            />
-            <Code label="Step 5">{rebuild("valkey")}</Code>
+            {upgrade("valkey", "9.2.0")}
             <p>
               A weekly workflow, <code>valkey-release.yml</code>, tries a newer Valkey release when one is out (
               <code>update.sh</code>, build, interface check) and opens an issue with the patch, build, size and
@@ -54,27 +63,7 @@ export const CHANGE_SECTIONS: DocSection[] = [
             </p>
           </>
         }
-        redis={
-          <>
-            <Steps
-              items={[
-                <>
-                  Redis has no <code>update.sh</code>. Set <code>REDIS_VERSION</code> and <code>REDIS_SHA256</code> in{" "}
-                  <code>packages/wasm/redis/build.sh</code> by hand.
-                </>,
-                <>Compare the sha256 with the release: it is only as good as the download.</>,
-                <>
-                  Run <code>build.sh</code> and fix the first patch that fails (<a href="#patching">below</a>). The
-                  build stops there, so repeat until it gets through.
-                </>,
-                <>
-                  Copy the module over the committed one and regenerate <code>interface.txt</code>.
-                </>,
-              ]}
-            />
-            <Code label="Rebuild and regenerate">{rebuild("redis")}</Code>
-          </>
-        }
+        redis={upgrade("redis", "8.14.0")}
       />
     ),
   },

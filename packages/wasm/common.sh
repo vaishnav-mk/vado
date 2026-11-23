@@ -1,4 +1,4 @@
-# Sourced by valkey/build.sh and redis/build.sh, which set HERE first.
+# Sourced by valkey/build.sh, redis/build.sh and update.sh, which set HERE first.
 set -euo pipefail
 export LC_ALL=C # the link globs obj/*.o: a fixed collation keeps the object order, and so the bytes
 
@@ -8,11 +8,17 @@ WASM="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 CACHE="$WASM/.cache" WASI="$WASM/wasi" OUT="$HERE/build" OBJ="$HERE/build/obj"
 CC="$WASI_SDK/bin/clang" SYSROOT="$WASI_SDK/share/wasi-sysroot"
 
-fetch() {
-  local tgz="$CACHE/$1.tar.gz" sum p
+# download <name> <url>: fetch $CACHE/<name>.tar.gz once, and print its sha256.
+download() {
+  local tgz="$CACHE/$1.tar.gz"
   mkdir -p "$CACHE"
   [ -f "$tgz" ] || { curl -fsSL "$2" -o "$tgz.part" && mv "$tgz.part" "$tgz"; }
-  sum=$( (sha256sum "$tgz" 2>/dev/null || shasum -a 256 "$tgz") | cut -d' ' -f1)
+  (sha256sum "$tgz" 2>/dev/null || shasum -a 256 "$tgz") | cut -d' ' -f1
+}
+
+fetch() {
+  local tgz="$CACHE/$1.tar.gz" sum p
+  sum=$(download "$1" "$2")
   [ "$sum" = "$3" ] || { echo "$tgz: sha256 $sum, want $3" >&2; exit 1; }
   rm -rf "${CACHE:?}/$1" "$OUT"
   mkdir -p "$CACHE/$1" "$OBJ"
