@@ -26,11 +26,11 @@ export const RESULT_SECTIONS: DocSection[] = [
         />
         <p>
           Bursts, not a sustained ceiling. From a single laptop over TCP, throughput is bound by its round trips:
-          valkey-benchmark with 200 connections and 64-deep pipelines reached 45.5k SET/s on one shard.
+          valkey-benchmark with 200 connections and 64-deep pipelines reached 75k SET/s on one shard.
         </p>
         <p>
-          <ServerBadge /> A pipeline of 20,000 mixed commands over Spectrum TCP from one laptop ran at{" "}
-          {measured((facts) => facts.pipeline)}.
+          A pipeline of 20,000 mixed commands over Spectrum TCP from one laptop ran at 12k-35k ops/s across runs, the
+          same range for either server.
         </p>
       </>
     ),
@@ -95,8 +95,8 @@ export const RESULT_SECTIONS: DocSection[] = [
     content: (
       <>
         <p>
-          <ServerBadge /> Over TCP from one client to shards in one region. The <ServerName /> wasm module is{" "}
-          {measured((facts) => facts.wasm)}.
+          <ServerBadge /> Over TCP from one client to shards in one region, in one run: 5 new databases, and 3 restarts
+          at each size. The <ServerName /> wasm module is {measured((facts) => facts.wasm)}.
         </p>
         <Table
           headers={["Event", "Time"]}
@@ -118,9 +118,12 @@ export const RESULT_SECTIONS: DocSection[] = [
         headers={["Test", "Result"]}
         rows={[
           ["50,000 acknowledged writes, then every shard aborted", "0 missing"],
-          ["test/hammer.mjs with CHAOS=1", "11 of 11 invariants held through 35 shard aborts"],
-          ["Connection churn: connect, AUTH, write, read, close", "6,995 of 7,000 connections"],
-          ["test/differential.mjs, 1 shard against N", "Identical replies"],
+          ["test/hammer.mjs with CHAOS=1", "11 of 11 invariants held through 32-34 shard aborts, on either server"],
+          [
+            "Connection churn: connect, AUTH, write, read, close",
+            "6,991-7,000 of 7,000 connections over Spectrum TCP; the drops are in the TCP path",
+          ],
+          ["test/differential.mjs, 1 shard against N", "Identical replies, in each of the last four runs"],
           ["36 replicas, 20,000 keys", "All read back in each of 9 regions"],
         ]}
       />

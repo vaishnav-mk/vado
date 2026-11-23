@@ -13,7 +13,6 @@ export interface ServerFacts {
   nextSet: string;
   firstGet16: string;
   firstGet56: string;
-  pipeline: string;
 }
 
 export const SERVERS: Record<Server, ServerFacts> = {
@@ -23,11 +22,10 @@ export const SERVERS: Record<Server, ServerFacts> = {
     info: "valkey_version:9.1.1",
     wasm: "1.94 MB (0.75 MB gzipped)",
     licence: "BSD-3-Clause",
-    firstSet: "486-648 ms",
-    nextSet: "49-62 ms",
-    firstGet16: "75-395 ms",
-    firstGet56: "79-353 ms",
-    pipeline: "22.9k-27.2k ops/s",
+    firstSet: "547-812 ms",
+    nextSet: "51-66 ms",
+    firstGet16: "203-315 ms",
+    firstGet56: "296-398 ms",
   },
   redis: {
     name: "Redis",
@@ -35,10 +33,9 @@ export const SERVERS: Record<Server, ServerFacts> = {
     info: "redis_version:8.12.0",
     wasm: "2.38 MB (0.93 MB gzipped)",
     licence: "AGPL-3.0",
-    firstSet: "512-642 ms",
-    nextSet: "50-66 ms",
-    firstGet16: "161-293 ms",
-    firstGet56: "146-316 ms",
-    pipeline: "28.0k-29.0k ops/s",
+    firstSet: "574-659 ms",
+    nextSet: "51-75 ms",
+    firstGet16: "263-336 ms",
+    firstGet56: "274-305 ms",
   },
 };
