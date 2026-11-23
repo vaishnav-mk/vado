@@ -13,8 +13,8 @@ This is just an independent, fancy experiment. Don't keep data in it that you ca
 **[Documentation](https://vado-docs.vaishnav.one)**: [quick start](https://vado-docs.vaishnav.one/docs/quick-start),
 [architecture](https://vado-docs.vaishnav.one/docs/architecture), [durability](https://vado-docs.vaishnav.one/docs/durability),
 [operations](https://vado-docs.vaishnav.one/docs/operations), [costs](https://vado-docs.vaishnav.one/docs/operations#costs),
-[limits](https://vado-docs.vaishnav.one/docs/measurements), [Redis](https://vado-docs.vaishnav.one/docs/redis),
-[native Redis](https://vado-docs.vaishnav.one/docs/native), [WebAssembly builds](https://vado-docs.vaishnav.one/docs/wasm).
+[limits](https://vado-docs.vaishnav.one/docs/measurements), [flavours](https://vado-docs.vaishnav.one/docs/flavours),
+[WebAssembly builds](https://vado-docs.vaishnav.one/docs/wasm).
 
 [![Deploy to Cloudflare](https://deploy.workers.cloudflare.com/button)](https://deploy.workers.cloudflare.com/?url=https://github.com/vaishnav-mk/vado)
 
@@ -46,43 +46,36 @@ npm run deploy
 
 For `npm run dev` (http://localhost:5173), copy `.dev.vars.example` to `.dev.vars` and set the password in it.
 
-## Valkey or Redis
+## Flavours
 
-A database picks its server when it's created and keeps it. Both get the same router, sharding, read replicas and
-durability, and the same clients work with either.
+A database picks its flavour when it's created and keeps it: Valkey or Redis, compiled to wasm inside each shard's
+Durable Object, or unmodified in a container beside it. All four share the router, sharding and durability rules, and
+the same clients work with any of them.
 
-- **Valkey 9.1.1** is in every build, and a database created on first use runs it.
-- **Redis 8.12.0** is opt-in: deploy with `VADO_REDIS=1 npm run deploy`, then create the database with
-  `flavour=redis` on the [bench API](https://vado-docs.vaishnav.one/docs/operations#create). The Deploy to Cloudflare
-  button builds Valkey only.
+| | In the Durable Object (wasm) | In a container (native) |
+| --- | --- | --- |
+| **Valkey 9.1.1** | `valkey`, in every build | `valkey-native`, with `VADO_CONTAINERS=1` |
+| **Redis 8.12.0** | `redis`, with `VADO_REDIS=1` | `redis-native`, with both |
 
-More shards, replicas or Redis go through the bench API, which needs `npx wrangler secret put BENCH_TOKEN` first:
+A wasm shard holds 64 MB, sleeps for free and has read replicas. A container shard holds 2 GB; its object stays the
+only durable copy, as a replica that stores the server's replication stream, and a reply leaves only once the writes
+before it are stored. An idle container stops after 10 to 15 minutes and costs about $0.04 an hour while it runs.
+Containers need Docker for the build and run on the `durable_object` scheduling policy, which is in beta. The Deploy to
+Cloudflare button builds Valkey in wasm only.
+
+A database created on first use runs Valkey in wasm. Other flavours, more shards or replicas go through the
+[bench API](https://vado-docs.vaishnav.one/docs/operations#create), which needs `npx wrangler secret put BENCH_TOKEN`
+first:
 
 ```sh
-curl -H "authorization: Bearer $BENCH_TOKEN" "https://<your-worker>.workers.dev/db?db=cache&shards=16&flavour=redis"
+VADO_REDIS=1 VADO_CONTAINERS=1 npm run deploy
+curl -H "authorization: Bearer $BENCH_TOKEN" "https://<your-worker>.workers.dev/db?db=cache&shards=16&flavour=valkey-native"
 ```
 
 `BENCH_TOKEN` can do anything to any database. Keep it unset unless you need it.
 
-`redis.wasm` is under the AGPLv3, which applies to a Worker that carries it
-([what that asks of you](https://vado-docs.vaishnav.one/docs/redis)).
-
-## Native Redis in containers
-
-A third flavour, `redis-native`, runs unmodified Redis 8.12.0 in a Cloudflare Container beside each shard's object,
-for 2 GB per shard instead of 64 MB. The object stays the only durable copy: it is a Redis replica that stores the
-replication stream, and a reply leaves only once the writes before it are stored. A stopped container restores from
-that copy on the next command, and an idle one stops after 10 minutes.
-
-It is opt-in, needs Docker for the build, and runs on Containers' `durable_object` scheduling, which is in beta:
-
-```sh
-VADO_CONTAINERS=1 npm run deploy
-curl -H "authorization: Bearer $BENCH_TOKEN" "https://<your-worker>.workers.dev/db?db=big&shards=16&flavour=redis-native"
-```
-
-No read replicas yet, and a running shard costs about $0.04 an hour on top of its object
-([details](https://vado-docs.vaishnav.one/docs/native)).
+Redis is under the AGPLv3, which applies to a Worker that carries it
+([what that asks of you](https://vado-docs.vaishnav.one/docs/flavours#licence)).
 
 ## Repository
 
@@ -93,7 +86,7 @@ No read replicas yet, and a running shard costs about $0.04 an hour on top of it
 | [`packages/server`](packages/server) | The database: router, shards, replication, catalog, the dashboard's backend |
 | [`packages/client`](packages/client) | ioredis over a service binding, and the WebSocket shim (`ws-shim.mjs`) |
 | [`packages/wasm`](packages/wasm) | Valkey and Redis built to wasm |
-| [`packages/box`](packages/box) | The native Redis image, for the `redis-native` flavour |
+| [`packages/box`](packages/box) | The container image of Valkey or Redis, for the `-native` flavours |
 | [`test`](test) | End-to-end tests; `test/e2e.sh` runs them against a deployment |
 
 `npm run check` formats, lints and type-checks, `npm test` runs the unit tests, and `npm run docs` serves the
