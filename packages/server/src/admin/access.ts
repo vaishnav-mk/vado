@@ -12,7 +12,8 @@ export async function accessUser(
     request.headers.get("cf-access-jwt-assertion") ??
     /(?:^|;\s*)CF_Authorization=([^;]+)/.exec(request.headers.get("cookie") ?? "")?.[1];
 
-  if (!token) return null;
+  // Unset by default (wrangler.jsonc): nobody can be signed in.
+  if (!token || !env.ACCESS_TEAM_DOMAIN || !env.ACCESS_AUD) return null;
   const issuer = new URL(env.ACCESS_TEAM_DOMAIN).origin;
   keys ??= createRemoteJWKSet(new URL("/cdn-cgi/access/certs", issuer));
   const verified = await jwtVerify(token, keys, { issuer, audience: env.ACCESS_AUD }).catch(() => null);
