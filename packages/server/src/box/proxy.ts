@@ -20,7 +20,7 @@ interface Batch {
 export function roleOffset(frame: Uint8Array): number {
   const offset = elements(frame)[1];
 
-  if (offset?.[0] !== 58) throw new Error("ROLE: Redis isn't a master");
+  if (offset?.[0] !== 58) throw new Error("ROLE: the server isn't a primary");
 
   return num(offset, 1, offset.length - 2);
 }

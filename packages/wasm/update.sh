@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Pin a new upstream release in <server>/build.sh and check that its patches still apply.
+# Pin a new upstream release in <server>/build.sh and packages/box/Dockerfile, and check that its patches still apply.
 # See https://vado-docs.vaishnav.one/docs/wasm
 usage="usage: update.sh <valkey|redis> <version, e.g. 9.2.0>"
 SERVER="${1:?$usage}" VERSION="${2:?$usage}"
@@ -19,6 +19,10 @@ OLD=$(sed -n "s/^${VAR}_VERSION=//p" "$BUILD")
 sed -e "s/^${VAR}_VERSION=.*/${VAR}_VERSION=$VERSION/" -e "s/^${VAR}_SHA256=.*/${VAR}_SHA256=$SUM/" "$BUILD" >"$BUILD.tmp"
 cat "$BUILD.tmp" >"$BUILD" && rm "$BUILD.tmp" # cat keeps build.sh's mode
 echo "$SERVER/build.sh: $NAME $OLD -> $VERSION (sha256 $SUM)"
+BOX="$HERE/../../box/Dockerfile"
+sed -e "s/^ARG ${VAR}_VERSION=.*/ARG ${VAR}_VERSION=$VERSION/" -e "s/^ARG ${VAR}_SHA256=.*/ARG ${VAR}_SHA256=$SUM/" "$BOX" >"$BOX.tmp"
+cat "$BOX.tmp" >"$BOX" && rm "$BOX.tmp"
+echo "box/Dockerfile: $NAME $VERSION"
 
 # Each patch applies on top of the ones before it; skip failures so one run lists them all.
 TREE=$(mktemp -d)

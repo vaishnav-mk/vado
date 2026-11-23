@@ -6,19 +6,23 @@ import { infoFields } from "../shard/info";
 import type { VfsProbe } from "../shard/probes";
 import { isolate, SNAPSHOT_INFO } from "../shard/stats";
 import type { DroppedStats, ShardSnapshot, ShardStats } from "../shard/types";
-import { closeWith, encoder, messageOf, noop, withTimeout } from "../shared";
+import { closeWith, encoder, messageOf, withTimeout } from "../shared";
+import { flavourOf, serverOf } from "../catalog/flavours";
 import { Engine } from "./engine";
 import { proxy } from "./proxy";
-import { containerOf } from "./redis";
+import { replace } from "./container";
+import { containerOf } from "./server";
 import { boxStats } from "./stats";
 import { BASE, BoxStore, LOG } from "./store";
 
 const BOOT_MS = 600_000;
-const NOT_HERE = "native Redis databases have no read replicas or wasm probes yet";
+const NOT_HERE = "databases in containers have no read replicas or wasm probes yet";
 
-// One shard of a database on native Redis: the container runs the server, this object stores its replication stream
-// and holds every reply until the writes it depends on are stored (engine.ts, link.ts, proxy.ts).
+// One shard of a database in containers: the container runs the server (Valkey or Redis, from the flavour in this
+// object's name), and this object stores its replication stream and holds every reply until the writes it depends on
+// are stored (engine.ts, link.ts, proxy.ts). The class keeps its first name: renaming it would move every object.
 export class RedisBox extends DurableObject<Env> {
+  readonly #flavour = flavourOf(this.ctx.id.name ?? "");
   readonly #store: BoxStore;
   readonly #instance = crypto.randomUUID();
   readonly #bornAt = Date.now();
@@ -34,16 +38,15 @@ export class RedisBox extends DurableObject<Env> {
     if (this.#store.dropped()) return Promise.reject(new Error("ERR database dropped"));
 
     this.#engine ??= withTimeout(
-      Engine.boot(this.ctx, this.#store, this.env.BOX_MAXMEMORY || "2gb", () => this.#lost()),
+      Engine.boot(this.ctx, this.#store, serverOf(this.#flavour), this.env.BOX_MAXMEMORY || "2gb", () => this.#lost()),
       BOOT_MS,
       "boot",
     ).then(
       (engine) => (this.#running = engine),
       async (e: Error) => {
         console.log(`boot failed: ${e.message}`);
-        // A half-booted container (behind its gate, or with part of a copy) would fail every boot after it; it holds
-        // no acknowledged write this object lacks.
-        await containerOf(this.ctx).destroy("boot failed").catch(noop);
+        // A half-booted container holds no acknowledged write this object lacks; the next boot starts clean.
+        await replace(this.ctx, "boot failed");
         this.#engine = null;
         throw e;
       },
@@ -109,6 +112,7 @@ export class RedisBox extends DurableObject<Env> {
     const gen = this.#store.current()?.gen ?? 0;
 
     return boxStats({
+      flavour: this.#flavour,
       instance: this.#instance,
       version: this.env.VERSION.id,
       bornAt: this.#bornAt,
@@ -131,7 +135,7 @@ export class RedisBox extends DurableObject<Env> {
     this.#store.drop();
     this.#running?.shutdown("dropped");
 
-    if (containerOf(this.ctx).running) await containerOf(this.ctx).destroy("dropped");
+    await replace(this.ctx, "dropped");
   }
 
   replicate(_regions: Hint[]): void {

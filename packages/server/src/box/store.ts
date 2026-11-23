@@ -17,8 +17,16 @@ export const LOG = 1;
 
 export type Kind = typeof BASE | typeof LOG;
 
-// offset: the replication offset the base was taken at; the log continues from it.
-const GenerationSchema = v.object({ gen: v.number(), replid: v.string(), offset: v.number() });
+// replid and offset: the server history and offset the base was taken at. master: the history the log goes on in now,
+// and shift: its offset less the log's length, so the log's last byte is at shift + logged bytes (link.ts). A restored
+// server takes over with a history and offsets of its own.
+const GenerationSchema = v.object({
+  gen: v.number(),
+  replid: v.string(),
+  offset: v.number(),
+  master: v.optional(v.string()),
+  shift: v.optional(v.number()),
+});
 
 export type Generation = v.InferOutput<typeof GenerationSchema>;
 

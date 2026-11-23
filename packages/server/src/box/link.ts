@@ -9,19 +9,27 @@ const ACK_MS = 1_000;
 
 export const FENCE_MS = 15_000;
 
-interface Waiter {
+type Waiter = { offset: number; resolve: () => void; reject: (e: Error) => void };
+
+// Where a stored stream can go on: the history to ask for and the offset of its last stored byte. `only`: a full copy
+// from this server isn't trusted, so a refusal fails the link before any copy.
+export interface Resume {
+  from: Generation;
+  replid: string;
   offset: number;
-  resolve: () => void;
-  reject: (e: Error) => void;
+  only: boolean;
 }
 
-// This object is a replica of the container's Redis. It stores Redis's own replication stream: an RDB, then the
-// effects of every write, which replay deterministically. `received` counts bytes written to storage; the output
-// gate holds anything this object sends afterwards until those writes commit.
+export const CANT_CONTINUE = "the server can't continue the stored stream";
+
+// This object is a replica of the container's server. It stores the server's own replication stream: an RDB, then
+// the effects of every write, which replay deterministically. `received` is the offset of the last byte written to
+// storage; the output gate holds anything this object sends afterwards until those writes commit.
 export class ReplicaLink {
   received = 0;
   broken: Error | null = null;
   generation: Generation = { gen: 0, replid: "", offset: 0 };
+  continued = false; // the stream went on into the stored generation: no new copy
   readonly #reader: ReadableStreamDefaultReader<Uint8Array>;
   readonly #writer: WritableStreamDefaultWriter<Uint8Array>;
   readonly #store: BoxStore;
@@ -39,11 +47,18 @@ export class ReplicaLink {
     this.#store = store;
   }
 
-  // Resolves once a full copy is stored as generation `gen`, with the stream running; the caller makes it current.
-  static async open(socket: Socket, store: BoxStore, gen: number, onBroken: (e: Error) => void): Promise<ReplicaLink> {
+  // Resolves with the stream running: continued from `resume` when the server still has it, else after a full copy
+  // stored as generation `gen`. The caller makes the link's generation current.
+  static async open(
+    socket: Socket,
+    store: BoxStore,
+    gen: number,
+    resume: Resume | null,
+    onBroken: (e: Error) => void,
+  ): Promise<ReplicaLink> {
     const link = new ReplicaLink(socket, store);
 
-    await link.#sync(gen);
+    await link.#sync(gen, resume);
     void link.#stream().catch((e: Error) => link.#break(e, onBroken));
 
     return link;
@@ -95,8 +110,8 @@ export class ReplicaLink {
     this.#socket.close().catch(noop);
   }
 
-  async #sync(gen: number): Promise<void> {
-    // One at a time: Redis refuses PSYNC while replies are still owed on the connection.
+  async #sync(gen: number, resume: Resume | null): Promise<void> {
+    // One at a time: the server refuses PSYNC while replies are still owed on the connection.
     for (const args of [
       ["PING"],
       ["REPLCONF", "listening-port", "6380"],
@@ -108,14 +123,25 @@ export class ReplicaLink {
       if (line.startsWith("-")) throw new Error(`replication handshake: ${line}`);
     }
 
-    await this.#writer.write(command(["PSYNC", "?", "-1"]));
+    // The server answers CONTINUE only if its history holds exactly the bytes after `resume.offset`.
+    await this.#writer.write(
+      command(resume ? ["PSYNC", resume.replid, String(resume.offset + 1)] : ["PSYNC", "?", "-1"]),
+    );
     const [kind, replid = "", offset = "0"] = (await this.#line()).split(" ");
 
-    if (kind !== "+FULLRESYNC") throw new Error(`expected FULLRESYNC, got ${kind}`);
+    if (kind === "+CONTINUE" && resume) {
+      const shift = resume.offset - this.#store.bytes(resume.from.gen, LOG);
 
-    await this.#rdb(gen, await this.#line());
-    this.generation = { gen, replid, offset: Number(offset) };
-    this.received = Number(offset);
+      this.generation = { ...resume.from, master: replid || resume.replid, shift };
+      this.received = resume.offset;
+      this.continued = true;
+    } else if (kind === "+FULLRESYNC") {
+      if (resume?.only) throw new Error(CANT_CONTINUE);
+      await this.#rdb(gen, await this.#line());
+      this.generation = { gen, replid, offset: Number(offset), master: replid, shift: Number(offset) };
+      this.received = Number(offset);
+    } else throw new Error(`expected FULLRESYNC or CONTINUE, got ${kind}`);
+
     this.#ack = setInterval(() => void this.#sendAck(), ACK_MS);
   }
 

@@ -1,4 +1,5 @@
 import { replicaBinding, replicaName, SHARD_BINDINGS } from "../replication/names";
+import { isNative } from "./flavours";
 import type { ShardBinding } from "../replication/names";
 import { isHint, REGION_OF } from "../replication/regions";
 import type { ReplicaNamespace } from "../replication/types";
@@ -28,15 +29,16 @@ const shardObject = (
 ): DurableObjectStub<ValkeyShard> => env[binding].getByName(name, options);
 
 const boxObject = (env: Env, name: string, options: DurableObjectNamespaceGetDurableObjectOptions) =>
-  // SAFETY: RedisBox has ValkeyShard's public methods (wasm-only ones throw) except run(); callers use runRaw.
+  // SAFETY: RedisBox (either native server) has ValkeyShard's public methods, wasm-only ones throwing, except run();
+  // callers use runRaw.
   (env.REDIS_BOX as DurableObjectNamespace<ValkeyShard>).getByName(name, options);
 
 const hintOf = (env: Env, db: Placed, i: ShardIndex) =>
   objectOptions(env, i !== "pubsub" && db.regions ? db.regions[i % db.regions.length] : env.LOCATION_HINT);
 
-// A native database's pub/sub runs on shard 0's Redis: a container of its own would idle at full price.
+// A native database's pub/sub runs on shard 0's server: a container of its own would idle at full price.
 export const shardStub = (env: Env, db: Placed, i: ShardIndex) =>
-  db.flavour === "redis-native"
+  isNative(db.flavour)
     ? boxObject(env, shardName(db, i === "pubsub" ? 0 : i), hintOf(env, db, i === "pubsub" ? 0 : i))
     : shardObject(env, SHARD_BINDINGS[classOf(db, i)], shardName(db, i), hintOf(env, db, i));
 

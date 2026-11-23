@@ -4,7 +4,7 @@ import { decodeAll } from "../../protocol/decode";
 import { command } from "../../protocol/resp";
 import { aofFiles, fileChunks, MANIFEST } from "../../replication/aof-files";
 import { ValkeyHost } from "../host/valkey-host";
-import { serverOf } from "../servers";
+import { wasmOf } from "../servers";
 import { valkeyArgs } from "../valkey-args";
 import { deployedAt } from "../version";
 import { Vfs } from "../vfs/vfs";
@@ -52,7 +52,7 @@ export class ValkeyRewriter extends DurableObject<Env> {
       // import-mode: the base keeps a key that expired after the rewrite started (the shard may have PERSISTed it).
       const preamble = request.rdb ? "yes" : "no";
 
-      const host = new ValkeyHost(serverOf(this.ctx.id.name ?? ""), this.ctx.storage, {
+      const host = new ValkeyHost(wasmOf(this.ctx.id.name ?? ""), this.ctx.storage, {
         args: [...valkeyArgs(this.env, false), "--aof-use-rdb-preamble", preamble, "--import-mode", "yes"],
         log: (l: string) => logs.push(l),
       });

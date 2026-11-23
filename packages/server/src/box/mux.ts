@@ -10,8 +10,8 @@ interface Batch {
   reject: (e: Error) => void;
 }
 
-// One Redis connection shared by every RPC batch of a protocol. Batches pipeline: they're written in call order and
-// Redis answers in that order. Each carries its own ROLE fence, so a slow fence holds back only its own caller.
+// One server connection shared by every RPC batch of a protocol. Batches pipeline: they're written in call order and
+// answered in that order. Each carries its own ROLE fence, so a slow fence holds back only its own caller.
 export class Mux {
   broken: Error | null = null;
   readonly #writer: WritableStreamDefaultWriter<Uint8Array>;
@@ -29,7 +29,7 @@ export class Mux {
       socket,
       () => this.broken === null,
       (f) => this.#frame(f),
-    ).then(() => this.#fail(new Error("Redis closed the shared connection")));
+    ).then(() => this.#fail(new Error("the server closed the shared connection")));
   }
 
   exec(bytes: Uint8Array, count: number): Promise<Uint8Array> {

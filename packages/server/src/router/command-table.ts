@@ -1,12 +1,13 @@
 import { objectOptions } from "../catalog/placement";
-import type { Flavour } from "../catalog/types";
+import { serverOf } from "../catalog/flavours";
+import type { Flavour, Server } from "../catalog/types";
 import { commandTable } from "../protocol/commands";
 import { decodeAll } from "../protocol/decode";
 import { IsolateCache } from "../isolate-cache";
 import type { CommandTable } from "../protocol/types";
 import type { ShardStub } from "./types";
 
-const tables = new IsolateCache<Flavour, CommandTable>();
+const tables = new IsolateCache<Server, CommandTable>();
 
 async function ask(meta: ShardStub): Promise<CommandTable> {
   // runRaw: run's RPC result type is too deep for the checker.
@@ -18,11 +19,10 @@ async function ask(meta: ShardStub): Promise<CommandTable> {
   return commandTable(reply);
 }
 
-export function commands(env: Env, asked: Flavour = "valkey"): Promise<CommandTable> {
-  // A dedicated object keeps COMMAND off data shards; every server of a flavour answers it the same. Native Redis is
-  // the same release as the Redis wasm.
-  const flavour = asked === "redis-native" ? "redis" : asked;
-  const name = flavour === "valkey" ? "__meta" : `__meta.${flavour}`;
+// A dedicated object keeps COMMAND off data shards; every build of a server answers it the same, wasm or native.
+export function commands(env: Env, flavour: Flavour = "valkey"): Promise<CommandTable> {
+  const server = serverOf(flavour);
+  const name = server === "valkey" ? "__meta" : `__meta.${server}`;
 
-  return tables.get(flavour, () => ask(env.SHARD.getByName(name, objectOptions(env))));
+  return tables.get(server, () => ask(env.SHARD.getByName(name, objectOptions(env))));
 }

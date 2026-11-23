@@ -1,7 +1,9 @@
+import type { Flavour } from "../catalog/types";
 import { isolate } from "../shard/stats";
 import type { ShardStats } from "../shard/types";
 
 interface BoxFacts {
+  flavour: Flavour;
   instance: string;
   version: string;
   bornAt: number;
@@ -16,7 +18,7 @@ export const boxStats = (f: BoxFacts): Omit<ShardStats, "files"> => ({
   pooled: 0,
   cronRunning: true,
   vfs: { writes: 0, writeBytes: f.stored, reads: 0, readBytes: 0, rowsWritten: 0 },
-  flavour: "redis-native",
+  flavour: f.flavour,
   instance: f.instance,
   version: f.version,
   isolate: isolate(),

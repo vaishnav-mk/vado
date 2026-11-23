@@ -9,13 +9,14 @@ import { migrate } from "../migrate";
 import { addMissingColumns } from "./legacy";
 import { catalogMigrations } from "./migrations";
 import { parseFlavour } from "./databases";
+import { isFlavour, isNative } from "./flavours";
 import { DB_NAME, DB_NAME_RULE } from "./names";
 import { dbs } from "./schema";
 import type { DatabaseRecord, DatabaseSummary, Epoch, Flavour, Hint } from "./types";
 
 const record = <R extends { flavour: string | null }>(row: R): Omit<R, "flavour"> & { flavour: Flavour } => ({
   ...row,
-  flavour: row.flavour === "redis" || row.flavour === "redis-native" ? row.flavour : "valkey",
+  flavour: isFlavour(row.flavour) ? row.flavour : "valkey",
 });
 
 const hintList = (list: Hint[] | undefined) =>
@@ -65,6 +66,8 @@ export class Catalog extends DurableObject<Env> {
       throw new Error(`classes must be 1..${SHARD_CLASSES}`);
 
     const server = parseFlavour(this.env, flavour);
+
+    if (replicas && isNative(server)) throw new Error("databases in containers have no read replicas yet");
 
     const fresh = {
       name,

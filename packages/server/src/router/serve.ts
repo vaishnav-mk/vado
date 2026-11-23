@@ -1,3 +1,4 @@
+import { serverOf } from "../catalog/flavours";
 import { database, forget, lookup } from "../catalog/databases";
 import { replicaRegion, replicaStub, shardStub } from "../catalog/placement";
 import type { DatabaseRecord } from "../catalog/types";
@@ -63,7 +64,7 @@ async function serveRouter(socket: ClientSocket, env: Env, name: string, conn: L
   try {
     // Most databases need the Valkey table, so ask for it alongside the record.
     const [db, valkey] = await Promise.all([database(env, name), commands(env)]);
-    target = handles(env, db, db.flavour === "valkey" ? valkey : await commands(env, db.flavour));
+    target = handles(env, db, serverOf(db.flavour) === "valkey" ? valkey : await commands(env, db.flavour));
   } catch (cause) {
     const w = socket.writable.getWriter();
     await w.write(errorOf(cause)).catch(noop);

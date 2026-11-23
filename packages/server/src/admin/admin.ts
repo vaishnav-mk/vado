@@ -1,4 +1,5 @@
 // The dashboard's server functions check input shapes, and sign-in for anything that changes something; this checks the rules.
+import { FLAVOUR_NAMES } from "../catalog/flavours";
 import { catalogStub, current, database, existing, parseFlavour } from "../catalog/databases";
 import { DB_NAME, DB_NAME_RULE } from "../catalog/names";
 import { configureReplicas, shardStub } from "../catalog/placement";
@@ -50,7 +51,7 @@ export class Admin {
     const where = hint ? `in ${REGION_NAMES[hint] ?? hint}` : "spread around the world";
     await this.#env.WATCHER.getByName(name).note(
       "action",
-      `Created ${name}, on ${{ valkey: "Valkey", redis: "Redis", "redis-native": "native Redis" }[flavour]}: ${shards} shard${shards === 1 ? "" : "s"}, ${where}${replicas ? ", with read replicas in every region" : ""}`,
+      `Created ${name}, on ${FLAVOUR_NAMES[flavour]}: ${shards} shard${shards === 1 ? "" : "s"}, ${where}${replicas ? ", with read replicas in every region" : ""}`,
     );
 
     return dbView(db);

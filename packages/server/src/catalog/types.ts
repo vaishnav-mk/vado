@@ -1,5 +1,7 @@
-// redis-native: the unmodified server in a container (box/); the others are wasm in the shard object.
-export type Flavour = "valkey" | "redis" | "redis-native";
+export type Server = "valkey" | "redis";
+
+// A server compiled to wasm inside each shard's object, or "-native": unmodified in a container beside it (box/).
+export type Flavour = Server | `${Server}-native`;
 
 export type Hint = "wnam" | "enam" | "sam" | "weur" | "eeur" | "apac" | "apac-ne" | "apac-se" | "oc" | "afr" | "me";
 

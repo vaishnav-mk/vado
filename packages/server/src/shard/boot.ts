@@ -11,7 +11,8 @@ import { PrimaryRole } from "./primary";
 import { ReplicaRole } from "./replica";
 import { resetSoon } from "./reset";
 import type { ValkeyRewriter } from "./rewriter/rewriter";
-import { flavourOf, serverOf } from "./servers";
+import { flavourOf } from "../catalog/flavours";
+import { wasmOf } from "./servers";
 import { Upgrader } from "./upgrade";
 import { valkeyArgs } from "./valkey-args";
 import { deployedAt } from "./version";
@@ -57,7 +58,7 @@ export function bootShard(
 
   migrate(ctx.storage, [...shardMigrations, ...replicationMigrations]);
 
-  const host = new ValkeyHost(serverOf(name), ctx.storage, {
+  const host = new ValkeyHost(wasmOf(name), ctx.storage, {
     args: valkeyArgs(env, replica),
     sync: () => ctx.storage.sync(),
     fatal: (e: Error) => void resetSoon(ctx, e.message),

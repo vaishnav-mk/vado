@@ -9,13 +9,19 @@ import tailwindcss from "@tailwindcss/vite";
 // databases run Valkey.
 const redis = process.env.VADO_REDIS === "1";
 
-// VADO_CONTAINERS=1 adds the container application behind the redis-native flavour (packages/box): Redis 8.12.0 built
-// from packages/box/redis/Dockerfile, or VADO_REDIS_IMAGE, a digest-pinned image in the Cloudflare registry.
+// VADO_CONTAINERS=1 adds the container application behind the -native flavours (packages/box): an image of each server
+// the build carries, from packages/box/Dockerfile, or VADO_VALKEY_IMAGE / VADO_REDIS_IMAGE, digest-pinned images in
+// the Cloudflare registry.
 const containers = process.env.VADO_CONTAINERS === "1";
 
-const redisImage = process.env.VADO_REDIS_IMAGE
-  ? { image: process.env.VADO_REDIS_IMAGE }
-  : { dockerfile: fileURLToPath(new URL("../../packages/box/redis/Dockerfile", import.meta.url)) };
+const servers = redis ? ["valkey", "redis"] : ["valkey"];
+
+const imageOf = (server: string) => {
+  const pinned = process.env[`VADO_${server.toUpperCase()}_IMAGE`];
+  const dockerfile = fileURLToPath(new URL("../../packages/box/Dockerfile", import.meta.url));
+
+  return pinned ? { image: pinned } : { dockerfile, build_vars: { SERVER: server } };
+};
 
 export default defineConfig({
   // From wherever it's loaded (oxlint reads every vite.config.ts from the repository root).
@@ -33,10 +39,10 @@ export default defineConfig({
                 name: process.env.VADO_CONTAINER_APP,
                 class_name: "RedisBox",
                 scheduling_policy: "durable_object",
-                images: { redis: redisImage },
+                images: Object.fromEntries(servers.map((s) => [s, imageOf(s)])),
               },
             ],
-            vars: { ...config.vars, BOX: "1" },
+            vars: { ...config.vars, BOX: servers.join(",") },
           })
         : undefined,
     }),
