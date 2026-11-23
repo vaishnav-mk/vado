@@ -30,7 +30,7 @@ export function ReplicaRow({
         <div className="truncate text-sm font-medium text-kumo-default">{row.name}</div>
         {HOSTED_ELSEWHERE.has(row.region) ? (
           <Tooltip
-            content={`Cloudflare doesn't run Durable Objects in ${row.name} yet, so these copies run in the nearest region that has them.`}
+            content={`Cloudflare doesn't run Durable Objects in ${row.name}, so these copies run in the nearest region that has them.`}
           >
             <div className="cursor-help truncate text-xs text-kumo-subtle underline decoration-dotted underline-offset-2">
               {row.city ? `runs in ${row.city}` : "runs nearby"}

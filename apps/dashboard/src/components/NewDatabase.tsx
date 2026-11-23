@@ -1,13 +1,14 @@
 import { useState, type FormEvent } from "react";
-import { Button, Dialog, Input, Select } from "@cloudflare/kumo";
+import { Button, Dialog, Input, Select, Text } from "@cloudflare/kumo";
 import { PlusIcon } from "@phosphor-icons/react";
 import { useNavigate, useRouter } from "@tanstack/react-router";
+import { DB_NAME_RULE } from "@vado/server/catalog/names.ts";
 import { Guard } from "./Guard";
 import { createDatabase } from "../server/admin";
 import { useAction } from "../lib/hooks";
 import type { Options } from "../lib/types";
 
-const SHARDS = { 1: "1 shard (64 MB)", 4: "4 shards (256 MB)", 16: "16 shards (1 GB)", 64: "64 shards (4 GB)" };
+const SHARDS = { 1: "1 shard", 4: "4 shards", 16: "16 shards", 64: "64 shards" };
 
 const SERVERS = new Map([
   ["valkey", "Valkey 9.1"],
@@ -26,7 +27,11 @@ export function NewDatabase({ options: { regions, flavours } }: { options: Optio
   const [place, setPlace] = useState(() => (regions.weur ? "weur" : (Object.keys(regions)[0] ?? "world"))),
     [copies, setCopies] = useState("yes");
 
-  const { busy, error, run } = useAction();
+  const { busy, error, setError, run } = useAction();
+
+  const n = name.trim(),
+    nameError =
+      error && [DB_NAME_RULE, `${n} already exists`, `database ${n} was dropped`].includes(error) ? error : undefined;
 
   const navigate = useNavigate(),
     router = useRouter();
@@ -35,7 +40,7 @@ export function NewDatabase({ options: { regions, flavours } }: { options: Optio
     e.preventDefault();
     void run(async () => {
       const db = await createDatabase({
-        data: { name: name.trim(), shards: Number(shards), place, replicas: copies === "yes", flavour },
+        data: { name: n, shards: Number(shards), place, replicas: copies === "yes", flavour },
       });
 
       setOpen(false);
@@ -46,7 +51,14 @@ export function NewDatabase({ options: { regions, flavours } }: { options: Optio
   };
 
   return (
-    <Dialog.Root open={open} onOpenChange={setOpen}>
+    <Dialog.Root
+      open={open}
+      onOpenChange={(o) => {
+        setOpen(o);
+
+        if (o) setError(null);
+      }}
+    >
       <Guard action="create a database">
         {(disabled) => (
           <Dialog.Trigger
@@ -69,12 +81,15 @@ export function NewDatabase({ options: { regions, flavours } }: { options: Optio
             label="Name"
             placeholder="sessions"
             value={name}
-            onChange={(e) => setName(e.target.value)}
+            onChange={(e) => {
+              setName(e.target.value);
+              setError(null);
+            }}
             autoComplete="off"
             spellCheck={false}
             description="Lowercase letters, digits, - and _"
-            error={error ?? undefined}
-            variant={error ? "error" : "default"}
+            error={nameError}
+            variant={nameError ? "error" : "default"}
           />
           <div className={ROW}>
             {flavours.length > 1 && (
@@ -93,7 +108,7 @@ export function NewDatabase({ options: { regions, flavours } }: { options: Optio
               value={shards}
               onValueChange={(v) => v && setShards(v)}
               items={SHARDS}
-              description="Keys spread evenly over them"
+              description="Slots spread evenly over them"
             />
           </div>
           <div className={ROW}>
@@ -103,7 +118,7 @@ export function NewDatabase({ options: { regions, flavours } }: { options: Optio
               value={place}
               onValueChange={(v) => v && setPlace(v)}
               items={{ world: "Spread around the world", ...regions }}
-              description="Shards never move"
+              description="Placement is fixed at creation"
             />
             <Select
               label="Read replicas"
@@ -114,6 +129,11 @@ export function NewDatabase({ options: { regions, flavours } }: { options: Optio
               description="Reads go to the nearest copy"
             />
           </div>
+          {error && !nameError && (
+            <Text variant="error" size="sm">
+              {error}
+            </Text>
+          )}
           <div className="mt-1 flex justify-end gap-2">
             <Dialog.Close
               render={(p) => (
@@ -122,7 +142,7 @@ export function NewDatabase({ options: { regions, flavours } }: { options: Optio
                 </Button>
               )}
             />
-            <Button type="submit" variant="primary" loading={busy} disabled={!name.trim()}>
+            <Button type="submit" variant="primary" loading={busy} disabled={!n}>
               Create
             </Button>
           </div>
