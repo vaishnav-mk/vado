@@ -14,6 +14,8 @@ permissions:
 
 jobs:
   check:
+    # Deploy to Cloudflare copies this repository; the copies shouldn't build wasm or open issues every week.
+    if: github.repository == 'vaishnav-mk/vado'
     runs-on: ubuntu-latest
     timeout-minutes: 30
     env:
@@ -76,7 +78,7 @@ jobs:
               if node packages/wasm/interface.mjs packages/wasm/valkey/build/valkey.wasm --check packages/wasm/valkey/interface.txt >interface.log 2>&1; then
                 echo "- Interface: unchanged."
               else
-                echo "- Interface: **changed**, the JS host (src/shard/valkey-host.js) may need updating:"
+                echo "- Interface: **changed**, the JS host (packages/server/src/shard/host/valkey-host.ts) may need updating:"
                 echo
                 echo '```diff'
                 cat interface.log
@@ -89,7 +91,7 @@ jobs:
             echo
             details "update.sh output" update.log
             [ "$built" = failed ] && details "build.sh output (last 60 lines)" build.log
-            echo "To bump: \`packages/wasm/update.sh valkey $LATEST\`, fix any patches, rebuild, copy \`packages/wasm/valkey/build/valkey.wasm\` to \`packages/wasm/valkey/valkey.wasm\`, regenerate \`packages/wasm/valkey/interface.txt\` (see wasm/README.md)."
+            echo "To bump: \`packages/wasm/update.sh valkey $LATEST\`, fix any patches, rebuild, copy \`packages/wasm/valkey/build/valkey.wasm\` to \`packages/wasm/valkey/valkey.wasm\`, regenerate \`packages/wasm/valkey/interface.txt\` (see packages/wasm/README.md)."
           } >issue.md
           cat issue.md
           gh issue create --repo "$GITHUB_REPOSITORY" --title "Valkey $LATEST is out" --body-file issue.md
