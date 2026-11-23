@@ -1,0 +1,50 @@
+@import url("https://fonts.googleapis.com/css2?family=Inter:wght@400;450;500;550;600;650;700&family=JetBrains+Mono:wght@400;500&display=swap");
+@import "tailwindcss";
+@import "./styles/base.css";
+@import "./styles/doc.css";
+@import "./styles/blocks.css";
+@import "./styles/diagrams.css";
+@import "./styles/slots.css";
+
+@theme inline {
+  --color-paper: var(--paper);
+  --color-card: var(--card);
+  --color-wash: var(--wash);
+  --color-ink: var(--ink);
+  --color-soft: var(--soft);
+  --color-muted: var(--muted);
+  --color-line: var(--line);
+  --color-accent: var(--accent);
+  --color-deep: var(--deep);
+  --color-tint: var(--tint);
+  --font-sans: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, monospace;
+}
+
+:root {
+  color-scheme: light;
+  --paper: #f8f8f5;
+  --card: #ffffff;
+  --wash: #eeefeb;
+  --ink: #17191a;
+  --soft: #3e4446;
+  --muted: #687074;
+  --line: #e0e2dd;
+  --accent: #0e8f83;
+  --deep: #0a6a61;
+  --tint: #e2f3ef;
+}
+
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --paper: #131615;
+  --card: #1a1e1d;
+  --wash: #232927;
+  --ink: #edf2f0;
+  --soft: #bec8c4;
+  --muted: #93a09b;
+  --line: #303836;
+  --accent: #4ccfbd;
+  --deep: #7fdfd1;
+  --tint: #16302b;
+}

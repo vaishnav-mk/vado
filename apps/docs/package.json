@@ -1,0 +1,29 @@
+{
+  "name": "@vado/docs",
+  "version": "0.0.0",
+  "private": true,
+  "description": "The vado documentation site: TanStack Start, React and Tailwind CSS, deployed as its own Worker",
+  "license": "Apache-2.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vp dev",
+    "build": "vp build",
+    "preview": "vp preview"
+  },
+  "dependencies": {
+    "@phosphor-icons/react": "^2.1.10",
+    "@tanstack/react-router": "^1.170.46",
+    "@tanstack/react-start": "~1.169.7",
+    "@vado/server": "*",
+    "react": "^19.3.1",
+    "react-dom": "^19.3.1"
+  },
+  "devDependencies": {
+    "@cloudflare/vite-plugin": "~1.70.1",
+    "@tailwindcss/vite": "^4.3.5",
+    "@types/react": "^19.3.0",
+    "@types/react-dom": "^19.3.0",
+    "@vitejs/plugin-react": "^6.3.0",
+    "tailwindcss": "^4.3.5"
+  }
+}

@@ -1,0 +1,67 @@
+.slot-demo {
+  padding: 20px 22px;
+}
+
+.slot-inputs {
+  display: grid;
+  grid-template-columns: 1fr 1fr auto;
+  gap: 12px;
+  font-size: 12px;
+}
+
+.slot-inputs label {
+  display: grid;
+  gap: 4px;
+  color: var(--muted);
+}
+
+.slot-inputs input,
+.slot-inputs select {
+  width: 100%;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--card);
+  color: var(--ink);
+  padding: 5px 9px;
+  font: 12px var(--font-mono);
+}
+
+.shard-grid {
+  display: grid;
+  grid-template-columns: repeat(16, 1fr);
+  gap: 5px;
+  margin: 17px 0;
+}
+
+.shard-cell {
+  height: 21px;
+  border: 1px solid var(--line);
+  background: var(--wash);
+  border-radius: 3px;
+  display: grid;
+  place-items: center;
+  font: 8px var(--font-mono);
+  color: var(--muted);
+}
+
+.shard-cell[data-hit="true"] {
+  background: var(--tint);
+  border-color: var(--accent);
+  color: var(--deep);
+}
+
+.slot-caption {
+  font-size: 12px;
+  line-height: 1.8;
+  color: var(--soft);
+}
+
+@media (max-width: 767px) {
+  .slot-inputs {
+    grid-template-columns: 1fr;
+  }
+
+  .shard-grid {
+    grid-template-columns: repeat(8, 1fr);
+  }
+}

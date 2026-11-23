@@ -15,9 +15,10 @@
   "type": "module",
   "scripts": {
     "dev": "npm run dev -w @vado/dashboard",
+    "docs": "npm run dev -w @vado/docs",
     "build": "npm run build -w @vado/dashboard",
     "deploy": "npm run build && wrangler deploy -c apps/dashboard/dist/server/wrangler.json",
-    "check": "vp check && tsrs --noEmit --fast && tsrs --noEmit --fast -p apps/dashboard",
+    "check": "vp check && tsrs --noEmit --fast && tsrs --noEmit --fast -p apps/dashboard && tsrs --noEmit --fast -p apps/docs",
     "test": "vp test"
   },
   "devDependencies": {
