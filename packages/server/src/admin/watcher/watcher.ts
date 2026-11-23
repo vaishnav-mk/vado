@@ -4,10 +4,12 @@ import { DurabilityAlarms } from "durability";
 import { DurabilitySocket, event } from "durability/socket";
 import * as v from "valibot";
 import { existing } from "../../catalog/databases";
+import { replicaRegion } from "../../catalog/placement";
+import { shardOfSlot, slotOf } from "../../protocol/slots";
 import { coloOf } from "../../replication/regions";
 import { commands } from "../../router/command-table";
-import { messageOf } from "../../shared";
-import { WATCH_HISTORY, WATCH_MS, WATCH_REPLAY } from "../config";
+import { encoder, messageOf } from "../../shared";
+import { PROBE_KEY, WATCH_HISTORY, WATCH_MS, WATCH_REPLAY } from "../config";
 import type { EventKind, LiveSnapshot, LiveState, Point, TestLevel, TestView, Tick } from "../live-types";
 import { shardSnapshots } from "../snapshot";
 import { dbView, place, shardView } from "../views";
@@ -142,6 +144,7 @@ export class Watcher extends DurableObject<Env> {
       shards: last?.shards ?? [],
       entries: last?.map.entries ?? [],
       probes: this.#prober.samples,
+      probeAt: null,
       writes,
       test: null,
     };
@@ -161,6 +164,10 @@ export class Watcher extends DurableObject<Env> {
       ]);
 
       reading.watcher = place(colo);
+      reading.probeAt = {
+        shard: shardOfSlot(slotOf(encoder.encode(PROBE_KEY)), record.shards),
+        replica: colo ? replicaRegion(record, colo) : null,
+      };
 
       const seen = this.#shards.see(
         looks.map((s, i) => shardView(s, i, table)),

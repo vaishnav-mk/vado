@@ -128,6 +128,9 @@ export interface Probe {
   writeMs: number | null;
   writes: boolean;
   failed: number;
+  shard: number | null;
+  // The region whose replica answered the probe's reads; null when the shard did.
+  replica: string | null;
 }
 
 export interface LiveState {

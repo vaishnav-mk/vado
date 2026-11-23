@@ -11,6 +11,7 @@ export interface Reading {
   shards: Shard[];
   entries: Entry[];
   probes: ProbeSample[];
+  probeAt: { shard: number; replica: string | null } | null;
   writes: boolean;
   test: TestView | null;
 }
@@ -50,6 +51,11 @@ export function buildState(r: Reading): LiveState {
   const replicas = r.shards.flatMap((s) => s.replicas);
   const ready = replicas.filter((x) => x.state === "ready");
   const measured = r.probes.flatMap((p) => ("failed" in p ? [] : [p]));
+  const at = r.probeAt;
+
+  // The router reads from a replica only while it's ready, else from the shard.
+  const served =
+    at?.replica && r.shards[at.shard]?.replicas.some((x) => x.region === at.replica && x.state === "ready");
 
   return {
     at: r.at,
@@ -75,6 +81,8 @@ export function buildState(r: Reading): LiveState {
       writeMs: median(measured.flatMap((p) => (p.writeMs === null ? [] : [p.writeMs]))),
       writes: r.writes,
       failed: r.probes.length - measured.length,
+      shard: at?.shard ?? null,
+      replica: served ? (at?.replica ?? null) : null,
     },
     shards: r.shards,
     map: { entries: r.entries },

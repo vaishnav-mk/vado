@@ -42,6 +42,20 @@ export function Stats({ state, reads }: { state: LiveState | null; reads: number
   const probe = state?.probe,
     where = state?.watcher?.city;
 
+  // Name what answered the probe's reads, so "from Singapore" isn't read as "served in Singapore".
+  const probed = probe && probe.shard !== null ? state?.shards[probe.shard] : undefined,
+    copy = probe?.replica ? probed?.replicas.find((r) => r.region === probe.replica) : undefined;
+
+  const target = copy
+    ? `the replica in ${copy.city ?? copy.regionName}`
+    : probed && `shard ${probed.i}${probed.city ? ` in ${probed.city}` : ""}`;
+
+  const read = `${where ? `From ${where}` : "Reads"}${target ? ` to ${target}` : ""}.`,
+    write =
+      probe?.writes === false
+        ? "Sign in to time writes."
+        : `Writes ${ms(probe?.writeMs)}${copy && probed?.city ? `, to ${probed.city}` : ""}.`;
+
   const reps = replicaCounts(state?.shards);
   const share = reads && t?.replicaReads ? Math.round((100 * t.replicaReads) / reads) : null;
 
@@ -55,11 +69,7 @@ export function Stats({ state, reads }: { state: LiveState | null; reads: number
       <Stat
         title="Response time"
         value={ms(probe?.readMs)}
-        hint={
-          probe
-            ? `Reads${where ? ` from ${where}` : ""}. ${probe.writes === false ? "Sign in to time writes." : `Writes ${ms(probe.writeMs)}.`}${probe.failed ? ` ${probe.failed} failed.` : ""}`
-            : undefined
-        }
+        hint={probe ? `${read} ${write}${probe.failed ? ` ${probe.failed} failed.` : ""}` : undefined}
       />
       <Stat
         title="Keys"

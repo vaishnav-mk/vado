@@ -78,6 +78,7 @@ const reading = (r: Partial<Reading>): Reading => ({
   shards: [],
   entries: [],
   probes: [],
+  probeAt: null,
   writes: false,
   test: null,
   ...r,
@@ -99,7 +100,7 @@ test("totals add up the shards that answered, and replica lag is the worst ready
   expect(s.restarting).toBe(1);
   expect(s.totals).toMatchObject({ reads: 4.04, writes: 4, replicaReads: 7, keys: 20, replicas: 2, replicasReady: 1 });
   expect(s.totals.replicaLagMs).toBe(40);
-  expect(s.probe).toEqual({ readMs: 4, writeMs: 6, writes: false, failed: 1 });
+  expect(s.probe).toEqual({ readMs: 4, writeMs: 6, writes: false, failed: 1, shard: null, replica: null });
   expect(point(s)).toEqual({ t: 100_000, reads: 11, writes: 4, replicaReads: 7, readMs: 4, writeMs: 6 });
 });
 
@@ -108,4 +109,13 @@ test("health", () => {
   expect(buildState(reading({ shards: [shard(0, 0)] })).health).toBe("healthy");
   expect(buildState(reading({ shards: [{ ...shard(0, 0), restartedAt: 95_000 }] })).health).toBe("restarting");
   expect(buildState(reading({ error: "no", shards: [shard(0, 0)] })).health).toBe("unreachable");
+});
+
+test("the probe names the replica that read only while it's ready, else the shard read", () => {
+  const at = (state: Replica["state"]) =>
+    buildState(reading({ shards: [shard(0, 1, [replica(state, 5, 0)])], probeAt: { shard: 0, replica: "weur" } }))
+      .probe;
+
+  expect(at("ready")).toMatchObject({ shard: 0, replica: "weur" });
+  expect(at("asleep")).toMatchObject({ shard: 0, replica: null });
 });
