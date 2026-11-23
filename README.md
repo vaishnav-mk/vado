@@ -7,7 +7,7 @@ append-only file in the object's SQLite. A router in the Worker spreads keys ove
 `valkey-cli`, `redis-cli`, ioredis and `valkey-benchmark` see one ordinary server. The same Worker serves a live
 dashboard.
 
-Experimental. An independent project, not an official Cloudflare or Valkey product.
+This is just an independent, fancy experiment
 
 **[Documentation](https://vado-docs.vaishnav.one)**: [quick start](https://vado-docs.vaishnav.one/docs/quick-start),
 [architecture](https://vado-docs.vaishnav.one/docs/architecture), [durability](https://vado-docs.vaishnav.one/docs/durability),
