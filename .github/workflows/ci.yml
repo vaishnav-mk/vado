@@ -26,3 +26,5 @@ jobs:
       - run: npm run check
       - run: npx vp test
       - run: npm run build
+      # Kumo's classes come from scanning its package (apps/dashboard/src/styles.css); a wrong path builds unstyled.
+      - run: grep -q "bg-kumo-badge-blue" apps/dashboard/dist/client/assets/*.css
