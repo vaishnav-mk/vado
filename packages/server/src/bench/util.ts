@@ -4,6 +4,7 @@ import { RespClient } from "../protocol/resp-client";
 import type { Reply } from "../protocol/types";
 import type { ShardStats } from "../shard/types";
 import { openLocal } from "../router/local";
+import { failure } from "../shared";
 
 export const dbName = (q: URLSearchParams): string => q.get("db") ?? "default";
 
@@ -26,8 +27,6 @@ export function text(r: Reply): string {
 
   return String(r);
 }
-
-export const failure = (r: Reply): string | null => (r instanceof Object && "err" in r ? r.err : null);
 
 export async function allShards<T>(
   env: Env,

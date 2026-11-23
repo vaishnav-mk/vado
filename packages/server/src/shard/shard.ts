@@ -1,13 +1,12 @@
 import { DurableObject } from "cloudflare:workers";
 import { DurabilityScheduler } from "durability";
 import { drizzle } from "drizzle-orm/durable-sqlite";
+import { replicaNamespace } from "../catalog/placement";
 import type { Hint } from "../catalog/types";
 import { decodeAll } from "../protocol/decode";
 import { command, concat, str } from "../protocol/resp";
 import type { CommandArg, Reply } from "../protocol/types";
-import { replicaBinding } from "../replication/names";
 import { coloOf } from "../replication/regions";
-import type { ReplicaNamespace } from "../replication/types";
 import { bootShard } from "./boot";
 import type { LiveShard } from "./boot";
 import type { PrimaryRole } from "./primary";
@@ -18,14 +17,7 @@ import { droppedStats, isolate, SNAPSHOT_INFO, snapshotOf } from "./stats";
 import { bury, isDropped } from "./tombstone";
 import type { DroppedStats, ShardSnapshot, ShardStats } from "./types";
 import { dialedFrom, RESTARTING } from "./version";
-import { encoder, noop } from "../shared";
-
-async function closeWith(socket: Socket, text: string | null): Promise<void> {
-  const writer = socket.writable.getWriter();
-
-  if (text) await writer.write(encoder.encode(text)).catch(noop);
-  await writer.close().catch(noop);
-}
+import { closeWith, encoder, noop } from "../shared";
 
 export class ValkeyShard extends DurableObject<Env> {
   static readonly shardClass: number = 0;
@@ -42,12 +34,7 @@ export class ValkeyShard extends DurableObject<Env> {
     if (isDropped(ctx.storage.sql)) return;
 
     const shardClass = new.target.shardClass;
-
-    const replicas: ReplicaNamespace = {
-      getByName: (name, options) => env[replicaBinding(shardClass)].getByName(name, options),
-    };
-
-    this.#shard = bootShard(ctx, env, this.#db, this.#scheduler, shardClass, replicas);
+    this.#shard = bootShard(ctx, env, this.#db, this.#scheduler, shardClass, replicaNamespace(env, shardClass));
   }
 
   override alarm(info?: AlarmInvocationInfo): Promise<void> {
@@ -128,7 +115,7 @@ export class ValkeyShard extends DurableObject<Env> {
     const address = (await socket.opened).localAddress ?? "";
     const shard = this.#shard;
 
-    if (!shard) return await closeWith(socket, "-ERR database dropped\r\n");
+    if (!shard) return await closeWith(socket, encoder.encode("-ERR database dropped\r\n"));
 
     if (shard.replica) {
       if (address.startsWith("repl")) return await shard.replica.stream(socket, address);
@@ -144,7 +131,7 @@ export class ValkeyShard extends DurableObject<Env> {
     else shard.upgrader.upgradeTo(caller).catch((e: Error) => console.log(`upgrade: ${e.stack}`));
 
     // upgradeTo sets it synchronously.
-    if (shard.upgrader.restarting) return await closeWith(socket, marker && marker + marker);
+    if (shard.upgrader.restarting) return await closeWith(socket, marker ? encoder.encode(marker + marker) : null);
     shard.primary?.repl.wake();
     await shard.host.serve(socket, greeting, false, marker);
   }

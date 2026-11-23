@@ -1,6 +1,7 @@
 import { coloOf } from "../replication/regions";
 import { PULSE_MS } from "./config";
 import type { RouterView, Via, Where } from "./types";
+import { isolate } from "../shard/stats";
 import { noop } from "../shared";
 
 export interface LiveConn {
@@ -13,7 +14,6 @@ export interface LiveConn {
 }
 
 export interface Live {
-  isolate: string | null;
   colo: string | null;
   coloTried: number;
   conns: Map<string, LiveConn>;
@@ -21,7 +21,7 @@ export interface Live {
   done: Record<string, number>;
 }
 
-export const live: Live = { isolate: null, colo: null, coloTried: 0, conns: new Map(), flushed: 0, done: {} };
+export const live: Live = { colo: null, coloTried: 0, conns: new Map(), flushed: 0, done: {} };
 
 const COLO_RETRY_MS = 10_000;
 
@@ -50,6 +50,5 @@ export function report(env: Env, minGap = PULSE_MS): void {
 
   const pulse = env.PULSE.getByName("pulse");
 
-  live.isolate ??= crypto.randomUUID();
-  pulse.report({ isolate: live.isolate, colo: live.colo, conns, done: live.done }).catch(noop);
+  pulse.report({ isolate: isolate(), colo: live.colo, conns, done: live.done }).catch(noop);
 }

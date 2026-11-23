@@ -1,7 +1,7 @@
 import type { RespClient } from "../protocol/resp-client";
-import { noop } from "../shared";
+import { failure, noop } from "../shared";
 import type { Test } from "./types";
-import { alive, allShards, dbName, failure, num, open, pct } from "./util";
+import { alive, allShards, dbName, num, open, pct } from "./util";
 
 async function writeKeys(c: RespClient, prefix: string, tag: string, n: number, batch: number): Promise<number> {
   let acked = 0;

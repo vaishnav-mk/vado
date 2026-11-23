@@ -3,12 +3,14 @@ import type { RespClient } from "../../protocol/resp-client";
 import { openLocal } from "../../router/local";
 import { PROBE_KEY, PROBE_STALL_MS, WATCH_RATE_POLLS } from "../config";
 import { keep, type ProbeSample } from "./state";
+import { failure } from "../../shared";
 
 async function timed(c: RespClient, argv: string[]): Promise<number> {
   const t = performance.now();
   const [r] = await c.call(argv);
+  const err = failure(r);
 
-  if (r instanceof Object && "err" in r) throw new Error(r.err);
+  if (err !== null) throw new Error(err);
 
   return performance.now() - t;
 }

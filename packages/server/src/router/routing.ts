@@ -9,7 +9,7 @@ import { split } from "./split";
 import type { UpKey } from "./types";
 
 // May go to a replica, and again to the primary if that fails.
-export const retryable = (c: Conn, entry: CommandEntry) =>
+const retryable = (c: Conn, entry: CommandEntry) =>
   entry.flags.has("readonly") && !entry.flags.has("blocking") && !c.tx.pinned;
 
 export function forward(c: Conn, shard: number, raw: Uint8Array, retry = false, s: Slot = c.replies.slot()): void {
@@ -33,9 +33,8 @@ export function forward(c: Conn, shard: number, raw: Uint8Array, retry = false, 
 
 function readFrom(c: Conn, shard: number): UpKey {
   if (!c.db.replicas || c.tx.pinned) return shard;
-  const now = Date.now();
 
-  if (c.writes.recent(shard, now) || replicaResting(c.db.name, shard, now)) return shard;
+  if (c.writes.recent(shard, c.now) || replicaResting(c.db.name, shard, c.now)) return shard;
   const key: UpKey = `r${shard}`;
 
   return c.pool.has(key) || c.target.replica(shard) ? key : shard;

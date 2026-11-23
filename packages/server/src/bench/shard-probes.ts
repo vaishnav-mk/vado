@@ -3,8 +3,8 @@ import { shardStub } from "../catalog/placement";
 import { command, concat } from "../protocol/resp";
 import { decodeAll } from "../protocol/decode";
 import type { Test } from "./types";
-import { messageOf, sleep } from "../shared";
-import { dbName, failure, liveStats, num, open, pct, text } from "./util";
+import { failure, messageOf, sleep } from "../shared";
+import { dbName, liveStats, num, open, pct, text } from "./util";
 
 const shardZero = async (env: Env, q: URLSearchParams) => shardStub(env, await database(env, dbName(q)), 0);
 

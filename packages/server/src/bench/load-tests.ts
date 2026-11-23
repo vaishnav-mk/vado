@@ -1,9 +1,9 @@
 import type { RespClient } from "../protocol/resp-client";
 import type { Reply } from "../protocol/types";
 import { connectLocal } from "../router/local";
-import { messageOf } from "../shared";
+import { failure, messageOf } from "../shared";
 import type { Test } from "./types";
-import { dbName, failure, num, open, pct } from "./util";
+import { dbName, num, open, pct } from "./util";
 
 const throughput: Test = async (env, q) => {
   const n = num(q, "n", 100000),

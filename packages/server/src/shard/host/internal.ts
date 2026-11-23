@@ -1,13 +1,12 @@
 // Clients are pooled, so commands that leave connection state behind (WATCH, SUBSCRIBE) must never come here.
-import { EMPTY, frameEnd, HELLO3 } from "../../protocol/resp";
+import { command, EMPTY, frameEnd, HELLO3 } from "../../protocol/resp";
 import { POOL_MAX } from "./config";
 import { Gauge } from "./gauge";
 import type { Loop } from "./loop";
 import type { Sockets } from "./sockets";
 import type { PooledClient, Protocol } from "./types";
-import { encoder } from "../../shared";
 
-const QUIT = encoder.encode("*1\r\n$4\r\nQUIT\r\n");
+const QUIT = command(["QUIT"]);
 const WRITTEN = Promise.resolve();
 const PUSH = 62; // ">": RESP3 pushes aren't replies
 

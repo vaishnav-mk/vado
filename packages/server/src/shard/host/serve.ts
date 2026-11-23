@@ -3,7 +3,7 @@ import { type Gauge, within } from "./gauge";
 import type { Loop } from "./loop";
 import type { Sockets } from "./sockets";
 import type { ByteSocket, DrainReport, HostSocket, InputSink } from "./types";
-import { encoder } from "../../shared";
+import { encoder, noop } from "../../shared";
 
 // A quiet socket's leftover input is dropped at its end: old commands must not run after the next copy's FLUSHALL.
 export async function serve(
@@ -17,7 +17,7 @@ export async function serve(
 ): Promise<void> {
   const writer = socket.writable.getWriter();
 
-  if (greeting) writer.write(encoder.encode(greeting)).catch(() => {});
+  if (greeting) writer.write(encoder.encode(greeting)).catch(noop);
   const s = sockets.add(writer, false);
   loop.updateTimer();
   loop.schedule();
@@ -27,8 +27,8 @@ export async function serve(
   });
   await s.closed.promise;
 
-  if (sockets.draining && farewell) await writer.write(encoder.encode(farewell)).catch(() => {});
-  await writer.close().catch(() => {});
+  if (sockets.draining && farewell) await writer.write(encoder.encode(farewell)).catch(noop);
+  await writer.close().catch(noop);
   s.finished.resolve();
 }
 
@@ -104,7 +104,7 @@ export async function drain(
   for (const s of clients) s.eof = true;
 
   for (let i = 0; i < 4; i++) loop.step();
-  const finished = Promise.all(clients.map((s) => s.finished.promise)).then(() => {});
+  const finished = Promise.all(clients.map((s) => s.finished.promise)).then(noop);
 
   return { clients: clients.length, closed: await within(finished, 5000) };
 }

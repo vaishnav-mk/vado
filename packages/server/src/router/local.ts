@@ -2,6 +2,7 @@ import { RespClient } from "../protocol/resp-client";
 import { serve } from "./serve";
 import { socketPair } from "./socket-pair";
 import type { ClientSocket } from "./types";
+import { failure } from "../shared";
 
 // Trusted like a service binding: it's our own code.
 export function connectLocal(env: Env, name: string): ClientSocket {
@@ -16,10 +17,11 @@ export async function openLocal(env: Env, name: string, stallMs?: number): Promi
 
   if (env.VALKEY_PASSWORD) {
     const [reply] = await client.call(["AUTH", env.VALKEY_PASSWORD]);
+    const err = failure(reply);
 
-    if (reply instanceof Object && "err" in reply) {
+    if (err !== null) {
       client.close();
-      throw new Error(`AUTH: ${reply.err}`);
+      throw new Error(`AUTH: ${err}`);
     }
   }
 

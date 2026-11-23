@@ -17,14 +17,6 @@ export interface ReplicatorShard {
   schedule(at: number): void;
 }
 
-export interface ShardRpc {
-  replicate(regions: Hint[]): void | Promise<void>;
-  waitReplicas(n: number, ms: number): number | Promise<number>;
-  replicaReady(): (string | null) | Promise<string | null>;
-  replicaIdleMs(): number | Promise<number>;
-  retire(): void | Promise<void>;
-}
-
 export interface ReplicaStub {
   connect(address: string): Socket;
   replicaReady(): Promise<string | null>;

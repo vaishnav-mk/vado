@@ -10,7 +10,7 @@ import { deployedAt } from "../version";
 import { Vfs } from "../vfs/vfs";
 import { FNV0, fnv, line, readExactly, readLine } from "./protocol";
 import type { RewriteRequest } from "./protocol";
-import { encoder, messageOf, noop } from "../../shared";
+import { closeWith, encoder, failure, messageOf, noop } from "../../shared";
 
 async function receiveFiles(
   vfs: Vfs,
@@ -37,15 +37,9 @@ export class ValkeyRewriter extends DurableObject<Env> {
   }
 
   override async connect(socket: Socket): Promise<void> {
+    if (this.#busy) return await closeWith(socket, line({ error: "busy" }));
     const writer = socket.writable.getWriter();
     const reader = socket.readable.getReader();
-
-    if (this.#busy) {
-      await writer.write(line({ error: "busy" })).catch(noop);
-
-      return await writer.close().catch(noop);
-    }
-
     this.#busy = true;
     let streaming = false; // after the size line, an error can only cut the base short
     const logs: string[] = [];
@@ -64,8 +58,9 @@ export class ValkeyRewriter extends DurableObject<Env> {
       });
 
       const [reply] = decodeAll(await host.execBatch(command(["BGREWRITEAOF"]), 1));
+      const err = failure(reply);
 
-      if (reply instanceof Object && "err" in reply) throw new Error(reply.err);
+      if (err !== null) throw new Error(err);
       const { base } = aofFiles(host);
 
       if (!base) throw new Error("no base after the rewrite");
