@@ -14,7 +14,7 @@ This is just an independent, fancy experiment. Don't keep data in it that you ca
 [architecture](https://vado-docs.vaishnav.one/docs/architecture), [durability](https://vado-docs.vaishnav.one/docs/durability),
 [operations](https://vado-docs.vaishnav.one/docs/operations), [costs](https://vado-docs.vaishnav.one/docs/operations#costs),
 [limits](https://vado-docs.vaishnav.one/docs/measurements), [Redis](https://vado-docs.vaishnav.one/docs/redis),
-[WebAssembly builds](https://vado-docs.vaishnav.one/docs/wasm).
+[native Redis](https://vado-docs.vaishnav.one/docs/native), [WebAssembly builds](https://vado-docs.vaishnav.one/docs/wasm).
 
 [![Deploy to Cloudflare](https://deploy.workers.cloudflare.com/button)](https://deploy.workers.cloudflare.com/?url=https://github.com/vaishnav-mk/vado)
 
@@ -67,6 +67,23 @@ curl -H "authorization: Bearer $BENCH_TOKEN" "https://<your-worker>.workers.dev/
 `redis.wasm` is under the AGPLv3, which applies to a Worker that carries it
 ([what that asks of you](https://vado-docs.vaishnav.one/docs/redis)).
 
+## Native Redis in containers
+
+A third flavour, `redis-native`, runs unmodified Redis 8.12.0 in a Cloudflare Container beside each shard's object,
+for 2 GB per shard instead of 64 MB. The object stays the only durable copy: it is a Redis replica that stores the
+replication stream, and a reply leaves only once the writes before it are stored. A stopped container restores from
+that copy on the next command, and an idle one stops after 10 minutes.
+
+It is opt-in, needs Docker for the build, and runs on Containers' `durable_object` scheduling, which is in beta:
+
+```sh
+VADO_CONTAINERS=1 npm run deploy
+curl -H "authorization: Bearer $BENCH_TOKEN" "https://<your-worker>.workers.dev/db?db=big&shards=16&flavour=redis-native"
+```
+
+No read replicas yet, and a running shard costs about $0.04 an hour on top of its object
+([details](https://vado-docs.vaishnav.one/docs/native)).
+
 ## Repository
 
 | Path | What |
@@ -76,6 +93,7 @@ curl -H "authorization: Bearer $BENCH_TOKEN" "https://<your-worker>.workers.dev/
 | [`packages/server`](packages/server) | The database: router, shards, replication, catalog, the dashboard's backend |
 | [`packages/client`](packages/client) | ioredis over a service binding, and the WebSocket shim (`ws-shim.mjs`) |
 | [`packages/wasm`](packages/wasm) | Valkey and Redis built to wasm |
+| [`packages/box`](packages/box) | The native Redis image, for the `redis-native` flavour |
 | [`test`](test) | End-to-end tests; `test/e2e.sh` runs them against a deployment |
 
 `npm run check` formats, lints and type-checks, `npm test` runs the unit tests, and `npm run docs` serves the

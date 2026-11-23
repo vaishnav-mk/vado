@@ -1,5 +1,6 @@
 import { WrenchIcon } from "@phosphor-icons/react";
 import { Code, Table } from "../components/blocks";
+import { DocLink } from "../components/doc-link";
 import { BENCH_SECTION } from "./operations-bench";
 import { COSTS_SECTION } from "./operations-costs";
 import { server, source } from "./sources";
@@ -22,7 +23,7 @@ export const operations: Doc = {
         <>
           <Code label="From a checkout">
             {
-              "npx wrangler secret put VALKEY_PASSWORD\nnpx wrangler secret put BENCH_TOKEN      # optional: turns on the bench API\nnpm run deploy\n\nVADO_REDIS=1 npm run deploy              # carry the Redis flavour too"
+              "npx wrangler secret put VALKEY_PASSWORD\nnpx wrangler secret put BENCH_TOKEN      # optional: turns on the bench API\nnpm run deploy\n\nVADO_REDIS=1 npm run deploy              # carry the Redis flavour too\nVADO_CONTAINERS=1 npm run deploy         # and native Redis in containers (needs Docker)"
             }
           </Code>
           <p>
@@ -70,9 +71,10 @@ export const operations: Doc = {
           </Code>
           <p>
             <code>regions</code> and <code>replicas</code> take <code>world</code> or a comma-separated list of hints.{" "}
-            <code>flavour=redis</code> runs Redis, in a build made with <code>VADO_REDIS=1</code>, and{" "}
-            <code>password=new</code> gives the database its own password, returned once. For an existing database,{" "}
-            <code>/db</code> returns its record unchanged.
+            <code>flavour=redis</code> runs Redis, in a build made with <code>VADO_REDIS=1</code>;{" "}
+            <code>flavour=redis-native</code> runs it in containers, in a build made with <code>VADO_CONTAINERS=1</code>{" "}
+            (<DocLink slug="native">native Redis</DocLink>); and <code>password=new</code> gives the database its own
+            password, returned once. For an existing database, <code>/db</code> returns its record unchanged.
           </p>
         </>
       ),

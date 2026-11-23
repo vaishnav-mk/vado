@@ -3,6 +3,7 @@ import { durability } from "./durability";
 import { introduction } from "./introduction";
 import { lifecycle } from "./lifecycle";
 import { measurements } from "./measurements";
+import { native } from "./native";
 import { operations } from "./operations";
 import { quickStart } from "./quick-start";
 import { redis } from "./redis";
@@ -26,6 +27,7 @@ export const docs: Doc[] = [
   security,
   measurements,
   redis,
+  native,
   repository,
 ];
 

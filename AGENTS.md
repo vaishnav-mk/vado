@@ -18,6 +18,10 @@ Rules for anyone, human or agent, changing this repo. Paths starting `server/` a
   so that connection reads the shard from its primary until `READ_YOUR_WRITES_MS` after the reply; a fan-out that
   writes counts for every shard (`writes.all`). Only retryable reads (read-only, non-blocking, outside MULTI/WATCH)
   may go to a replica, so a failed replica read can go again to the primary.
+- **A native Redis shard (`redis-native`) replies only after its writes are stored.** Its object is a replica of the
+  container's Redis and stores the replication stream; a batch's replies wait until the stream reaches the batch's
+  `ROLE` offset (`server/box/proxy.ts`, `mux.ts`). A generation becomes current only once it holds everything the one
+  before does, and a container that never finished its restore is destroyed, never synced from (`packages/box/README.md`).
 - **A replica serves only while its stream lasts.** When a primary stops streaming to a replica it calls
   `retire()`, and the replica resets, so it never serves data that has stopped updating and routers' open sockets to
   it close. A close from the primary's end doesn't reach the replica, so never rely on it. (A primary that resets
@@ -108,6 +112,7 @@ Rules for anyone, human or agent, changing this repo. Paths starting `server/` a
 | `server/catalog/` | `catalog.ts`: `Catalog` (databases: shard count, `regions`, `replicas`, `classes`, `secret`, `dropped`, `flavour`). `databases.ts`: the per-isolate record cache. `placement.ts`: shard and replica stubs, names, which replica a router reads (`NEAR`). `epochs.ts`: `SHARD_EPOCHS`. `names.ts`: `DB_NAME` |
 | `server/admin/` | `admin.ts`: `Admin`, what the dashboard does besides watching. `watcher/`: `Watcher`, one per watched database, behind `/live`, with its probes, events, state and test traffic. `pulse.ts`: `Pulse`. `snapshot.ts`, `views.ts`: shards and replicas in plain numbers. `access.ts`: who may change things. `command.ts`. `live-types.ts`: what `/live` and `Admin` return, types only, so the browser imports them |
 | `packages/server/test/`, `apps/dashboard/test/` | Unit tests, at the same paths as the `src/` files they test. `test/shard/vfs/fake-storage.ts` is SQL storage over `node:sqlite` |
+| `server/box/` | The `redis-native` flavour: `box.ts`: `RedisBox`, a shard whose server runs in a container. `engine.ts` (the running container, compaction, idle stop), `redis.ts` (start and restore), `link.ts` (the replica link into storage), `proxy.ts`, `mux.ts` (client connections, fenced), `store.ts`. Built only with `VADO_CONTAINERS=1`; the image is `packages/box/redis/Dockerfile` |
 | `server/bench/` | `bench.ts`: the token-protected bench API and its `tests` map. `catalog-tests.ts`, `shard-probes.ts`, `data-tests.ts`, `load-tests.ts`: the tests. `sender.ts`: `Sender`, runs a test from a chosen region, and the dashboard's test traffic |
 | `packages/client/` | `src/ioredis.ts`: `bindingConnector`, ioredis over a service binding. `ws-shim.mjs`: a local TCP port for `/ws` (`node packages/client/ws-shim.mjs <url> <port>`, Node 22+). Neither is published to npm |
 | `packages/wasm/` | The builds: `valkey/` and `redis/` (each with `build.sh`, `patches/`, the committed wasm and `interface.txt`), the shared `wasi/`, `common.sh` and `interface.mjs`. CI rebuilds both from the official releases (`.github/workflows/wasm.yml`) |
