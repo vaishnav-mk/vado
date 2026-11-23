@@ -9,7 +9,7 @@ import type { Doc } from "./types";
 
 export const introduction: Doc = {
   slug: "introduction",
-  title: "One Valkey server, made of Durable Objects.",
+  title: "Valkey or Redis, made of Durable Objects.",
   navTitle: "Introduction",
   group: "Start here",
   icon: BookOpenIcon,

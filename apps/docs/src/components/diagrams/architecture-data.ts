@@ -60,7 +60,7 @@ export const NODES: DiagramNode[] = [
   { id: "binding", title: "Your Worker", sub: "service binding", x: 16, y: 244, w: 150, h: 56, section: "clients" },
   { id: "router", title: "Router", sub: "one per connection", x: 214, y: 140, w: 150, h: 60, section: "router" },
   { id: "catalog", title: "Catalog", sub: "databases, placement", x: 214, y: 20, w: 150, h: 56, section: "catalog" },
-  { id: "shards", title: "Shards", sub: "Valkey wasm + AOF", x: 420, y: 140, w: 150, h: 60, section: "shards" },
+  { id: "shards", title: "Shards", sub: "wasm server + AOF", x: 420, y: 140, w: 150, h: 60, section: "shards" },
   { id: "rewriter", title: "Rewriters", sub: "AOF compaction", x: 420, y: 250, w: 150, h: 56, section: "rewriters" },
   { id: "replicas", title: "Read replicas", sub: "other regions", x: 626, y: 140, w: 150, h: 60, section: "replicas" },
   { id: "watcher", title: "Watcher", sub: "dashboard, /live", x: 626, y: 250, w: 150, h: 56, section: "watcher" },
