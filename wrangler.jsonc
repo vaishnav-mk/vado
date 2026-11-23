@@ -13,6 +13,8 @@
   "durable_objects": {
     "bindings": [
       { "name": "SHARD", "class_name": "ValkeyShard" },
+      // Native Redis in a container, one per shard (packages/server/src/box); its containers come with VADO_CONTAINERS=1.
+      { "name": "REDIS_BOX", "class_name": "RedisBox" },
       { "name": "SHARD1", "class_name": "ValkeyShard1" },
       { "name": "SHARD2", "class_name": "ValkeyShard2" },
       { "name": "SHARD3", "class_name": "ValkeyShard3" },
@@ -86,7 +88,9 @@
       ],
     },
     { "tag": "v9", "new_sqlite_classes": ["Watcher"] },
+    { "tag": "v10", "new_sqlite_classes": ["RedisBox"] },
   ],
+
   "vars": {
     // The dashboard's sign-in through a Cloudflare Access application: team domain and audience tag. Empty, it only watches.
     "ACCESS_TEAM_DOMAIN": "",

@@ -40,7 +40,7 @@ export class Admin {
     const hint = isHint(place) ? place : null;
 
     if (place !== "world" && !hint) throw new Error("place is world or a region");
-    const flavour = parseFlavour(asked);
+    const flavour = parseFlavour(this.#env, asked);
 
     if (await current(this.#env, name)) throw new Error(`${name} already exists`);
     const regions = hint ? [hint] : WORLD;
@@ -50,7 +50,7 @@ export class Admin {
     const where = hint ? `in ${REGION_NAMES[hint] ?? hint}` : "spread around the world";
     await this.#env.WATCHER.getByName(name).note(
       "action",
-      `Created ${name}, on ${flavour === "redis" ? "Redis" : "Valkey"}: ${shards} shard${shards === 1 ? "" : "s"}, ${where}${replicas ? ", with read replicas in every region" : ""}`,
+      `Created ${name}, on ${{ valkey: "Valkey", redis: "Redis", "redis-native": "native Redis" }[flavour]}: ${shards} shard${shards === 1 ? "" : "s"}, ${where}${replicas ? ", with read replicas in every region" : ""}`,
     );
 
     return dbView(db);

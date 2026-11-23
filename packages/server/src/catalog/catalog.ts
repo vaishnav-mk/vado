@@ -15,7 +15,7 @@ import type { DatabaseRecord, DatabaseSummary, Epoch, Flavour, Hint } from "./ty
 
 const record = <R extends { flavour: string | null }>(row: R): Omit<R, "flavour"> & { flavour: Flavour } => ({
   ...row,
-  flavour: row.flavour === "redis" ? "redis" : "valkey",
+  flavour: row.flavour === "redis" || row.flavour === "redis-native" ? row.flavour : "valkey",
 });
 
 const hintList = (list: Hint[] | undefined) =>
@@ -64,7 +64,7 @@ export class Catalog extends DurableObject<Env> {
     if (!Number.isSafeInteger(classes) || classes < 1 || classes > SHARD_CLASSES)
       throw new Error(`classes must be 1..${SHARD_CLASSES}`);
 
-    const server = parseFlavour(flavour);
+    const server = parseFlavour(this.env, flavour);
 
     const fresh = {
       name,

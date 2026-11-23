@@ -10,7 +10,7 @@ export { Admin } from "./admin/admin";
 
 export { accessUser } from "./admin/access";
 
-export { FLAVOURS } from "./shard/servers";
+export { flavoursOf } from "./shard/servers";
 
 export type * from "./admin/live-types";
 

@@ -24,7 +24,11 @@ export class RespClient {
   }
 
   send(...cmds: CommandArg[][]): Promise<void> {
-    return this.#writer.write(concat(cmds.map(command)));
+    return this.sendRaw(concat(cmds.map(command)));
+  }
+
+  sendRaw(bytes: Uint8Array): Promise<void> {
+    return this.#writer.write(bytes);
   }
 
   read(n: number): Promise<Reply[]>;

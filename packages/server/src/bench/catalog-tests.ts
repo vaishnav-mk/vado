@@ -45,7 +45,7 @@ const db: Test = async (env, q) => {
     list(q.get("replicas")),
     q.get("classes") ? Number(q.get("classes")) : undefined,
     secret,
-    flavour === null ? undefined : parseFlavour(flavour),
+    flavour === null ? undefined : parseFlavour(env, flavour),
   );
 
   if (password && stored !== secret) throw new Error("the database already exists, so it keeps the password it has");
@@ -88,7 +88,12 @@ const abort: Test = async (env, q) => {
 
   if (replica !== null && !isHint(replica)) throw new Error(`replica must be one of ${[...HINTS].join(", ")}`);
   await Promise.all(
-    idx.map((i) => (replica ? replicaStub(env, db, i, replica) : shardStub(env, db, i)).abort().catch(noop)),
+    // On a native Redis shard, reason=kill also destroys the container and reason=container only that.
+    idx.map((i) =>
+      (replica ? replicaStub(env, db, i, replica) : shardStub(env, db, i))
+        .abort(q.get("reason") ?? undefined)
+        .catch(noop),
+    ),
   );
 
   return replica ? { aborted: idx, replica } : { aborted: idx };

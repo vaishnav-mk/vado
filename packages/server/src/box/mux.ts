@@ -1,0 +1,75 @@
+import { concat, HELLO3 } from "../protocol/resp";
+import { readFrames } from "../router/frames";
+import { ROLE, roleOffset } from "./proxy";
+import type { Fence } from "./proxy";
+
+interface Batch {
+  count: number;
+  frames: Uint8Array[];
+  resolve: (replies: Uint8Array) => void;
+  reject: (e: Error) => void;
+}
+
+// One Redis connection shared by every RPC batch of a protocol. Batches pipeline: they're written in call order and
+// Redis answers in that order. Each carries its own ROLE fence, so a slow fence holds back only its own caller.
+export class Mux {
+  broken: Error | null = null;
+  readonly #writer: WritableStreamDefaultWriter<Uint8Array>;
+  readonly #fence: Fence;
+  #batches: Batch[] = [];
+  #skip: number; // HELLO's reply
+
+  constructor(socket: Socket, fence: Fence, proto: 2 | 3) {
+    this.#writer = socket.writable.getWriter();
+    this.#fence = fence;
+    this.#skip = proto === 3 ? 1 : 0;
+
+    if (proto === 3) void this.#writer.write(HELLO3).catch((e: Error) => this.#fail(e));
+    void readFrames(
+      socket,
+      () => this.broken === null,
+      (f) => this.#frame(f),
+    ).then(() => this.#fail(new Error("Redis closed the shared connection")));
+  }
+
+  exec(bytes: Uint8Array, count: number): Promise<Uint8Array> {
+    if (this.broken) return Promise.reject(this.broken);
+
+    return new Promise((resolve, reject) => {
+      this.#batches.push({ count, frames: [], resolve, reject });
+      this.#writer.write(concat([bytes, ROLE])).catch((e: Error) => this.#fail(e));
+    });
+  }
+
+  #frame(f: Uint8Array): void {
+    if (this.#skip > 0) {
+      this.#skip--;
+
+      return;
+    }
+
+    const batch = this.#batches[0];
+
+    if (!batch) return;
+    batch.frames.push(f);
+
+    if (batch.frames.length <= batch.count) return;
+    this.#batches.shift();
+    const replies = concat(batch.frames.slice(0, -1));
+
+    this.#fence(roleOffset(f)).then(() => batch.resolve(replies), batch.reject);
+  }
+
+  close(): void {
+    this.#fail(new Error("closed"));
+    this.#writer.close().catch(() => null);
+  }
+
+  #fail(e: Error): void {
+    if (this.broken) return;
+    this.broken = e;
+
+    for (const b of this.#batches) b.reject(e);
+    this.#batches = [];
+  }
+}

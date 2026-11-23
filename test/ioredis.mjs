@@ -16,7 +16,8 @@ assert.equal(await a.dbsize(), 0);
 
 assert.match(await a.info("server"), /(valkey|redis)_version:/);
 
-assert.match(await a.info("memory"), /maxmemory:67108864/);
+// MAXMEMORY: a native Redis shard has its container's limit, not the wasm 64 MB.
+assert.match(await a.info("memory"), new RegExp(`maxmemory:${process.env.MAXMEMORY ?? 67108864}`));
 
 await a.set("hello", "world");
 

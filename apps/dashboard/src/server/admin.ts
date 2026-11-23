@@ -2,7 +2,7 @@
 import { createServerFn } from "@tanstack/react-start";
 import { env } from "cloudflare:workers";
 import * as v from "valibot";
-import { Admin, FLAVOURS } from "@vado/server";
+import { Admin, flavoursOf } from "@vado/server";
 import { DB_NAME, DB_NAME_RULE } from "@vado/server/catalog/names.ts";
 import type { CommandResult, Database, Options, TestView } from "../lib/types";
 import { requireUser } from "./access";
@@ -23,7 +23,7 @@ export const getDatabase = createServerFn({ method: "GET" })
 
 export const listOptions = createServerFn({ method: "GET" }).handler((): Options => ({
   regions: admin().regions(),
-  flavours: FLAVOURS,
+  flavours: flavoursOf("BOX" in env ? String(env.BOX) : undefined),
 }));
 
 export const createDatabase = createServerFn({ method: "POST" })

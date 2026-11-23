@@ -33,6 +33,8 @@ export {
   ValkeyRewriter7,
 } from "@vado/server/shard/rewriter/classes.ts";
 
+export { RedisBox } from "@vado/server/box/box.ts";
+
 export { Catalog } from "@vado/server/catalog/catalog.ts";
 
 export { Pulse } from "@vado/server/admin/pulse.ts";

@@ -18,8 +18,10 @@ async function ask(meta: ShardStub): Promise<CommandTable> {
   return commandTable(reply);
 }
 
-export function commands(env: Env, flavour: Flavour = "valkey"): Promise<CommandTable> {
-  // A dedicated object keeps COMMAND off data shards; every server of a flavour answers it the same.
+export function commands(env: Env, asked: Flavour = "valkey"): Promise<CommandTable> {
+  // A dedicated object keeps COMMAND off data shards; every server of a flavour answers it the same. Native Redis is
+  // the same release as the Redis wasm.
+  const flavour = asked === "redis-native" ? "redis" : asked;
   const name = flavour === "valkey" ? "__meta" : `__meta.${flavour}`;
 
   return tables.get(flavour, () => ask(env.SHARD.getByName(name, objectOptions(env))));

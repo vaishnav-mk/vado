@@ -52,7 +52,8 @@ const durability: Test = async (env, q) => {
   await c.call(["INCRBY", `d:${tag}:counter`, String(acked)]);
   c.close();
   const before = await alive(env, name);
-  await allShards(env, name, (s) => s.abort("durability test").catch(noop));
+  // reason=kill: a native Redis shard loses its container too, and restores from storage.
+  await allShards(env, name, (s) => s.abort(q.get("reason") ?? "durability test").catch(noop));
   const after = await alive(env, name);
   const c2 = await open(env, q);
   const { missing, wrong } = await checkKeys(c2, "d", tag, n);

@@ -10,7 +10,11 @@ export const WASM: Partial<Record<Flavour, WebAssembly.Module>> = redisBuild
   ? { valkey, redis: redisBuild }
   : { valkey };
 
-export const FLAVOURS: Flavour[] = redisBuild ? ["valkey", "redis"] : ["valkey"];
+const WASM_FLAVOURS: Flavour[] = redisBuild ? ["valkey", "redis"] : ["valkey"];
+
+// redis-native needs the build's container application (VADO_CONTAINERS=1), which sets BOX.
+export const flavoursOf = (box: string | undefined): Flavour[] =>
+  box === "1" ? [...WASM_FLAVOURS, "redis-native"] : WASM_FLAVOURS;
 
 export const flavourOf = (name: string): Flavour => (name.split(".").includes("redis") ? "redis" : "valkey");
 
