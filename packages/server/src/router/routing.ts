@@ -12,13 +12,21 @@ import type { UpKey } from "./types";
 const retryable = (c: Conn, entry: CommandEntry) =>
   entry.flags.has("readonly") && !entry.flags.has("blocking") && !c.tx.pinned;
 
-export function forward(c: Conn, shard: number, raw: Uint8Array, retry = false, s: Slot = c.replies.slot()): void {
+// A blocking command gets a socket: on a shared RPC connection it would hold up everyone else's batches.
+export function forward(
+  c: Conn,
+  shard: number,
+  raw: Uint8Array,
+  retry = false,
+  s: Slot = c.replies.slot(),
+  blocking = false,
+): void {
   const copy = retry ? raw.slice() : null;
   let from: UpKey = shard;
 
   if (retry) from = readFrom(c, shard);
   else c.writes.start(shard);
-  c.pool.get(from).send(raw, (f) => {
+  c.pool.get(from, blocking).send(raw, (f) => {
     if (!retry) c.writes.done(shard);
 
     if (f === LOST && copy) {
@@ -50,7 +58,7 @@ export function routeKeys(
 ): void {
   const shard = shardAt(argv, idx, c.db.shards);
 
-  if (shard >= 0) return forward(c, shard, raw, retryable(c, entry));
+  if (shard >= 0) return forward(c, shard, raw, retryable(c, entry), c.replies.slot(), entry.flags.has("blocking"));
 
   if (!split(c, name, argv)) c.replies.reply(CROSSSLOT);
 }
@@ -72,7 +80,7 @@ export function getkeys(c: Conn, entry: CommandEntry, argv: Uint8Array[], raw: U
           shard = shardOfKeys(keys, target.db.shards);
 
         if (shard < 0) return c.replies.resolve(s, CROSSSLOT);
-        forward(c, shard, copy, retryable(c, entry), s);
+        forward(c, shard, copy, retryable(c, entry), s, entry.flags.has("blocking"));
       }, c.replies.lost(s)),
   );
 }
