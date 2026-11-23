@@ -6,7 +6,7 @@ import { isPrimary } from "./key-shards";
 import { UpstreamPool } from "./pool";
 import { ReadYourWrites } from "./read-your-writes";
 import { ReplyQueue } from "./replies";
-import { droppedDatabase, LOST } from "./replies-text";
+import { droppedDatabase } from "./replies-text";
 import { Tx } from "./transaction-state";
 import type {
   ClientSocket,
@@ -120,7 +120,9 @@ export class Conn implements UpstreamOwner, ReplyOwner {
     pass.passthrough = null;
     this.pass = null;
 
-    if (lost) this.push(LOST);
+    // Its subscriptions went with the shard: closed, as a Redis server going away would leave it, the client reconnects
+    // and subscribes again. An error frame here would reach a client expecting only pushes.
+    if (lost) this.close();
   }
 
   // Dropped after this isolate cached its record: forget it, so the next connection is refused at AUTH.
