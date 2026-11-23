@@ -1,8 +1,9 @@
-# Lint, format, type-check, unit tests and a build of the Worker, on every push and pull request.
+# Lint, format, type-check, unit tests and builds of the Worker and the docs, on pushes to main and pull requests.
 name: ci
 
 on:
   push:
+    branches: [main]
   pull_request:
 
 permissions:
@@ -24,7 +25,8 @@ jobs:
 
       - run: npm ci
       - run: npm run check
-      - run: npx vp test
+      - run: npm test
       - run: npm run build
+      - run: npm run build -w @vado/docs
       # Kumo's classes come from scanning its package (apps/dashboard/src/styles.css); a wrong path builds unstyled.
       - run: grep -q "bg-kumo-badge-blue" apps/dashboard/dist/client/assets/*.css
