@@ -1,2 +1,3 @@
 # Secrets for `vp dev` (copy to .dev.vars) and for the Deploy to Cloudflare button.
-VALKEY_PASSWORD=change-me # what clients send with AUTH <database> <password>
+# What clients send with AUTH <database> <password>; generate one with `openssl rand -hex 32`.
+VALKEY_PASSWORD=
