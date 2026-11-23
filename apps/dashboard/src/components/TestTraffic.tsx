@@ -34,9 +34,10 @@ export function TestTraffic({
           Writes keys from Cloudflare locations, then reads them back three times, so you can watch the database under
           load. It stops by itself after 10 minutes.
         </Text>
-        <div className="grid grid-cols-2 gap-2">
+        <div className="grid grid-cols-2 gap-3">
           <Select
             label="From"
+            className="w-full"
             value={from}
             onValueChange={(v) => v && setFrom(v)}
             disabled={!!test}
@@ -44,6 +45,7 @@ export function TestTraffic({
           />
           <Select
             label="Amount"
+            className="w-full"
             value={level}
             onValueChange={(v) => v && setLevel(v)}
             disabled={!!test}

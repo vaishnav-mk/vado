@@ -67,9 +67,9 @@ export function Activity({ events }: { events: LiveEvent[] }) {
     shown = events.filter(f.keep);
 
   return (
-    <LayerCard className="h-full min-w-0">
+    <LayerCard className="flex h-full min-w-0 flex-col">
       <LayerCard.Secondary>Activity</LayerCard.Secondary>
-      <LayerCard.Primary className="min-h-0 flex-1 gap-3">
+      <LayerCard.Primary className="flex min-h-0 flex-1 flex-col gap-3">
         <Tabs
           variant="segmented"
           size="sm"
@@ -110,7 +110,13 @@ export function Activity({ events }: { events: LiveEvent[] }) {
               })}
             </ol>
           ) : (
-            <Empty size="sm" icon={<ClockCounterClockwiseIcon size={28} />} title="Nothing yet" description={f.empty} />
+            <Empty
+              size="sm"
+              className="absolute inset-0 justify-center"
+              icon={<ClockCounterClockwiseIcon size={28} />}
+              title="Nothing yet"
+              description={f.empty}
+            />
           )}
         </div>
       </LayerCard.Primary>

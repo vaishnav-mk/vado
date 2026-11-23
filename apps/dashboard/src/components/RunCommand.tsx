@@ -85,6 +85,7 @@ export function RunCommand({
         <form onSubmit={submit} className="flex flex-col gap-3">
           <Select
             label="Command"
+            className="w-full"
             value={cmd}
             items={ITEMS}
             onValueChange={(v) => {
@@ -112,12 +113,12 @@ export function RunCommand({
               }}
             />
           ))}
-          <div className="flex items-center gap-2">
+          <div className="flex items-stretch gap-2">
             <code
-              className="min-w-0 flex-1 truncate rounded-md bg-kumo-recessed px-2 py-1.5 font-mono text-xs text-kumo-subtle"
+              className="flex min-w-0 flex-1 items-center rounded-md bg-kumo-recessed px-3 font-mono text-xs text-kumo-subtle"
               title={showArgv(argv)}
             >
-              {parseError ?? (argv.length ? showArgv(argv) : "Type a command")}
+              <span className="truncate">{parseError ?? (argv.length ? showArgv(argv) : "Type a command")}</span>
             </code>
             <Guard action="run commands">
               {(disabled) => (
