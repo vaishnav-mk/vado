@@ -1,10 +1,8 @@
 import { database } from "../catalog/databases";
 import { shardStub } from "../catalog/placement";
 import { RespClient } from "../protocol/resp-client";
-import type { Reply } from "../protocol/types";
 import type { ShardStats } from "../shard/types";
 import { openLocal } from "../router/local";
-import { failure } from "../shared";
 
 export const dbName = (q: URLSearchParams): string => q.get("db") ?? "default";
 
@@ -21,12 +19,6 @@ export const num = (q: URLSearchParams, key: string, fallback: number): number =
 // Sorts `xs` in place.
 export const pct = (xs: number[], p: number): number | undefined =>
   xs.sort((a, b) => a - b)[Math.min(xs.length - 1, Math.floor(xs.length * p))];
-
-export function text(r: Reply): string {
-  if (r instanceof Object) throw new Error(failure(r) ?? "expected a text reply");
-
-  return String(r);
-}
 
 export async function allShards<T>(
   env: Env,

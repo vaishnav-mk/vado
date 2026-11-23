@@ -8,6 +8,12 @@ export const messageOf = (cause: unknown): string => (cause instanceof Error ? c
 
 export const failure = (r: Reply): string | null => (r instanceof Object && "err" in r ? r.err : null);
 
+export function text(r: Reply): string {
+  if (r instanceof Object) throw new Error(failure(r) ?? "expected a text reply");
+
+  return String(r);
+}
+
 export async function closeWith(socket: Socket, bytes: Uint8Array | null): Promise<void> {
   const writer = socket.writable.getWriter();
 

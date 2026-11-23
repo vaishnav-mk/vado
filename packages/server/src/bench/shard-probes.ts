@@ -4,7 +4,8 @@ import { command, concat } from "../protocol/resp";
 import { decodeAll } from "../protocol/decode";
 import type { Test } from "./types";
 import { failure, messageOf, sleep } from "../shared";
-import { dbName, liveStats, num, open, pct, text } from "./util";
+import { text } from "../shared";
+import { dbName, liveStats, num, open, pct } from "./util";
 
 const shardZero = async (env: Env, q: URLSearchParams) => shardStub(env, await database(env, dbName(q)), 0);
 
