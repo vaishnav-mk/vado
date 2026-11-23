@@ -1,12 +1,5 @@
-/* Reactor entry points exported to the host (src/valkey-host.js).
- *
- * Valkey's main() is patched (server.c, VALKEY_WASM) to run full init and then
- * return instead of entering aeMain(). We call it once via rk_boot() to bring
- * the server up (globals stay resident in the instance), then the host drives
- * the event loop one non-blocking iteration at a time via rk_step() — on each
- * socket event and on a periodic timer (for serverCron, client + blocked-client
- * timeouts). host_read/host_write reach into this module's linear memory
- * directly through the exported `memory`, so no copy entry points are needed. */
+/* Exports for the host in packages/server/src/shard/host/. The 0002 patch makes main() return
+ * after init, so the host runs the event loop one pass at a time. */
 #include "server.h"
 #include "ae.h"
 #include "module.h"
@@ -15,12 +8,11 @@
 
 extern int main(int argc, char **argv);
 
+/* Unused by the host, which boots through rk_boot_args. */
 __attribute__((export_name("rk_boot")))
 int rk_boot(int port) {
     static char portbuf[16];
     snprintf(portbuf, sizeof portbuf, "%d", port);
-    /* Dev-server config: no persistence (no fork), no threads, no
-     * daemonize/pidfile, listen only on loopback via the host bridge. */
     char *argv[] = {
         "valkey-server",
         "--port", portbuf,
@@ -37,9 +29,7 @@ int rk_boot(int port) {
     return main(argc, argv);
 }
 
-/* Host-supplied argv: the host writes NUL-separated args (after argv[0]) into
- * rk_args, then calls rk_boot_args(len). Lets the host turn on AOF, set dir,
- * maxmemory, etc. without a config file. */
+/* The host writes NUL-separated arguments after argv[0] here, then calls rk_boot_args(len). */
 static char rk_args[8192];
 
 __attribute__((export_name("rk_args_ptr")))
@@ -62,22 +52,16 @@ int rk_boot_args(int len) {
     return main(argc, argv);
 }
 
-/* One non-blocking pass of the event loop. Returns the number of events
- * processed (0 means idle). */
+/* Unused by the host, which calls rk_tick. */
 __attribute__((export_name("rk_step")))
 int rk_step(void) {
     return aeProcessEvents(server.el,
         AE_ALL_EVENTS | AE_DONT_WAIT | AE_CALL_BEFORE_SLEEP | AE_CALL_AFTER_SLEEP);
 }
 
-/* One pass with the same callback order as aeMain (afterSleep, events,
- * timers, beforeSleep), so the AOF write and reply flush for this pass happen
- * in this call instead of the next one. Returns the number of events processed.
- *
- * beforeSleep drops the module GIL and afterSleep re-takes it. Boot and rk_step
- * leave it held, and re-locking a held mutex hits the single-threaded futex
- * wait, which traps. Normalize to released first (trylock+unlock frees it
- * whether or not it was held). */
+/* aeMain's order (afterSleep, events, timers, beforeSleep), so this pass's AOF write and reply
+ * flush happen in this call. afterSleep takes the module GIL; boot leaves it held, and locking a
+ * held mutex traps without threads, so release it first. */
 __attribute__((export_name("rk_tick")))
 int rk_tick(void) {
     aeEventLoop *el = server.el;
@@ -90,9 +74,8 @@ int rk_tick(void) {
     return processed;
 }
 
-/* Milliseconds until the next timer event is due, so the host can size its next
- * timer instead of busy-polling. Returns -1 when only serverCron is pending. */
+/* The serverCron period, which the host uses as its timer interval. */
 __attribute__((export_name("rk_next_timeout_ms")))
 int rk_next_timeout_ms(void) {
-    return 1000 / server.hz; /* serverCron cadence; good enough for a dev box */
+    return 1000 / server.hz;
 }

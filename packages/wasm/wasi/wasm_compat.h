@@ -1,48 +1,25 @@
-/* Force-included ahead of every Valkey TU (build.sh -include).
- * Neutralizes host facilities the wasm32-wasip1 sandbox lacks, at the macro
- * level, so the vendored source stays otherwise untouched. Networking and the
- * event-loop poll are provided for real by sock_shim.c / ae_wasi.c over host
- * imports; everything here is the "can't exist in wasm" set: fork-based
- * persistence, background threads, rlimits, crash backtraces. */
+/* Force-included into every file (common.sh -include): what wasm32-wasip1 lacks, so the upstream
+ * sources compile unchanged apart from the patches. */
 #ifndef VALKEY_WASM_COMPAT_H
 #define VALKEY_WASM_COMPAT_H
 
-/* This header is force-included (-include) ahead of each TU's own headers,
- * before Valkey's fmacros.h sets it. Establish the feature level now so the
- * <signal.h> we pull in below exposes sigset_t / sigemptyset etc. */
+/* Included before fmacros.h sets it, and <signal.h> below needs it. */
 #ifndef _GNU_SOURCE
 #define _GNU_SOURCE
 #endif
 
 #ifdef VALKEY_WASM
 
-/* No fork(): BGSAVE/AOF-rewrite child spawning. Persistence is disabled at
- * runtime (save "" / appendonly no), so these paths are never *meant* to run;
- * make the symbol resolve to a failing stub (stubs.c) rather than pulling in
- * wasi-libc's missing fork. */
+/* No fork(): callers take their failed-fork path, and the AOF rewrite patches avoid forking. */
 #define fork() (-1)
 #define wait3(a, b, c) (-1)
-/* A rewrite the host runs (patches/0004) shows as an AOF child that never exits by
- * itself: waitpid() reports no exited child, and only rk_rewrite_done() ends it. */
+/* No child ever exits, so a rewrite the host runs ends only through rk_rewrite_done(). */
 #define waitpid(a, b, c) (0)
 
-/* Background I/O threads and io-threads are compiled out; bio jobs run inline
- * (see stubs.c bioInit override guard). io_threads_num defaults to 1. */
-
-/* rlimits: no-op (stubs.c provides the symbols too; the macro keeps callers
- * that check the return value happy). */
 #define setrlimit(a, b) (0)
 
-/* ---- POSIX bits wasi-libc stubs out (everything below is under an
- *      `#ifdef __wasilibc_unmodified_upstream` in the sysroot headers, i.e.
- *      NOT provided). Valkey's crash handler + signal setup + fd-limit code
- *      reference them; the handlers are never actually delivered a signal in
- *      the sandbox, so these definitions exist only to compile those paths.
- *      Force-included ahead of the sysroot headers, so ours win and the
- *      disabled sysroot copies are inert. ---- */
-
-/* rlimit: <sys/resource.h> provides rusage/getrusage on WASI but not the
- * rlimit family. getrlimit/setrlimit are stubbed (stubs.c / macro above). */
+/* The rest is behind __wasilibc_unmodified_upstream in the sysroot headers. No signal is ever
+ * delivered, so signal setup and the crash handler only need to compile. */
 typedef unsigned long long rlim_t;
 struct rlimit { rlim_t rlim_cur, rlim_max; };
 #ifndef RLIMIT_NOFILE
@@ -53,17 +30,12 @@ struct rlimit { rlim_t rlim_cur, rlim_max; };
 #endif
 int getrlimit(int resource, struct rlimit *rlim);
 
-/* signals: wasi-emulated-signal's <bits/signal.h> gives the SIG* constants +
- * signal()/raise(), but wasi-libc stubs out the whole POSIX signal-set /
- * sigaction / sigmask API and siginfo_t. None of it can ever deliver a signal
- * in the sandbox, so provide the types plus no-op operations: installing a
- * handler succeeds and simply never fires. sigset_t itself is behind the same
- * disabled guard in <signal.h>, so pull it directly from bits/alltypes.h. */
+/* sigset_t is behind the same guard in <signal.h>, so take it from bits/alltypes.h. */
 #define __NEED_sigset_t
 #define __NEED_pid_t
 #define __NEED_uid_t
 #include <bits/alltypes.h>
-#include <signal.h>   /* SIG* constants, signal(), raise(), SIG_BLOCK */
+#include <signal.h>
 #include <errno.h>
 
 #ifndef SA_SIGINFO
@@ -104,9 +76,6 @@ static inline int sigaction(int signum, const struct sigaction *act, struct siga
 static inline int kill(pid_t pid, int sig) { (void)pid; (void)sig; errno = ESRCH; return -1; }
 #endif /* SA_SIGINFO */
 
-/* interval timers: the watchdog (debug.c) and the Lua time-limit (eval.c) arm
- * setitimer(ITIMER_REAL) to raise SIGALRM. No signal is ever delivered here, so
- * arming is a no-op success. struct itimerval needs struct timeval. */
 #include <sys/time.h>
 #ifndef ITIMER_REAL
 #define ITIMER_REAL    0
@@ -119,11 +88,8 @@ static inline int setitimer(int which, const struct itimerval *nv, struct itimer
 static inline int getitimer(int which, struct itimerval *cv) { (void)which; (void)cv; return 0; }
 #endif
 
-/* Prototypes for the libc functions wasi-libc leaves undeclared but that we
- * define in stubs.c. Without a visible prototype the callers use an implicit
- * `int f()` signature, which mismatches the real definition and makes wasm-ld
- * emit a trapping signature-adapter stub. Declaring them here (force-included
- * ahead of every TU) keeps the call and the definition in the same signature. */
+/* Defined in stubs.c and sock_shim.c. Without a prototype, callers assume int f() and wasm-ld
+ * links a stub that traps on the signature mismatch. */
 void tzset(void);
 int  flock(int fd, int op);
 int  mkostemp(char *tmpl, int flags);
@@ -131,8 +97,7 @@ int  pipe(int fd[2]);
 int  execve(const char *path, char *const argv[], char *const envp[]);
 unsigned umask(unsigned mask);
 
-/* errno codes wasi-libc omits, referenced only in server.c's listen-failure
- * error classification (the value is irrelevant, only that the name exists). */
+/* Only the names are used, so any value works. */
 #ifndef ESOCKTNOSUPPORT
 #define ESOCKTNOSUPPORT 240
 #endif
@@ -140,12 +105,7 @@ unsigned umask(unsigned mask);
 #define EPFNOSUPPORT 241
 #endif
 
-/* socket-layer constants: wasi's <sys/socket.h> keeps most of the BSD option/
- * address-family/TCP names in a disabled upstream branch. anet.c passes them to
- * setsockopt()/socket(), which are no-op shims here (sock_shim.c) - the JS
- * bridge owns the real socket options - so only the names need to exist.
- * AF_INET, SOCK_STREAM and SOL_SOCKET already come from the sysroot; guard the
- * rest with #ifndef so we never clash with what is genuinely provided. */
+/* sock_shim.c ignores these, so only the names must exist. */
 #include <sys/socket.h>
 #ifndef SO_ERROR
 #define SO_ERROR 4
@@ -196,8 +156,6 @@ unsigned umask(unsigned mask);
 #define TCP_KEEPCNT 6
 #endif
 
-/* dladdr / Dl_info: <dlfcn.h> stubs these out on WASI. The crash handler uses
- * them to prettify a backtrace; dladdr() just reports "not found" (stubs.c). */
 #ifndef VALKEY_WASM_HAVE_DLINFO
 #define VALKEY_WASM_HAVE_DLINFO
 typedef struct {

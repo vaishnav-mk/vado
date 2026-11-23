@@ -1,16 +1,5 @@
-/* libc socket family over host imports.
- *
- * Valkey's anet.c / socket.c call the standard POSIX socket calls. wasi-libc
- * has no real sockets, so we provide them here backed by host_* (node:net).
- * Host-socket fds are handed out from HOST_FD_BASE up, a range wasi-libc's own
- * fds never touch; the multiplexed calls (read/write/close/fcntl) are linked
- * with --wrap and dispatch to the host only for fds in that range, delegating
- * everything else to the real wasi-libc implementation.
- *
- * Only the subset anet.c actually uses is implemented; the rest are benign
- * stubs so the socket setup dance (nonblock, nodelay, reuseaddr, keepalive)
- * succeeds without doing anything the sandbox can't.
- */
+/* wasi-libc has no sockets, so these use the host imports. read, write, writev, close and fcntl
+ * are linked with --wrap and pass every fd below HOST_FD_BASE, except pipes, to wasi-libc. */
 #include "host.h"
 #include <errno.h>
 #include <sys/socket.h>
@@ -24,7 +13,6 @@
 #include <fcntl.h>
 #include <stdint.h>
 
-/* real wasi-libc entry points (renamed by --wrap) */
 extern ssize_t __real_read(int, void *, size_t);
 extern ssize_t __real_write(int, const void *, size_t);
 extern ssize_t __real_writev(int, const struct iovec *, int);
@@ -33,15 +21,8 @@ extern int     __real_fcntl(int, int, ...);
 
 static int is_host_fd(int fd) { return fd >= HOST_FD_BASE; }
 
-/* ---- pipes ----------------------------------------------------------------
- * wasi-libc has no pipe(). The only pipe Valkey creates is server.module_pipe,
- * a self-wake channel for module background threads. No modules load here, so
- * nothing is ever written to it, but it must be created (its read end is armed
- * on the event loop) or startup aborts. Hand out fds from a small dedicated
- * range (below the host-socket range so they never collide with JS-allocated
- * fds) and treat them as an always-empty pipe: reads never have data (the read
- * end simply never fires in host_poll, which doesn't know these fds), writes
- * are discarded. */
+/* wasi-libc has no pipe(), and startup exits without module_pipe, which wakes the loop for
+ * module threads. There are no threads, so these fds never have data and writes are discarded. */
 #define PIPE_FD_BASE 3072
 #define PIPE_FD_MAX  32
 static int pipe_next = PIPE_FD_BASE;
@@ -54,12 +35,6 @@ int pipe(int fds[2]) {
     return 0;
 }
 
-/* ---- socket creation / setup (names wasi-libc leaves undefined) ---- */
-
-/* JS owns fd allocation, so the whole lifecycle is: socket() gets a fresh host
- * fd from JS; bind() records the port for it (small side table); listen() tells
- * JS to open a net.Server on that fd+port; accept() returns the next JS-assigned
- * connection fd. anet uses the socket() fd throughout — no reconciliation. */
 int socket(int domain, int type, int protocol) {
     (void)domain; (void)type; (void)protocol;
     int fd = host_socket();
@@ -67,7 +42,7 @@ int socket(int domain, int type, int protocol) {
     return fd;
 }
 
-/* tiny fd->port side table for the deferred listen (anet: socket→bind→listen) */
+/* bind() records the port for host_listen, which ignores it. */
 #define PORTMAP_MAX 16
 static struct { int fd, port; } portmap[PORTMAP_MAX];
 static void port_set(int fd, int port) {
@@ -104,14 +79,12 @@ int accept4(int sfd, struct sockaddr *addr, socklen_t *len, int flags) {
     (void)flags; return accept(sfd, addr, len);
 }
 
-/* Outgoing connections (anet connect, cluster/replication link, sentinel) are
- * not used by the dev server — it only accepts loopback clients. Fail so any
- * such attempt reports a clean error instead of hanging. */
+/* The host makes no outgoing connections. */
 int connect(int fd, const struct sockaddr *addr, socklen_t len) {
     (void)fd; (void)addr; (void)len; errno = ECONNREFUSED; return -1;
 }
 
-/* setup calls anet makes: all no-op successes on host sockets. */
+/* Socket options mean nothing to the host. */
 int setsockopt(int fd, int lvl, int opt, const void *val, socklen_t len) {
     (void)fd; (void)lvl; (void)opt; (void)val; (void)len; return 0;
 }
@@ -127,12 +100,7 @@ int getpeername(int fd, struct sockaddr *addr, socklen_t *len) {
     (void)fd; if (len) *len = 0; (void)addr; return 0;
 }
 
-/* ---- name resolution (no DNS in the sandbox; just shape the sockaddr) ----
- * anet.c's server/connect paths call getaddrinfo() before socket()/bind(). We
- * only ever bind/listen on loopback (the JS bridge is the real listener), so
- * getaddrinfo hands back a single 127.0.0.1:<service-port> IPv4 result, which
- * carries anet into the socket() shim where bind() records the port. IPv6 and
- * real hostname lookups are refused — the dev server binds 127.0.0.1 only. */
+/* No DNS: lookups answer 127.0.0.1 with the service as the port, enough for anet to bind. */
 int getaddrinfo(const char *node, const char *service,
                 const struct addrinfo *hints, struct addrinfo **res) {
     (void)node;
@@ -167,8 +135,7 @@ void freeaddrinfo(struct addrinfo *res) {
 
 const char *gai_strerror(int errcode) { (void)errcode; return "name resolution disabled"; }
 
-/* Valkey formats client/peer addresses with getnameinfo; every host socket is a
- * loopback connection through the bridge, so report 127.0.0.1 + the port. */
+/* Host sockets have no real peer address. */
 int getnameinfo(const struct sockaddr *sa, socklen_t salen,
                 char *host, socklen_t hostlen,
                 char *serv, socklen_t servlen, int flags) {
@@ -186,15 +153,13 @@ int getnameinfo(const struct sockaddr *sa, socklen_t salen,
     return 0;
 }
 
-/* ---- multiplexed calls: host fds -> host_*, else real wasi-libc ---- */
-
 ssize_t __wrap_read(int fd, void *buf, size_t n) {
     if (is_host_fd(fd)) {
         int r = host_read(fd, buf, (int)n);
         if (r < 0) { errno = EAGAIN; return -1; }
         return r;
     }
-    if (is_pipe_fd(fd)) { errno = EAGAIN; return -1; } /* pipe: never any data */
+    if (is_pipe_fd(fd)) { errno = EAGAIN; return -1; }
     return __real_read(fd, buf, n);
 }
 ssize_t __wrap_write(int fd, const void *buf, size_t n) {
@@ -203,15 +168,9 @@ ssize_t __wrap_write(int fd, const void *buf, size_t n) {
         if (r < 0) { errno = EPIPE; return -1; }
         return r;
     }
-    if (is_pipe_fd(fd)) return (ssize_t)n; /* pipe: discard, report success */
+    if (is_pipe_fd(fd)) return (ssize_t)n;
     return __real_write(fd, buf, n);
 }
-/* Valkey gathers a client's multi-block reply into one writev() (networking.c
- * writevToClient) whenever the reply overflows the 16KB static buffer. The host
- * has no real fd, so fan the iovec out into host_write calls (node coalesces
- * them onto the socket). Without this, every reply larger than 16KB — INFO on a
- * loaded server, big EVAL results, BullMQ's script payloads — is silently
- * dropped, since the unwrapped writev would target a nonexistent wasi fd. */
 ssize_t __wrap_writev(int fd, const struct iovec *iov, int iovcnt) {
     if (is_host_fd(fd)) {
         ssize_t total = 0;
@@ -220,13 +179,13 @@ ssize_t __wrap_writev(int fd, const struct iovec *iov, int iovcnt) {
             int r = host_write(fd, iov[i].iov_base, (int)iov[i].iov_len);
             if (r < 0) return total ? total : (errno = EPIPE, -1);
             total += r;
-            if (r < (int)iov[i].iov_len) break; /* short write: stop here */
+            if (r < (int)iov[i].iov_len) break;
         }
         return total;
     }
     if (is_pipe_fd(fd)) {
         ssize_t total = 0;
-        for (int i = 0; i < iovcnt; i++) total += iov[i].iov_len; /* discard */
+        for (int i = 0; i < iovcnt; i++) total += iov[i].iov_len;
         return total;
     }
     return __real_writev(fd, iov, iovcnt);
@@ -238,8 +197,7 @@ int __wrap_close(int fd) {
     return __real_close(fd);
 }
 int __wrap_fcntl(int fd, int cmd, ...) {
-    if (is_host_fd(fd) || is_pipe_fd(fd)) return 0; /* always nonblocking here */
-    /* forward the (at most one) int arg for real fds */
+    if (is_host_fd(fd) || is_pipe_fd(fd)) return 0; /* always nonblocking */
     __builtin_va_list ap; __builtin_va_start(ap, cmd);
     int arg = __builtin_va_arg(ap, int); __builtin_va_end(ap);
     return __real_fcntl(fd, cmd, arg);

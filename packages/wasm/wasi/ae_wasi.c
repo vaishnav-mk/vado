@@ -1,26 +1,17 @@
-/* ae.c poll backend over host_poll. Included by ae.c when HAVE_WASI_AE is set
- * (see the small patch to ae.c's backend #include chain). Implements the same
- * 7 aeApi* functions as ae_select.c / ae_epoll.c.
- *
- * Unlike a native backend, aeApiPoll NEVER blocks: under Node the wasm runs on
- * the same thread as the event loop, so it cannot sleep waiting for I/O. JS
- * drives one aeProcessEvents(...AE_DONT_WAIT) iteration (reactor rk_step) each
- * time a socket becomes ready or a timer fires; aeApiPoll just reports what is
- * ready right now, which JS knows from its per-fd buffers. */
+/* ae.c includes this when HAVE_WASI_AE is set. aeApiPoll never blocks: the module runs on the
+ * Durable Object's thread, so it only reports what the host has ready now. */
 #include "host.h"
 
 typedef struct aeApiState {
-    /* fds whose events[] mask is nonzero, unordered, so a poll walks only the
-     * live fds instead of 0..maxfd (host fds start at HOST_FD_BASE). */
+    /* fds with a nonzero mask, so a poll skips 0..maxfd (host fds start at HOST_FD_BASE) */
     int *fds;
-    int *pos;   /* pos[fd] = index of fd in fds[], or -1 */
+    int *pos;
     int count;
-    int cap;    /* allocated length of fds[] and pos[] */
+    int cap;
 } aeApiState;
 
-/* scratch buffers for the host_poll hand-off, sized to the loop's setsize */
-static int32_t *ae_interest = 0;  /* (fd,mask) pairs */
-static int32_t *ae_fired = 0;     /* (fd,mask) pairs */
+static int32_t *ae_interest = 0;
+static int32_t *ae_fired = 0;
 static int ae_cap = 0;
 
 static void aeApiGrow(aeApiState *state, int setsize) {
@@ -65,7 +56,6 @@ static void aeApiFree(aeEventLoop *eventLoop) {
     zfree(state);
 }
 
-/* ae.c calls this before OR-ing mask into events[fd].mask. */
 static int aeApiAddEvent(aeEventLoop *eventLoop, int fd, int mask) {
     aeApiState *state = eventLoop->apidata;
     (void)mask;
@@ -76,8 +66,7 @@ static int aeApiAddEvent(aeEventLoop *eventLoop, int fd, int mask) {
     return 0;
 }
 
-/* ae.c calls this after clearing mask from events[fd].mask; `& ~mask` keeps
- * the result right whichever order the core uses. */
+/* Redis calls this before clearing mask from events[fd].mask and Valkey after; & ~mask suits both. */
 static void aeApiDelEvent(aeEventLoop *eventLoop, int fd, int mask) {
     aeApiState *state = eventLoop->apidata;
     int remaining = eventLoop->events[fd].mask & ~mask;
@@ -85,14 +74,14 @@ static void aeApiDelEvent(aeEventLoop *eventLoop, int fd, int mask) {
 }
 
 static int aeApiPoll(aeEventLoop *eventLoop, struct timeval *tvp) {
-    (void)tvp; /* never block */
+    (void)tvp;
     aeApiState *state = eventLoop->apidata;
     int n = 0;
     for (int i = 0; i < state->count;) {
         int fd = state->fds[i];
         int mask = eventLoop->events[fd].mask;
-        /* Mask can drop to NONE without a DelEvent (e.g. only AE_BARRIER was
-         * removed); prune it here. fds[i] then holds an unvisited fd. */
+        /* Removing only AE_BARRIER empties a mask without a DelEvent. Untracking moves an
+         * unvisited fd into fds[i]. */
         if (mask == AE_NONE) {
             aeApiUntrack(state, fd);
             continue;

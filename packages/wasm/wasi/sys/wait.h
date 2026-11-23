@@ -1,15 +1,9 @@
-/* wasi-sysroot has no <sys/wait.h>: there are no child processes in the
- * sandbox. Valkey only reaps children spawned by fork() for BGSAVE / AOF
- * rewrite / module forks, all of which are disabled here (fork() is macro'd to
- * -1, persistence is off). These declarations exist purely so the ~6 TUs that
- * include the header compile; the status-inspection macros are never reached
- * because no wait ever returns a live child. On the -I path (build.sh). */
+/* The sysroot has no <sys/wait.h>. wasm_compat.h makes waitpid() return 0 and wait3() -1, so no
+ * status is ever read. */
 #ifndef VALKEY_WASM_SYS_WAIT_H
 #define VALKEY_WASM_SYS_WAIT_H
 #include <sys/types.h>
 
-/* waitpid()/wait3() are macro'd to -1 in wasm_compat.h; the status macros below
- * operate on that (never-populated) status word. */
 #define WNOHANG   1
 #define WUNTRACED 2
 

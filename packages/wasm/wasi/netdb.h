@@ -1,10 +1,4 @@
-/* wasi-sysroot has no <netdb.h>. anet.c uses getaddrinfo/getnameinfo to turn a
- * bind address + port into a sockaddr before socket()/bind()/listen(). Real DNS
- * resolution is meaningless in the sandbox (the JS bridge owns the actual
- * listener), but the *shape* matters: getaddrinfo must succeed and hand back a
- * 127.0.0.1:port sockaddr so anet proceeds into the socket() shim, where bind()
- * records the port and listen() calls host_listen. The implementations live in
- * sock_shim.c; this header just declares the surface. On the -I path (build.sh). */
+/* The sysroot has no <netdb.h>. sock_shim.c implements these without DNS. */
 #ifndef VALKEY_WASM_NETDB_H
 #define VALKEY_WASM_NETDB_H
 #include <sys/socket.h>
@@ -21,7 +15,6 @@ struct addrinfo {
     struct addrinfo *ai_next;
 };
 
-/* getaddrinfo() ai_flags */
 #define AI_PASSIVE     0x01
 #define AI_CANONNAME   0x02
 #define AI_NUMERICHOST 0x04
@@ -30,7 +23,6 @@ struct addrinfo {
 #define AI_ALL         0x10
 #define AI_ADDRCONFIG  0x20
 
-/* getnameinfo() flags */
 #define NI_NUMERICHOST 0x01
 #define NI_NUMERICSERV 0x02
 #define NI_NOFQDN      0x04
@@ -39,7 +31,6 @@ struct addrinfo {
 #define NI_MAXHOST     1025
 #define NI_MAXSERV     32
 
-/* getaddrinfo() error codes */
 #define EAI_BADFLAGS   -1
 #define EAI_NONAME     -2
 #define EAI_AGAIN      -3

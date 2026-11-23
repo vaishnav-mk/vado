@@ -1,14 +1,7 @@
-/* WebAssembly setjmp/longjmp runtime.
- *
- * Building Lua with `-mllvm -wasm-enable-sjlj` lowers its setjmp/longjmp into
- * three helper calls plus a throw of the `__c_longjmp` exception tag. wasi-sdk
- * ships the tag (in libclang_rt.builtins) but NOT these helpers (they normally
- * come from Emscripten's runtime), so they surface as undefined `env` imports.
- * Provide them here. The layout of `struct jmp_buf_impl` and the C_LONGJMP tag
- * index are the fixed ABI the LLVM lowering emits, matching Emscripten's
- * emscripten_setjmp.c. wasi-libc's jmp_buf (setjmp.h) is far larger than this
- * struct, so writing through it is safe. Node's V8 implements the wasm
- * Exception-handling proposal, so the throw/catch runs. */
+/* -mllvm -wasm-enable-sjlj lowers setjmp/longjmp to these helpers and a throw of the
+ * __c_longjmp tag, which the host supplies. wasi-sdk doesn't ship the helpers (Emscripten's
+ * runtime does). The struct layout and tag index are the ABI LLVM emits, as in Emscripten's
+ * emscripten_setjmp.c; wasi-libc's jmp_buf is larger, so writing through it is safe. */
 #include <stdint.h>
 
 struct __WasmLongjmpArgs { void *env; int val; };
@@ -18,7 +11,7 @@ struct jmp_buf_impl {
     struct __WasmLongjmpArgs arg;
 };
 
-#define C_LONGJMP 1 /* exception-tag index the SjLj lowering throws/catches */
+#define C_LONGJMP 1
 
 void __wasm_setjmp(void *env, uint32_t label, void *func_invocation_id) {
     struct jmp_buf_impl *jb = env;

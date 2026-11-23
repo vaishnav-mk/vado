@@ -1,7 +1,4 @@
-/* wasi-sysroot has no <syslog.h>. Valkey's logging goes to its own logfile/
- * stdout path; syslog is only used when daemonized (never here). Provide the
- * symbols as no-ops so the ~64 TUs that transitively include it compile.
- * On the -I path (build.sh), so `#include <syslog.h>` resolves here. */
+/* The sysroot has no <syslog.h>, and there is no syslog to write to. */
 #ifndef VALKEY_WASM_SYSLOG_H
 #define VALKEY_WASM_SYSLOG_H
 #include <stdarg.h>
