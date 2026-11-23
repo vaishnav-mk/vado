@@ -66,9 +66,9 @@ export const RUNNING_SECTIONS: DocSection[] = [
             ],
             ["The same, only the objects restarted", "Median 1.0 s, slowest 1.3 s", "Median 1.1 s, slowest 1.5 s"],
             [
-              "A shard holding 170 MB, ready again (174 restores, both servers)",
+              "A shard holding 170 MB, ready again (174 restores, both servers together)",
               "Median 1.1 s, p90 1.35 s: 0.5 s copying, 0.55 s loading, no second copy",
-              "",
+              "Counted with Valkey's",
             ],
             [
               "Acknowledged writes, every container and object destroyed",
