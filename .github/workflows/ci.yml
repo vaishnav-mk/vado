@@ -25,4 +25,4 @@ jobs:
       - run: npm ci
       - run: npm run check
       - run: npx vp test
-      - run: npx vp build
+      - run: npm run build

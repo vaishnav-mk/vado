@@ -35,7 +35,7 @@ jobs:
           cache: npm
 
       - run: npm ci
-      - run: npx vp build
+      - run: npm run build
         env:
           VADO_REDIS: "1"
 
@@ -46,7 +46,7 @@ jobs:
           echo "::add-mask::$TOKEN"
           printf '{"VALKEY_PASSWORD":"%s","BENCH_TOKEN":"%s"}' "$PW" "$TOKEN" > "$RUNNER_TEMP/secrets.json"
           # Nobody signs in to this copy, so Access is set to values no token can match.
-          npx wrangler deploy --name vado-e2e --secrets-file "$RUNNER_TEMP/secrets.json" \
+          npx wrangler deploy -c apps/dashboard/dist/server/wrangler.json --name vado-e2e --secrets-file "$RUNNER_TEMP/secrets.json" \
             --var ACCESS_TEAM_DOMAIN:https://none.cloudflareaccess.com --var ACCESS_AUD:none | tee "$RUNNER_TEMP/deploy.log"
           rm "$RUNNER_TEMP/secrets.json"
           url=$(grep -o 'https://vado-e2e\.[a-z0-9.-]*\.workers\.dev' "$RUNNER_TEMP/deploy.log" | head -1)
