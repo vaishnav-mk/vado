@@ -1,4 +1,4 @@
-// The dashboard's server functions check sign-in and input shapes first, so this checks only the rules.
+// The dashboard's server functions check input shapes, and sign-in for anything that changes something; this checks the rules.
 import { catalogStub, current, database, existing, parseFlavour } from "../catalog/databases";
 import { DB_NAME, DB_NAME_RULE } from "../catalog/names";
 import { configureReplicas, shardStub } from "../catalog/placement";

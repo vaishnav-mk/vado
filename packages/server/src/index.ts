@@ -67,7 +67,8 @@ async function watch(req: Request, env: Env): Promise<Response> {
   return env.WATCHER.getByName(name).fetch(new Request(req, { headers }));
 }
 
-// Public, so served only when VALKEY_PASSWORD makes AUTH mandatory: nothing is created for unauthenticated callers.
+// Public, so served only when VALKEY_PASSWORD makes AUTH mandatory. Unauthenticated callers run no commands, but a
+// connection still looks up the default database, creating it if it doesn't exist.
 function websocket(req: IncomingRequest, env: Env, ctx: ExecutionContext): Response {
   if (!isUpgrade(req)) return upgradeRequired();
 

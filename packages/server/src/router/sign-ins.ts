@@ -1,4 +1,5 @@
-// Blocks guessing of passwords and database names (each unknown name asks the catalog); per isolate, so it's free.
+// Blocks guessing of passwords and database names (each unknown name asks the catalog). Blocks are kept per isolate,
+// and decided by the AUTH_LIMIT rate limiter, which every failure calls.
 import type { SignIns, Where } from "./types";
 import { noop } from "../shared";
 
