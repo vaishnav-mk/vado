@@ -44,11 +44,19 @@ function Health({ state, connection }: { state: LiveState | null; connection: Co
   const reps = replicaCounts(state.shards),
     line = replicaLine(reps);
 
+  const total = state.db?.shards ?? state.shards.length,
+    up = state.shards.filter((s) => s.ok).length;
+
   return (
     <div className="flex flex-wrap items-center gap-2">
       <Badge variant={variant} appearance="dot">
         {label}
       </Badge>
+      {total > 0 && (
+        <Badge variant={up === total ? "success" : "warning"} appearance="dot">
+          {up === total ? `${plural(total, "shard")} up` : `${up} of ${plural(total, "shard")} up`}
+        </Badge>
+      )}
       {reps.total > 0 && (
         <Badge variant={line.variant} appearance="dot">
           {line.text}
