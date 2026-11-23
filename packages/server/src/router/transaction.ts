@@ -1,4 +1,3 @@
-// MULTI/WATCH: commands are queued here and sent to one shard at EXEC, on a socket of its own.
 import { keyIndexes } from "../protocol/commands";
 import { error } from "../protocol/resp";
 import type { CommandEntry } from "../protocol/types";
@@ -29,7 +28,6 @@ export function multi(c: Conn): void {
   c.replies.reply(OK);
 }
 
-// An error while queueing makes EXEC abort.
 function refuse(c: Conn, m: Multi, reply: Uint8Array): void {
   m.failed = true;
   c.replies.reply(reply);
@@ -47,11 +45,10 @@ export function queue(
 
   if (bad) return refuse(c, m, bad);
 
-  if (PUBSUB.has(name) || UNSUPPORTED.has(name) || NOT_IN_MULTI.has(name))
-    return refuse(c, m, unsupported(`${name} in MULTI`));
   const idx = keyIndexes(c.target.table, name, argv);
 
-  if (idx === null) return refuse(c, m, unsupported(`${name} in MULTI`));
+  if (idx === null || PUBSUB.has(name) || UNSUPPORTED.has(name) || NOT_IN_MULTI.has(name))
+    return refuse(c, m, unsupported(`${name} in MULTI`));
 
   if (idx.length && c.db.shards > 1) {
     const shard = shardAt(argv, idx, c.db.shards);
@@ -83,7 +80,7 @@ export function exec(c: Conn): void {
     shard = m.shard ?? 0;
 
   const send = () => {
-    // A connection of its own: an RPC batch could end between MULTI and EXEC, on a pooled client.
+    // A socket: an RPC batch could end between MULTI and EXEC, on a pooled client.
     const up = m.watched && watchUp ? watchUp : c.pool.get(shard, true);
     c.writes.start(shard);
     up.send(MULTI, noop);
@@ -113,7 +110,7 @@ export function watch(c: Conn, argv: Uint8Array[], raw: Uint8Array): void {
   if (c.tx.multi) return c.replies.reply(error("ERR WATCH inside MULTI is not allowed"));
 
   if (argv.length < 2) return c.replies.reply(wrongArity("watch"));
-  const shard = c.db.shards === 1 ? 0 : shardOfKeys(argv.slice(1), c.db.shards);
+  const shard = shardOfKeys(argv.slice(1), c.db.shards);
 
   if (shard < 0 || (c.tx.watch !== null && c.tx.watch !== shard)) return c.replies.reply(CROSSSLOT);
   c.tx.watch = shard;
@@ -121,7 +118,7 @@ export function watch(c: Conn, argv: Uint8Array[], raw: Uint8Array): void {
   const s = c.replies.slot(),
     up = c.pool.get(shard, true);
 
-  // earlier keys were watched on a connection that died
+  // Earlier keys were watched on a connection that died.
   if (c.tx.watchUp && c.tx.watchUp !== up) c.tx.watchBroken = true;
   c.tx.watchUp = up;
   up.send(raw, (f) => c.replies.resolve(s, f));

@@ -1,4 +1,3 @@
-// Pub/sub: one pubsub object per database. In RESP2 a subscribed connection becomes a pipe to it.
 import { decode } from "../protocol/decode";
 import { arrayOf, bulk, concat, integer, lower, str } from "../protocol/resp";
 import { PUBSUB, SUBSCRIBE, WHILE_SUBSCRIBED } from "./command-sets";
@@ -17,7 +16,7 @@ export function pubsub(c: Conn, name: string, argv: Uint8Array[], raw: Uint8Arra
 
   const up = c.pool.get("pubsub");
 
-  // confirmations and messages arrive as pushes
+  // Confirmations and messages arrive as pushes.
   if (c.proto === 3) return up.raw(raw.slice());
 
   // Not subscribed: Valkey answers once per channel named, or once if none is.
@@ -45,7 +44,6 @@ function passed(c: Conn, f: Uint8Array): void {
     c.endPassthrough(false);
 }
 
-/** A request while subscribed (RESP2): only pub/sub, PING, QUIT and RESET. */
 export function passRequest(c: Conn, pass: Upstream, argv: Uint8Array[], raw: Uint8Array): void {
   const name = lower(argv[0]);
 

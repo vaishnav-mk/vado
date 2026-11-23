@@ -1,5 +1,3 @@
-// The RESP parser on its own: requests and replies that arrive in pieces parse the same as whole ones, and resuming
-// keeps a huge pipeline linear.
 import { expect, test } from "vite-plus/test";
 import { decodeTyped } from "../../src/protocol/decode";
 import { request } from "../../src/protocol/request";
@@ -11,8 +9,7 @@ const dec = new TextDecoder();
 
 type Parse<T> = (b: Uint8Array, i: number, resume: FrameResume & RequestResume) => { end: number; value: T } | null;
 
-// Feeds `bytes` in `size`-byte chunks the way the router does: each time, the unparsed tail starts a new buffer
-// (here a view, so the test itself stays linear), and the same resume object goes with the frame until it is whole.
+// As the router feeds them: the unparsed tail starts each buffer (a view here, so the test stays linear).
 function chunked<T>(bytes: Uint8Array, size: number, parse: Parse<T>): T[] {
   const out: T[] = [];
   const resume = {};

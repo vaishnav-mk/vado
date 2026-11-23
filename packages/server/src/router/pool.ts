@@ -4,7 +4,6 @@ import { SocketUpstream } from "./socket-upstream";
 import type { UpKey, Upstream, UpstreamOwner } from "./types";
 import { noop } from "../shared";
 
-/** A connection's upstreams, one per shard (or pub/sub object, or replica) it has talked to. */
 export class UpstreamPool {
   readonly #ups = new Map<UpKey, Upstream>();
   readonly #owner: UpstreamOwner;
@@ -13,7 +12,6 @@ export class UpstreamPool {
     this.#owner = owner;
   }
 
-  /** The live upstream for `key`, made if needed; `needsSocket` refuses an RPC one (WATCH, MULTI). */
   get(key: UpKey, needsSocket = false): Upstream {
     const up = this.#ups.get(key);
 
@@ -42,7 +40,6 @@ export class UpstreamPool {
     if (this.#ups.get(up.key) === up) this.#ups.delete(up.key);
   }
 
-  /** Whether any upstream has more than `mark` bytes in flight. */
   above(mark: number): boolean {
     for (const up of this.#ups.values()) if (up.inflight > mark) return true;
 
@@ -53,7 +50,6 @@ export class UpstreamPool {
     for (const [key, up] of this.#ups) if (key !== except) up.send(bytes, noop);
   }
 
-  /** The watchdog: checks for stalls, and closes sockets idle `idleMs` so idle shards stop being billed. */
   tick(now: number, idleMs: number, keep: number | null): void {
     for (const [key, up] of this.#ups) {
       up.check(now);

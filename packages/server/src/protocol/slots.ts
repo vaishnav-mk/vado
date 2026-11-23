@@ -1,4 +1,3 @@
-// Redis Cluster key slots (CRC16/XMODEM of the key or its {hashtag}, mod 16384) and slot -> shard.
 export const SLOTS = 16384;
 
 const TABLE = new Uint16Array(256);
@@ -10,7 +9,6 @@ for (let i = 0; i < 256; i++) {
   TABLE[i] = c;
 }
 
-/** CRC16/XMODEM of `b[from..to)`. */
 export function crc16(b: Uint8Array, from = 0, to = b.length): number {
   let c = 0;
 
@@ -19,7 +17,6 @@ export function crc16(b: Uint8Array, from = 0, to = b.length): number {
   return c;
 }
 
-/** The slot of key bytes `k`, honouring `{hashtag}` like Redis Cluster. */
 export function slotOf(k: Uint8Array): number {
   const open = k.indexOf(123);
 
@@ -32,5 +29,5 @@ export function slotOf(k: Uint8Array): number {
   return crc16(k) % SLOTS;
 }
 
-/** Contiguous slot ranges per shard, as Redis Cluster assigns them, so a shard can later split. */
+// Contiguous ranges, as Redis Cluster assigns them, so a shard can later split.
 export const shardOfSlot = (slot: number, shards: number): number => Math.floor((slot * shards) / SLOTS);

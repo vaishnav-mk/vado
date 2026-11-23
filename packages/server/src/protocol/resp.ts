@@ -1,4 +1,3 @@
-// RESP2/RESP3 frames on bytes: where each ends (for proxying) and encoding.
 import type { CommandArg, FrameResume } from "./types";
 import { decoder, encoder } from "../shared";
 
@@ -6,14 +5,12 @@ const CR = 13;
 const LF = 10;
 const CRLF = encoder.encode("\r\n");
 
-/** The offset of the next CRLF in `b[i..end)`, or -1. */
 export function lineEnd(b: Uint8Array, i: number, end: number): number {
   for (let j = i; j + 1 < end; j++) if (b[j] === CR && b[j + 1] === LF) return j;
 
   return -1;
 }
 
-/** The decimal integer in `b[from..to)`. */
 export function num(b: Uint8Array, from: number, to: number): number {
   let n = 0;
   let neg = false;
@@ -29,9 +26,7 @@ export function num(b: Uint8Array, from: number, to: number): number {
   return neg ? -n : n;
 }
 
-/** End offset of the RESP frame that starts at `i`, or -1 if `b[i..end)` holds only part of it. Pass the same
- *  `resume` while the frame at `i` arrives in pieces: an aggregate's elements already found complete aren't
- *  scanned again (offsets are relative to `i`, so the caller may move the frame). */
+// `resume` skips elements already found whole; its offsets are relative to `i`, so the caller may move the frame.
 export function frameEnd(b: Uint8Array, i: number, end: number, resume: FrameResume | null = null): number {
   if (i >= end) return -1;
   const t = b[i];
@@ -40,18 +35,17 @@ export function frameEnd(b: Uint8Array, i: number, end: number, resume: FrameRes
   if (le < 0) return -1;
 
   switch (t) {
-    case 43: // +
-    case 45: // -
-    case 58: // :
-    case 95: // _
-    case 35: // #
-    case 44: // ,
-    case 40: // (
+    case 43:
+    case 45:
+    case 58:
+    case 95:
+    case 35:
+    case 44:
+    case 40:
       return le + 2;
-    case 36: // $
-    case 33: // !
+    case 36:
+    case 33:
     case 61: {
-      // =
       const n = num(b, i + 1, le);
 
       if (n < 0) return le + 2;
@@ -60,12 +54,11 @@ export function frameEnd(b: Uint8Array, i: number, end: number, resume: FrameRes
       return e <= end ? e : -1;
     }
 
-    case 42: // *
-    case 126: // ~
-    case 62: // >
-    case 37: // %
+    case 42:
+    case 126:
+    case 62:
+    case 37:
     case 124: {
-      // |
       let n = num(b, i + 1, le);
 
       if (n < 0) return le + 2;
@@ -109,7 +102,6 @@ export function frameEnd(b: Uint8Array, i: number, end: number, resume: FrameRes
 
 const toBytes = (x: CommandArg): Uint8Array => (x instanceof Uint8Array ? x : encoder.encode(String(x)));
 
-/** Encodes one command (an array of bulk strings). */
 export function command(args: readonly CommandArg[]): Uint8Array {
   const parts: Uint8Array[] = [encoder.encode(`*${args.length}\r\n`)];
 
@@ -152,7 +144,6 @@ export function concat(parts: readonly Uint8Array[]): Uint8Array {
   return out;
 }
 
-/** Splits a reply array frame (`*n ...`) into its element frames. */
 export function elements(frame: Uint8Array): Uint8Array[] {
   const le = lineEnd(frame, 1, frame.length);
   const n = num(frame, 1, le);

@@ -1,4 +1,3 @@
-// State every router in this isolate shares.
 import { REPL_RETRY_MS } from "../replication/config";
 import { ISOLATE_HIGH, ISOLATE_LOW, SOCKET_BUDGET } from "./config";
 
@@ -11,7 +10,6 @@ let socketBudget = SOCKET_BUDGET;
 let isolateBytes = 0;
 const waiting = new Set<Waiter>();
 
-// "<db>/<shard>" -> until (ms): a replica that just failed a read (not ready, or reset) isn't tried for a while.
 const replicaDown = new Map<string, number>();
 
 export const setSocketBudget = (n: number) => {
@@ -26,10 +24,8 @@ export const socketClosed = () => {
   socketsOpen--;
 };
 
-/** Whether a new upstream may be a socket; past the budget it carries RPC batches instead. */
 export const socketsLeft = () => socketsOpen < socketBudget;
 
-/** Counts shard-bound bytes in flight; draining below ISOLATE_LOW wakes every router that waited. */
 export function isolateAdd(n: number): void {
   isolateBytes += n;
 
@@ -41,7 +37,6 @@ export function isolateAdd(n: number): void {
   }
 }
 
-/** Past ISOLATE_HIGH, `waiter` is woken once the isolate drains. */
 export function isolateFull(waiter: Waiter): boolean {
   if (isolateBytes <= ISOLATE_HIGH) return false;
   waiting.add(waiter);

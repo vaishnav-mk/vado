@@ -10,16 +10,13 @@ export const PUBSUB = new Set([
   ...SUBSCRIBE,
 ]);
 
-/** What a connection may send while it is a RESP2 pub/sub pipe, besides PUBSUB. */
 export const WHILE_SUBSCRIBED = new Set(["ping", "quit", "reset"]);
 
 export const BEFORE_AUTH = new Set(["auth", "hello", "quit"]);
 
-/** What runs at once inside MULTI instead of being queued. */
 export const TX_CONTROL = new Set(["exec", "discard", "multi", "watch", "quit", "reset"]);
 
-// save/bgrewriteaof: shards schedule their own AOF rewrites. acl: the router does AUTH; a shard password would
-// lock the routers out.
+// Shards schedule their own AOF rewrites; the router does AUTH, and a shard password would lock routers out.
 export const UNSUPPORTED = new Set([
   "monitor",
   "sync",
@@ -38,8 +35,7 @@ export const UNSUPPORTED = new Set([
   "acl",
 ]);
 
-// CONFIG SET reaches every shard, so it may change how data behaves, never durability, memory, networking or
-// auth: those belong to the service, and a shard shares its isolate's memory.
+// How data behaves only: durability, memory, networking and auth belong to the service, and shards share memory.
 export const CONFIG_SET = new Set([
   "maxmemory-policy",
   "maxmemory-samples",
@@ -71,8 +67,7 @@ export const CONFIG_SET = new Set([
   "activerehashing",
 ]);
 
-// Commands the router answers itself: queued in MULTI they would reach one shard's connection, which may be a
-// pooled one other clients share.
+// Answered by the router: queued in MULTI they would reach one shard's connection, which may be a pooled one.
 export const NOT_IN_MULTI = new Set([
   "select",
   "client",
@@ -112,6 +107,6 @@ export const CLIENT_UNSUPPORTED = new Set([
   "import-source",
 ]);
 
-/** Subcommands sent to every shard, so EVALSHA and FCALL work wherever their keys land. */
+// Sent to every shard, so EVALSHA and FCALL work wherever their keys land.
 export const SCRIPT_EVERYWHERE = new Set(["load", "flush"]);
 export const FUNCTION_EVERYWHERE = new Set(["load", "delete", "flush", "restore"]);

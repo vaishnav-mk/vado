@@ -1,4 +1,3 @@
-// One client connection (TCP, WebSocket or service binding) -> one Router on its database, until it closes.
 import { database, forget, lookup } from "../catalog/databases";
 import { replicaRegion, replicaStub, shardStub } from "../catalog/placement";
 import type { DatabaseRecord } from "../catalog/types";
@@ -9,10 +8,11 @@ import { IDLE_MS, PULSE_MS } from "./config";
 import { setSocketBudget } from "./isolate";
 import { learnColo, live, report } from "./pulse-report";
 import type { LiveConn } from "./pulse-report";
+import { errorOf } from "./replies-text";
 import { Router } from "./router";
 import { signIns } from "./sign-ins";
 import type { ClientSocket, DatabaseHandles, Via, Where } from "./types";
-import { encoder, messageOf, noop } from "../shared";
+import { noop } from "../shared";
 
 export { live } from "./pulse-report";
 
@@ -34,7 +34,6 @@ async function open(env: Env, name: string): Promise<DatabaseHandles> {
   return handles(env, db, await commands(env, db.flavour));
 }
 
-/** Serves one connection on database `name`. `via` is how it arrived; `where` what's known of the client's location. */
 export async function serve(
   socket: ClientSocket,
   env: Env,
@@ -62,12 +61,12 @@ async function serveRouter(socket: ClientSocket, env: Env, name: string, conn: L
   let target: DatabaseHandles;
 
   try {
-    // The Valkey table is asked for alongside the record: most databases need it.
+    // Most databases need the Valkey table, so ask for it alongside the record.
     const [db, valkey] = await Promise.all([database(env, name), commands(env)]);
     target = handles(env, db, db.flavour === "valkey" ? valkey : await commands(env, db.flavour));
   } catch (cause) {
     const w = socket.writable.getWriter();
-    await w.write(encoder.encode(`-ERR ${messageOf(cause)}\r\n`)).catch(noop);
+    await w.write(errorOf(cause)).catch(noop);
     await w.close().catch(noop);
     // Nothing reads the client's commands now; cancelling fails their writes instead of leaving them waiting.
     await socket.readable.cancel().catch(noop);

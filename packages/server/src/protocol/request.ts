@@ -1,4 +1,3 @@
-// Client requests: the one parser untrusted bytes go through.
 import { lineEnd, num } from "./resp";
 import type { ParsedRequest, RequestResume } from "./types";
 import { decoder, encoder } from "../shared";
@@ -32,12 +31,7 @@ function pause(resume: RequestResume | null, argv: Uint8Array[], k: number, rel:
   return null;
 }
 
-/**
- * Parses one client request at `i`: a RESP array of bulk strings, or an inline command. Returns null while it is
- * incomplete. Throws Valkey's protocol errors for a request over `max` bytes or an over-long line, so a client
- * can't make the caller buffer without bound. Pass the same `resume` while the request at `i` arrives in pieces,
- * so arguments already parsed aren't parsed again (a pipeline of 500k small ones arrives in hundreds of chunks).
- */
+// Throws past `max` so a client can't make the caller buffer without bound; `resume` keeps a huge pipeline linear.
 export function request(
   b: Uint8Array,
   i: number,

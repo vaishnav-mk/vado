@@ -1,11 +1,6 @@
-// End of the bytes written into each buffer `append` allocated.
 const written = new WeakMap<ArrayBufferLike, number>();
 
-/**
- * Appends `b` to the unparsed tail `a`, growing into spare capacity (doubling), so a frame that arrives in many
- * chunks is copied O(size) times, not O(size²). It writes only past the last byte it wrote, into buffers it
- * allocated, so views already handed out (argv, frames) never change.
- */
+// Doubling keeps a frame arriving in many chunks O(size); writing only past its own last write keeps views unchanged.
 export function append(a: Uint8Array, b: Uint8Array): Uint8Array {
   if (!a.length) return b;
   const end = a.byteOffset + a.length;

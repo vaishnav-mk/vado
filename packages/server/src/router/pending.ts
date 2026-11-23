@@ -2,20 +2,18 @@ import { EXEC, MULTI } from "./replies-text";
 import type { Callback } from "./types";
 import { noop } from "../shared";
 
-/** The requests a socket has sent and not had replies to, in order. Parallel arrays, so add() allocates nothing. */
+// Parallel arrays, so add() allocates nothing.
 export class Pending {
   #callbacks: Callback[] = [];
   #sent: number[] = [];
-  // Their bytes, to send again on a new socket. Views of the client's buffer never change (append), so no copy.
+  // Views of the client's buffer never change (append), so resending needs no copy.
   #again: Uint8Array[] = [];
-  // the shard has run a MULTI sent here and not yet its EXEC
-  #inTx = false;
+  #multiRan = false;
 
   get length(): number {
     return this.#callbacks.length;
   }
 
-  /** When the oldest was sent. */
   get oldest(): number {
     return this.#sent[0];
   }
@@ -26,30 +24,28 @@ export class Pending {
     this.#again.push(bytes);
   }
 
-  /** The callback the next reply is for, or undefined if none is owed. */
   next(): Callback | undefined {
     const cb = this.#callbacks.shift();
     this.#sent.shift();
     const bytes = this.#again.shift();
 
-    if (bytes === MULTI) this.#inTx = true;
-    else if (bytes === EXEC) this.#inTx = false;
+    if (bytes === MULTI) this.#multiRan = true;
+    else if (bytes === EXEC) this.#multiRan = false;
 
     return cb;
   }
 
-  /** A transaction whose MULTI ran on a socket that closed went with it, EXEC unrun: its requests, to get LOST. */
+  // A transaction whose MULTI ran on a socket that closed went with it, EXEC unrun: its requests get LOST.
   dropTransaction(): Callback[] {
-    if (!this.#inTx) return [];
+    if (!this.#multiRan) return [];
     const n = this.#again.indexOf(EXEC) + 1 || this.#again.length;
     this.#sent.splice(0, n);
     this.#again.splice(0, n);
-    this.#inTx = false;
+    this.#multiRan = false;
 
     return this.#callbacks.splice(0, n);
   }
 
-  /** For a new socket: `setup` first (replies unwanted), then everything owed. Returns all the bytes to send. */
   resend(setup: Uint8Array[], now: number): Uint8Array[] {
     this.#callbacks.unshift(...setup.map(() => noop));
     this.#again.unshift(...setup);
@@ -58,7 +54,6 @@ export class Pending {
     return [...this.#again];
   }
 
-  /** Forgets every request; returns their callbacks. */
   clear(): Callback[] {
     const callbacks = this.#callbacks;
     this.#callbacks = [];

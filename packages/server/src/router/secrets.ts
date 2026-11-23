@@ -1,10 +1,9 @@
 import { encoder } from "../shared";
-// Passwords: constant-time comparison, and the salted hash a database's own password is stored as.
 
 // SAFETY: Workers' SubtleCrypto has timingSafeEqual; the DOM lib the dashboard needs in tsconfig hides it.
 const subtle = crypto.subtle as SubtleCrypto & { timingSafeEqual(a: Uint8Array, b: Uint8Array): boolean };
 
-/** Length leaks; contents don't. */
+// Length leaks; contents don't.
 export const sameSecret = (a: string, b: string): boolean => {
   const x = encoder.encode(a),
     y = encoder.encode(b);
@@ -17,8 +16,7 @@ const sha256 = async (s: string) =>
     .map((b) => b.toString(16).padStart(2, "0"))
     .join("");
 
-/** "salt:sha256(salt + password)". Passwords are generated (high entropy), so a fast hash is enough, and AUTH stays
- *  cheap for clients that connect often. */
+// Generated passwords have high entropy, so a fast hash is enough and AUTH stays cheap.
 export const hashSecret = async (pass: string): Promise<string> => {
   const salt = crypto.randomUUID();
 

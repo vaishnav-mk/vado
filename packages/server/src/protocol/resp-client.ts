@@ -1,7 +1,7 @@
-// A small RESP client over a socket: pipelined calls, replies decoded by decode() or decodeTyped().
 import { decode } from "./decode";
 import { command, concat, frameEnd } from "./resp";
 import type { CommandArg, Reply, RespSocket } from "./types";
+import { noop } from "../shared";
 
 type Parse<T> = (frame: Uint8Array) => [T, number];
 
@@ -17,19 +17,16 @@ export class RespClient {
     this.#stallMs = stallMs;
   }
 
-  /** Sends every command at once, then reads one reply for each. */
   async call(...cmds: CommandArg[][]): Promise<Reply[]> {
     await this.send(...cmds);
 
     return this.read(cmds.length);
   }
 
-  /** Sends every command at once, without reading the replies. */
   send(...cmds: CommandArg[][]): Promise<void> {
     return this.#writer.write(concat(cmds.map(command)));
   }
 
-  /** Reads the next `n` replies. A connection that sends nothing for stallMs is an error, not a hang. */
   read(n: number): Promise<Reply[]>;
   read<T>(n: number, parse: Parse<T>): Promise<T[]>;
   async read<T>(n: number, parse?: Parse<T>): Promise<(T | Reply)[]> {
@@ -59,7 +56,7 @@ export class RespClient {
   }
 
   close(): void {
-    this.#writer.close().catch(() => {});
+    this.#writer.close().catch(noop);
   }
 
   async #next(waitingFor: string): Promise<ReadableStreamReadResult<Uint8Array>> {

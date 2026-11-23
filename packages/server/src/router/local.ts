@@ -3,8 +3,7 @@ import { serve } from "./serve";
 import { socketPair } from "./socket-pair";
 import type { ClientSocket } from "./types";
 
-/** A connection to database `name` through a Router in this isolate, as a service binding's would be (our own
- *  code: the shared password opens any database). */
+// Trusted like a service binding: it's our own code.
 export function connectLocal(env: Env, name: string): ClientSocket {
   const [client, server] = socketPair();
   void serve(server, env, name, "binding");
@@ -12,7 +11,6 @@ export function connectLocal(env: Env, name: string): ClientSocket {
   return client;
 }
 
-/** A RespClient on database `name` through a Router in this isolate, signed in. */
 export async function openLocal(env: Env, name: string, stallMs?: number): Promise<RespClient> {
   const client = new RespClient(connectLocal(env, name), stallMs);
 

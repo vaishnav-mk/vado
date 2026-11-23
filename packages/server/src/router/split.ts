@@ -1,101 +1,96 @@
-// Multi-key commands whose keys span shards: one request per shard, replies merged into one.
 import { decode } from "../protocol/decode";
 import { arrayOf, command, elements, integer } from "../protocol/resp";
 import type { Conn } from "./conn";
 import { groupByShard } from "./key-shards";
 import { OK, wrongArity } from "./replies-text";
 
-type Gather = (frame: Uint8Array, idx: number[]) => void;
+type Merge = (frames: Uint8Array[], groups: number[][]) => Uint8Array;
 
-/** Sends `request(idx)` to each shard's group; the first error, or `result()` once every shard has answered. */
+export const sumOf = (frames: Uint8Array[]): Uint8Array => {
+  let n = 0;
+
+  for (const f of frames) n += Number(decode(f)[0]);
+
+  return integer(n);
+};
+
 function scatter(
   c: Conn,
   groups: Map<number, number[]>,
   writes: boolean,
   request: (idx: number[]) => Uint8Array,
-  gather: Gather | null,
-  result: () => Uint8Array,
+  merge: Merge,
 ): void {
-  const s = c.replies.slot();
+  const s = c.replies.slot(),
+    idxs = [...groups.values()],
+    frames = Array.from<Uint8Array>({ length: idxs.length });
 
   let left = groups.size,
-    failed: Uint8Array | null = null;
+    failed: Uint8Array | null = null,
+    k = 0;
 
   for (const [shard, idx] of groups) {
+    const at = k++;
+
     if (writes) c.writes.start(shard);
     c.pool.get(shard).send(request(idx), (f) => {
       if (writes) c.writes.done(shard);
 
       if (f[0] === 45) failed ??= f;
-      else gather?.(f, idx);
+      else frames[at] = f;
 
-      if (--left === 0) c.replies.resolve(s, failed ?? result());
+      if (--left === 0) c.replies.resolve(s, failed ?? merge(frames, idxs));
     });
   }
 }
 
-function mget(c: Conn, keys: Uint8Array[]): void {
-  const out = Array.from<Uint8Array>({ length: keys.length });
-
-  scatter(
-    c,
-    groupByShard(keys, c.db.shards),
-    false,
-    (idx) => command(["MGET", ...idx.map((i) => keys[i])]),
-    (f, idx) => {
-      const values = elements(f);
-
-      for (let k = 0; k < idx.length; k++) out[idx[k]] = values[k];
-    },
-    () => arrayOf(out),
-  );
-}
-
-function mset(c: Conn, args: Uint8Array[]): void {
-  if (args.length % 2) return c.replies.reply(wrongArity("mset"));
-  scatter(
-    c,
-    groupByShard(args, c.db.shards, 2),
-    true,
-    (idx) => command(["MSET", ...idx.flatMap((i) => [args[i], args[i + 1]])]),
-    null,
-    () => OK,
-  );
-}
-
-// DEL, UNLINK, EXISTS, TOUCH: the counts add up.
-function sum(c: Conn, name: string, keys: Uint8Array[]): void {
-  const upper = name.toUpperCase();
-  let total = 0;
-
-  scatter(
-    c,
-    groupByShard(keys, c.db.shards),
-    name !== "exists",
-    (idx) => command([upper, ...idx.map((i) => keys[i])]),
-    (f) => {
-      total += Number(decode(f)[0]);
-    },
-    () => integer(total),
-  );
-}
-
-/** Splits a cross-slot command by shard if it is one that can be; false if not. */
 export function split(c: Conn, name: string, argv: Uint8Array[]): boolean {
+  const args = argv.slice(1);
+
   switch (name) {
     case "mget":
-      mget(c, argv.slice(1));
+      scatter(
+        c,
+        groupByShard(args, c.db.shards),
+        false,
+        (idx) => command(["MGET", ...idx.map((i) => args[i])]),
+        (frames, idxs) => {
+          const out = Array.from<Uint8Array>({ length: args.length });
+
+          for (let k = 0; k < frames.length; k++) {
+            const values = elements(frames[k]);
+
+            for (let j = 0; j < idxs[k].length; j++) out[idxs[k][j]] = values[j];
+          }
+
+          return arrayOf(out);
+        },
+      );
 
       return true;
     case "mset":
-      mset(c, argv.slice(1));
+      if (args.length % 2) c.replies.reply(wrongArity("mset"));
+      else
+        scatter(
+          c,
+          groupByShard(args, c.db.shards, 2),
+          true,
+          (idx) => command(["MSET", ...idx.flatMap((i) => [args[i], args[i + 1]])]),
+          () => OK,
+        );
 
       return true;
     case "del":
     case "unlink":
     case "exists":
     case "touch":
-      sum(c, name, argv.slice(1));
+      scatter(
+        c,
+        groupByShard(args, c.db.shards),
+        name !== "exists",
+        (idx) => command([name.toUpperCase(), ...idx.map((i) => args[i])]),
+        sumOf,
+      );
 
       return true;
   }

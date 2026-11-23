@@ -1,22 +1,20 @@
-// The sharding proxy, one per client connection: parses each request, routes it by key slot to a shard, and writes
-// the replies back in request order. Clients see one ordinary Valkey.
 import { keyIndexes } from "../protocol/commands";
 import { request } from "../protocol/request";
-import { arrayOf, bulk, error, integer, lower, str } from "../protocol/resp";
+import { arrayOf, bulk, elements, integer, lower, str } from "../protocol/resp";
 import type { CommandEntry, RequestResume } from "../protocol/types";
 import { login } from "./auth";
 import { BEFORE_AUTH, PUBSUB, TX_CONTROL, UNSUPPORTED } from "./command-sets";
 import { DRAIN_MS, MAX_REQUEST, MAX_UNAUTHED, WATCHDOG_MS } from "./config";
 import { Conn } from "./conn";
 import { append } from "./buffer";
-import { config, dbsize, flush, info, keys, scriptOrFunction } from "./fanout";
+import { config, fanout, info, scriptOrFunction } from "./fanout";
 import { passRequest, pubsub } from "./pubsub";
-import { badArity, NOAUTH, OK, PONG, unknownCommand, unsupported, wrongArity } from "./replies-text";
+import { arityError, errorOf, NOAUTH, OK, PONG, unknownCommand, unsupported, wrongArity } from "./replies-text";
 import { getkeys, routeKeys } from "./routing";
 import { randomkey, scan, wait } from "./rpc-commands";
+import { sumOf } from "./split";
 import { client, cluster, hello, reset, select } from "./session";
 import { discard, exec, multi, queue, unwatch, watch } from "./transaction";
-import { messageOf } from "../shared";
 
 const WAITAOF = arrayOf([integer(1), integer(0)]);
 
@@ -24,7 +22,6 @@ export class Router extends Conn {
   async run(): Promise<void> {
     const reader = this.socket.readable.getReader(),
       watchdog = setInterval(() => this.#tick(), WATCHDOG_MS),
-      // how far request() got into a request that is still arriving
       parsing: RequestResume = {};
 
     let buf: Uint8Array = new Uint8Array(0),
@@ -36,11 +33,11 @@ export class Router extends Conn {
         const { value, done } = await reader.read();
 
         if (done) break;
-        buf = start < buf.length ? append(buf.subarray(start), value) : value;
+        buf = append(buf.subarray(start), value);
         start = 0;
 
         while (!this.closed) {
-          // before parsing: an AUTH in flight changes the size limit
+          // Before parsing: an AUTH in flight changes the size limit.
           if (this.replies.pending) await this.replies.pending;
           const r = request(buf, start, buf.length, this.authed ? MAX_REQUEST : MAX_UNAUTHED, parsing);
 
@@ -53,8 +50,7 @@ export class Router extends Conn {
         if (this.closed) break;
       }
     } catch (cause) {
-      // after the replies to earlier requests, then close
-      this.replies.reply(error(`ERR ${messageOf(cause)}`));
+      this.replies.reply(errorOf(cause));
     }
 
     await this.replies.drain(DRAIN_MS);
@@ -65,7 +61,6 @@ export class Router extends Conn {
 
   #tick(): void {
     this.now = Date.now();
-    // Idle sockets close, except the one holding a WATCH, and none inside MULTI.
     this.pool.tick(this.now, this.tx.multi ? Infinity : this.options.idleMs, this.tx.watch);
   }
 
@@ -90,14 +85,15 @@ export class Router extends Conn {
 
     if (!entry) return this.replies.reply(unknownCommand(argv));
 
-    if (badArity(entry, argv)) return this.replies.reply(wrongArity(name));
+    const bad = arityError(entry, name, argv);
+
+    if (bad) return this.replies.reply(bad);
     const idx = keyIndexes(this.target.table, name, argv);
 
     if (idx === null) return getkeys(this, entry, argv, raw);
     routeKeys(this, name, entry, argv, raw, idx);
   }
 
-  // The commands the router answers itself, or sends somewhere other than their key's shard; false for the rest.
   #answer(name: string, entry: CommandEntry | undefined, argv: Uint8Array[], raw: Uint8Array): boolean {
     switch (name) {
       case "ping":
@@ -155,14 +151,14 @@ export class Router extends Conn {
         cluster(this, argv);
         break;
       case "dbsize":
-        dbsize(this, entry, argv);
+        fanout(this, entry, argv, sumOf);
         break;
       case "keys":
-        keys(this, entry, argv);
+        fanout(this, entry, argv, (frames) => arrayOf(frames.flatMap((f) => elements(f))));
         break;
       case "flushall":
       case "flushdb":
-        flush(this, entry, argv);
+        fanout(this, entry, argv, () => OK);
         break;
       case "scan":
         scan(this, argv);

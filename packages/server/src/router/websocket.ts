@@ -1,7 +1,4 @@
-// A WebSocket as the { readable, writable } a Router reads and writes. WebSockets can't push back on the sender, so
-// a client that outruns the router by WS_MAX_QUEUED bytes is disconnected. Nor can a Worker tell what the client
-// has read, so with acks (the "vado-acks" subprotocol) the client sends text messages with the bytes it has taken,
-// and writes wait while WS_UNACKED are outstanding. Without acks, replies go as fast as the router makes them.
+// A Worker can't tell what a WebSocket client has read, so with "vado-acks" it sends text messages counting bytes.
 import { WS_MAX_QUEUED, WS_UNACKED } from "./config";
 import type { ClientSocket } from "./types";
 import { encoder } from "../shared";
@@ -12,12 +9,12 @@ const quietly = (f: () => void) => {
   try {
     f();
   } catch {
-    // already closed
+    // Already closed.
   }
 };
 
 export function wsSocket(ws: WebSocket, acks = false): ClientSocket {
-  // newer compat dates default to "blob"
+  // Newer compat dates default to "blob".
   ws.binaryType = "arraybuffer";
   let input: ReadableStreamDefaultController<Uint8Array> | null = null;
 
@@ -49,7 +46,6 @@ export function wsSocket(ws: WebSocket, acks = false): ClientSocket {
     const data: ArrayBuffer | string = e.data;
 
     if (acks && !(data instanceof ArrayBuffer)) {
-      // a text message: the bytes the client has taken so far
       acked = Math.max(acked, Number(data) || 0);
 
       if (sent - acked <= WS_UNACKED / 2) wake();

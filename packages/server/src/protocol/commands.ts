@@ -1,4 +1,3 @@
-// Key positions per command, from Valkey's own COMMAND output, plus the movable-key rules.
 import { lower, str } from "./resp";
 import type { CommandEntry, CommandTable, Reply } from "./types";
 
@@ -29,7 +28,6 @@ function add(into: CommandTable, e: Reply): void {
   into.set(entry.name.includes("|") ? entry.name.split("|")[1] : entry.name, entry);
 }
 
-/** The command table from a decoded COMMAND reply (RESP2). */
 export function commandTable(reply: Reply): CommandTable {
   const table: CommandTable = new Map();
 
@@ -53,7 +51,6 @@ const numkeys =
   (argv) =>
     numkeysAt(argv, at, firstKey);
 
-// The destination key first, then numkeys keys.
 const storeThenNumkeys: Keys = (argv) => {
   const keys = numkeysAt(argv, 2, 3);
 
@@ -74,28 +71,19 @@ const streamsKeys: Keys = (argv) => {
   return null;
 };
 
-// BY/GET patterns may touch other keys; like Redis Cluster, they aren't routed.
-const sortKeys: Keys = (argv) => {
-  const keys = [1];
+// SORT's BY/GET patterns may touch other keys; like Redis Cluster, they aren't routed.
+const storeKeys =
+  (...words: string[]): Keys =>
+  (argv) => {
+    const keys = [1];
 
-  for (let i = 2; i < argv.length - 1; i++) if (lower(argv[i]) === "store") keys.push(i + 1);
+    for (let i = 2; i < argv.length - 1; i++) if (words.includes(lower(argv[i]))) keys.push(i + 1);
 
-  return keys;
-};
+    return keys;
+  };
 
-const geoKeys: Keys = (argv) => {
-  const keys = [1];
+const geoKeys = storeKeys("store", "storedist");
 
-  for (let i = 2; i < argv.length - 1; i++) {
-    const w = lower(argv[i]);
-
-    if (w === "store" || w === "storedist") keys.push(i + 1);
-  }
-
-  return keys;
-};
-
-// Commands whose keys aren't at fixed positions ("movablekeys").
 const MOVABLE = new Map<string, Keys>([
   ["eval", numkeys(2, 3)],
   ["evalsha", numkeys(2, 3)],
@@ -117,15 +105,14 @@ const MOVABLE = new Map<string, Keys>([
   ["zdiffstore", storeThenNumkeys],
   ["xread", streamsKeys],
   ["xreadgroup", streamsKeys],
-  ["sort", sortKeys],
+  ["sort", storeKeys("store")],
   ["sort_ro", () => [1]],
   ["georadius", geoKeys],
   ["georadiusbymember", geoKeys],
   ["migrate", () => null],
 ]);
 
-/** The argv indexes holding keys, [] for keyless commands, or null when unknown (the caller then asks Valkey with
- *  COMMAND GETKEYS). `name` is lowercase. */
+// null: unknown, so the caller asks Valkey with COMMAND GETKEYS.
 export function keyIndexes(table: CommandTable, name: string, argv: Uint8Array[]): number[] | null {
   let e = table.get(name);
 

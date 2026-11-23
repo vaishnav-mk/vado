@@ -1,42 +1,25 @@
 import { concat, frameEnd } from "../protocol/resp";
 import { RESTARTING } from "../shard/version";
-import { REDIAL_MS, REDIALS, RPC_BATCH_BYTES } from "./config";
+import { RPC_BATCH_BYTES } from "./config";
 import { isolateAdd } from "./isolate";
-import { DROPPED, LOST } from "./replies-text";
-import type { Callback, ShardStub, UpKey, Upstream, UpstreamOwner } from "./types";
-import { noop } from "../shared";
+import { LOST, lostOr } from "./replies-text";
+import type { Callback, Upstream } from "./types";
+import { BaseUpstream } from "./upstream";
+import { messageOf, noop } from "../shared";
 
-/**
- * An upstream without a socket: each batch is one RPC (shard.execRaw) on a pooled Valkey client, one batch in flight
- * at a time to keep order. Never used for WATCH, MULTI or pub/sub, which need a connection of their own.
- */
-export class RpcUpstream implements Upstream {
-  readonly key: UpKey;
-  dead = false;
-  inflight = 0;
-  passthrough: Callback | null = null;
-  readonly #owner: UpstreamOwner;
-  #stub: ShardStub;
+// One batch in flight at a time keeps order. Never WATCH, MULTI or pub/sub: they need a connection of their own.
+export class RpcUpstream extends BaseUpstream implements Upstream {
   #pending: Callback[] = [];
   #out: Uint8Array[] = [];
   #busy = false;
-  #scheduled = false;
-  #retries = 0;
 
-  constructor(owner: UpstreamOwner, key: UpKey, stub: ShardStub) {
-    this.#owner = owner;
-    this.key = key;
-    this.#stub = stub;
-  }
-
-  // Queued bytes count as in flight at once: with one batch at a time, a slow or cold shard would otherwise let
-  // the router queue here without bound until the isolate ran out of memory (Worker error 1102 under load).
+  // Queued bytes count at once: else a slow shard lets the router queue until the isolate dies (error 1102).
   send(bytes: Uint8Array, cb: Callback): void {
     this.#pending.push(cb);
     this.#out.push(bytes.slice());
     this.inflight += bytes.length;
     isolateAdd(bytes.length);
-    this.#schedule();
+    this.schedule();
   }
 
   raw(bytes: Uint8Array): void {
@@ -53,22 +36,12 @@ export class RpcUpstream implements Upstream {
     this.dead = true;
   }
 
-  #schedule(): void {
-    if (this.#scheduled || this.#busy) return;
-    this.#scheduled = true;
-    queueMicrotask(() => {
-      this.#scheduled = false;
-      this.#flush();
-    });
-  }
-
-  #flush(): void {
+  protected override flush(): void {
     if (this.#busy || !this.#out.length) return;
 
     let take = 0,
       bytes = 0;
 
-    // whole requests, up to the batch cap
     while (take < this.#out.length && (take === 0 || bytes + this.#out[take].length <= RPC_BATCH_BYTES))
       bytes += this.#out[take++].length;
 
@@ -76,9 +49,9 @@ export class RpcUpstream implements Upstream {
       parts = this.#out.splice(0, take);
 
     this.#busy = true;
-    void this.#stub.execRaw(concat(parts), cbs.length, this.#owner.proto).then(
+    void this.stub.execRaw(concat(parts), cbs.length, this.owner.proto).then(
       (reply) => {
-        this.#retries = 0;
+        this.tries = 0;
         let i = 0;
 
         for (const cb of cbs) {
@@ -101,33 +74,28 @@ export class RpcUpstream implements Upstream {
     this.#busy = false;
     this.inflight -= bytes;
     isolateAdd(-bytes);
-    this.#owner.wake();
-    this.#schedule();
+    this.owner.wake();
+    this.schedule();
   }
 
   #failed(cause: unknown, cbs: Callback[], parts: Uint8Array[], bytes: number): void {
-    const message = cause instanceof Error ? cause.message : "";
-
     // Refused, unrun, by a shard restarting onto new code: again, in order, on its next instance.
-    if (message.includes(RESTARTING) && ++this.#retries <= REDIALS) {
+    const again = () => {
+      this.#busy = false;
+      this.flush();
+    };
+
+    if (messageOf(cause).includes(RESTARTING) && this.retry(again)) {
       this.#pending.unshift(...cbs);
       this.#out.unshift(...parts);
-      // the old stub breaks when the object resets
-      this.#stub = this.#owner.stubOf(this.key);
-      setTimeout(
-        () => {
-          this.#busy = false;
-          this.#flush();
-        },
-        REDIAL_MS * 2 ** (this.#retries - 1),
-      );
+      this.restub();
 
       return;
     }
 
-    // A stub whose object reset stays broken: drop this upstream so the next command gets a fresh stub.
+    // The next command gets a fresh upstream, and stub.
     this.dead = true;
-    const reply = DROPPED.test(message) ? this.#owner.dropped() : LOST;
+    const reply = lostOr(cause, () => this.owner.dropped());
 
     for (const cb of cbs) cb(reply);
     this.#done(bytes);

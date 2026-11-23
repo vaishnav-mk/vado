@@ -1,9 +1,9 @@
-// Commands answered by RPC to chosen shards: SCAN, RANDOMKEY, WAIT.
 import { arrayOf, bulk, elements, EMPTY, error, integer, str } from "../protocol/resp";
+import { sameBytes } from "./buffer";
 import type { Conn } from "./conn";
 import { bulkText, NOT_INTEGER, NULL_BULK } from "./replies-text";
 
-/** SCAN's cursor is the shard's cursor * shards + the shard index, so it stays one integer. */
+// The cursor is the shard's cursor * shards + the shard index, so it stays one integer.
 export function scan(c: Conn, argv: Uint8Array[]): void {
   const shards = BigInt(c.db.shards),
     target = c.target;
@@ -36,10 +36,6 @@ export function scan(c: Conn, argv: Uint8Array[]): void {
   });
 }
 
-// A RESP2 null bulk string: "$-1\r\n".
-const isNull = (f: Uint8Array) => f[0] === 36 && f[1] === 45;
-
-/** A random key of a random shard, trying the others in turn while they are empty. */
 export function randomkey(c: Conn): void {
   const target = c.target,
     n = target.db.shards,
@@ -49,17 +45,13 @@ export function randomkey(c: Conn): void {
     for (let k = 0; k < n; k++) {
       const f = await target.shard((start + k) % n).runRaw([["RANDOMKEY"]]);
 
-      if (!isNull(f)) return f;
+      if (!sameBytes(f, NULL_BULK)) return f;
     }
 
     return NULL_BULK;
   });
 }
 
-/**
- * WAIT numreplicas timeout: how many replicas have every write this connection made, the fewest over the shards it
- * wrote to. Each shard counts its own replicas once the earlier replies (the writes) are back.
- */
 export function wait(c: Conn, argv: Uint8Array[]): void {
   if (argv.length !== 3) return c.replies.reply(NOT_INTEGER);
 

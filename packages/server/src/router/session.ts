@@ -1,4 +1,3 @@
-// Connection state the router answers for: HELLO, CLIENT, RESET, SELECT, CLUSTER.
 import type { CommandEntry } from "../protocol/types";
 import { bulk, command, EMPTY, error, integer, lower, str } from "../protocol/resp";
 import { slotOf } from "../protocol/slots";
@@ -75,7 +74,7 @@ export function client(c: Conn, argv: Uint8Array[]): void {
   c.replies.reply(unknownSubcommand(argv[1] ?? EMPTY, "CLIENT"));
 }
 
-/** RESET, after every earlier reply: closing upstreams first would lose them. */
+// After every earlier reply: closing upstreams first would lose them.
 export function reset(c: Conn): void {
   c.replies.viaRpc(() => {
     c.tx.multi = null;

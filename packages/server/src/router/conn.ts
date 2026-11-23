@@ -1,4 +1,3 @@
-// A client connection's state, shared by the command handlers, and what its upstreams and replies call back into.
 import type { DatabaseRecord } from "../catalog/types";
 import { command, HELLO3 } from "../protocol/resp";
 import { ROUTER_HIGH_WATER, ROUTER_LOW_WATER } from "./config";
@@ -23,15 +22,13 @@ import type {
 export class Conn implements UpstreamOwner, ReplyOwner {
   static #ids = 0;
   readonly id = ++Conn.#ids;
-  /** Commands handled, read by the live view. */
   commands = 0;
-  /** A coarse clock for the watchdog, refreshed every tick. */
+  // Refreshed by the watchdog, so commands needn't call Date.now().
   now = Date.now();
   proto: 2 | 3 = 2;
   name: string | null = null;
   closed = false;
   authed: boolean;
-  /** RESP2 pub/sub passthrough: the pubsub upstream. */
   pass: Upstream | null = null;
   target: DatabaseHandles;
   readonly dial: string;
@@ -56,12 +53,10 @@ export class Conn implements UpstreamOwner, ReplyOwner {
     return this.target.db;
   }
 
-  /** Whether the client must not be read: too much unacknowledged here, on an upstream, or in the isolate. */
   blocked(): boolean {
     return isolateFull(this) || this.replies.inflight > ROUTER_HIGH_WATER || this.pool.above(ROUTER_HIGH_WATER);
   }
 
-  /** Resolves on the wake() that finds everything below the low marks. */
   paused(): Promise<void> {
     return new Promise((wake) => {
       this.#waiter = wake;
@@ -108,8 +103,7 @@ export class Conn implements UpstreamOwner, ReplyOwner {
     this.replies.push(frame);
   }
 
-  // A shard connection's state is gone. The WATCH stays set, so the next EXEC knows it was watched and aborts
-  // (a null reply, as on a conflict) instead of running unconditionally on a new instance.
+  // The WATCH stays set, so the next EXEC aborts as on a conflict instead of running unwatched on a new instance.
   lostConnection(up: Upstream): void {
     if (up === this.tx.watchUp) this.tx.watchBroken = true;
   }
@@ -129,8 +123,7 @@ export class Conn implements UpstreamOwner, ReplyOwner {
     if (lost) this.push(LOST);
   }
 
-  /** A shard refused because the database was dropped after this isolate cached its record: forget the record,
-   *  so the next connection is refused at AUTH, and say so. */
+  // Dropped after this isolate cached its record: forget it, so the next connection is refused at AUTH.
   dropped(): Uint8Array {
     this.options.onDropped(this.db.name);
 

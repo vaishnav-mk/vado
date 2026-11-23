@@ -1,15 +1,33 @@
-// Decoding whole RESP frames, for the paths that read replies (fan-out merges, admin, the shard's own commands).
-import { frameEnd, lineEnd, num } from "./resp";
+import { frameEnd, lineEnd, num, str } from "./resp";
 import type { Reply, TypedReply } from "./types";
-import { decoder } from "../shared";
 
-/** Decodes the frame at `i`: the value and the offset after it. Bulk strings become strings, errors `{ err }`. */
-export function decode(b: Uint8Array, i = 0): [Reply, number] {
-  const t = b[i];
+function header(b: Uint8Array, i: number): [number, number, () => string] {
   const le = lineEnd(b, i + 1, b.length);
 
   if (le < 0) throw new Error("incomplete RESP frame");
-  const line = () => decoder.decode(b.subarray(i + 1, le));
+
+  return [b[i], le, () => str(b.subarray(i + 1, le))];
+}
+
+function items<T>(
+  b: Uint8Array,
+  j: number,
+  n: number,
+  parse: (b: Uint8Array, i: number) => [T, number],
+): [T[], number] {
+  const out: T[] = [];
+
+  for (let k = 0; k < n; k++) {
+    const [v, next] = parse(b, j);
+    out.push(v);
+    j = next;
+  }
+
+  return [out, j];
+}
+
+export function decode(b: Uint8Array, i = 0): [Reply, number] {
+  const [t, le, line] = header(b, i);
 
   switch (t) {
     case 43:
@@ -36,7 +54,7 @@ export function decode(b: Uint8Array, i = 0): [Reply, number] {
 
       // Verbatim strings start "txt:".
       if (t === 61) s = s.subarray(4);
-      const text = decoder.decode(s);
+      const text = str(s);
 
       return [t === 33 ? { err: text } : text, le + 4 + n];
     }
@@ -46,35 +64,19 @@ export function decode(b: Uint8Array, i = 0): [Reply, number] {
     case 62: {
       const n = num(b, i + 1, le);
 
-      if (n < 0) return [null, le + 2];
-      const out: Reply[] = [];
-      let j = le + 2;
-
-      for (let k = 0; k < n; k++) {
-        const [v, next] = decode(b, j);
-        out.push(v);
-        j = next;
-      }
-
-      return [out, j];
+      return n < 0 ? [null, le + 2] : items(b, le + 2, n, decode);
     }
 
     case 37: {
-      const n = num(b, i + 1, le);
+      const [kv, j] = items(b, le + 2, num(b, i + 1, le) * 2, decode);
       const out = new Map<Reply, Reply>();
-      let j = le + 2;
 
-      for (let k = 0; k < n; k++) {
-        const [key, a] = decode(b, j);
-        const [v, c] = decode(b, a);
-        out.set(key, v);
-        j = c;
-      }
+      for (let k = 0; k < kv.length; k += 2) out.set(kv[k], kv[k + 1]);
 
       return [out, j];
     }
 
-    // An attribute: drop it, keep the reply it annotates.
+    // An attribute annotates the reply after it: dropped.
     case 124: {
       let j = le + 2;
       const n = num(b, i + 1, le) * 2;
@@ -89,7 +91,6 @@ export function decode(b: Uint8Array, i = 0): [Reply, number] {
   }
 }
 
-/** Every frame in `b`, decoded. */
 export function decodeAll(b: Uint8Array): Reply[] {
   const out = [];
 
@@ -102,14 +103,9 @@ export function decodeAll(b: Uint8Array): Reply[] {
   return out;
 }
 
-/** Decodes the RESP2 reply at `i` keeping its type, so it can be shown as valkey-cli does (a status reply OK
- *  unquoted, a bulk string "OK" quoted). */
+// Keeps the type so a reply shows as valkey-cli shows it: status OK unquoted, bulk "OK" quoted.
 export function decodeTyped(b: Uint8Array, i = 0): [TypedReply, number] {
-  const t = b[i];
-  const le = lineEnd(b, i + 1, b.length);
-
-  if (le < 0) throw new Error("incomplete RESP frame");
-  const line = () => decoder.decode(b.subarray(i + 1, le));
+  const [t, le, line] = header(b, i);
 
   switch (t) {
     case 43:
@@ -123,21 +119,14 @@ export function decodeTyped(b: Uint8Array, i = 0): [TypedReply, number] {
 
       return n < 0
         ? [{ type: "nil" }, le + 2]
-        : [{ type: "bulk", value: decoder.decode(b.subarray(le + 2, le + 2 + n)) }, le + 4 + n];
+        : [{ type: "bulk", value: str(b.subarray(le + 2, le + 2 + n)) }, le + 4 + n];
     }
 
     case 42: {
       const n = num(b, i + 1, le);
 
       if (n < 0) return [{ type: "nil" }, le + 2];
-      const value: TypedReply[] = [];
-      let j = le + 2;
-
-      for (let k = 0; k < n; k++) {
-        const [v, next] = decodeTyped(b, j);
-        value.push(v);
-        j = next;
-      }
+      const [value, j] = items(b, le + 2, n, decodeTyped);
 
       return [{ type: "array", value }, j];
     }

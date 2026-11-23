@@ -7,7 +7,6 @@ const buffered = () =>
     size: (chunk) => chunk.byteLength,
   });
 
-/** Two connected socket ends in this isolate: what one writes, the other reads. */
 export function socketPair(): [ClientSocket, ClientSocket] {
   const up = buffered(),
     down = buffered();
