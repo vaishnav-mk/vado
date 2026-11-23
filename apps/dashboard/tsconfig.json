@@ -1,4 +1,4 @@
 {
   "extends": "../../tsconfig.json",
-  "include": ["src", "vite.config.ts", "../../worker-configuration.d.ts", "../../packages/server/src/env.d.ts"]
+  "include": ["src", "test", "vite.config.ts", "../../worker-configuration.d.ts", "../../packages/server/src/env.d.ts"]
 }

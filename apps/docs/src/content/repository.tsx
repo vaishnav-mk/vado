@@ -27,6 +27,7 @@ export const repository: Doc = {
             ["packages/server", "The database: router, shards, replication, catalog, admin and the bench API"],
             ["packages/client", "bindingConnector for ioredis over a service binding, and vado-shim"],
             ["packages/wasm", "The Valkey and Redis wasm builds: patches, build scripts and the committed binaries"],
+            ["packages/*/test, apps/*/test", "Unit tests, at the same paths as the src files they test"],
             ["test/", "End-to-end tests against a deployed Worker"],
             ["tools/oxlint", "The vendored anti-slop lint plugin"],
           ]}

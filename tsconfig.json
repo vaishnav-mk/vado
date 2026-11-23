@@ -1,5 +1,12 @@
 {
-  "include": ["packages/*/src", "packages/*/*.ts", "test", "vite.config.ts", "worker-configuration.d.ts"],
+  "include": [
+    "packages/*/src",
+    "packages/*/test",
+    "packages/*/*.ts",
+    "test",
+    "vite.config.ts",
+    "worker-configuration.d.ts"
+  ],
   "compilerOptions": {
     "target": "ES2024",
     "lib": ["ES2024", "ESNext.Iterator", "DOM", "DOM.Iterable"],

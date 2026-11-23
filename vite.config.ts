@@ -12,7 +12,7 @@ const NOT_OURS = ["tools/oxlint/anti-slop/**", ".agents/**", ".claude/**", ".pi/
 
 export default defineConfig({
   // Plain Node, without the Worker.
-  test: { include: ["apps/*/src/**/*.test.ts", "packages/*/src/**/*.test.ts"] },
+  test: { include: ["apps/*/test/**/*.test.ts", "packages/*/test/**/*.test.ts"] },
   lint: {
     ignorePatterns: [...GENERATED, ...NOT_OURS],
     options: { typeAware: true, typeCheck: true },
