@@ -1,7 +1,5 @@
 #!/usr/bin/env bash
-# Builds redis.wasm (WASI reactor) from the pinned Redis release, patches/ and ../wasi/. Writes build/redis.wasm,
-# with the same exports as valkey.wasm, so the host runs either.
-#   WASI_SDK=/path/to/wasi-sdk-34 [OPT=-O3] packages/wasm/redis/build.sh
+# See https://vado-docs.vaishnav.one/docs/wasm
 HERE="$(cd "$(dirname "$0")" && pwd)"
 . "$HERE/../common.sh"
 
@@ -18,7 +16,7 @@ cat >"$SRC/release.h" <<'EOF'
 #define REDIS_BUILD_ID_RAW REDIS_VERSION REDIS_BUILD_ID REDIS_GIT_DIRTY REDIS_GIT_SHA1
 EOF
 
-# include/module.h: the shared reactor.c includes Valkey's module.h.
+# include/module.h stands in for Valkey's, which the shared reactor.c includes.
 cflags "$RD" -I"$SRC" -I"$DEPS/lua/src" -I"$DEPS/hiredis" -I"$DEPS/hdr_histogram" -I"$DEPS/fpconv" \
   -I"$DEPS/xxhash" -I"$DEPS/croaring/include" -I"$HERE/include" -I"$WASI"
 LUA_CFLAGS=(-DLUA_ANSI -DENABLE_CJSON_GLOBAL "-DREDIS_STATIC=" -DLUA_USE_MKSTEMP "${SJLJ[@]}") # as deps/Makefile
@@ -43,8 +41,7 @@ for f in isadetection array_util bitset_util art/art bitset containers/array con
   compile "$DEPS/croaring/src" "$f" -std=gnu11 -DROARING_DISABLE_X64=1 -DDISABLENEON=1 -I"$DEPS/croaring/src"
 done
 
-# The server's objects (REDIS_SERVER_OBJ in src/Makefile), minus bio (it starts threads; stubs.c runs its jobs
-# inline) and tls (unused).
+# Minus bio (it starts threads; stubs.c runs its jobs inline) and tls (unused).
 echo "[redis]"
 for f in $(sed -n 's/^REDIS_SERVER_OBJ=//p' "$SRC/Makefile" | tr ' ' '\n' | sed 's/\.o$//' | grep -v '^$'); do
   case " bio tls " in *" $f "*) continue ;; esac

@@ -10,6 +10,7 @@ import { replicas } from "./replicas";
 import { repository } from "./repository";
 import { security } from "./security";
 import { sharding } from "./sharding";
+import { wasm } from "./wasm";
 import type { Doc } from "./types";
 
 export const docs: Doc[] = [
@@ -20,6 +21,7 @@ export const docs: Doc[] = [
   durability,
   replicas,
   lifecycle,
+  wasm,
   operations,
   security,
   measurements,

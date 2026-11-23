@@ -1,7 +1,5 @@
 #!/usr/bin/env bash
-# Points build.sh at another Valkey release and dry-runs every patch against it (no build). Exits 1 if a patch
-# fails; build.sh is updated anyway, so the patch can be fixed against the tree in ../.cache.
-#   packages/wasm/valkey/update.sh 9.2.0
+# See https://vado-docs.vaishnav.one/docs/wasm
 set -euo pipefail
 export LC_ALL=C
 VERSION="${1:?usage: update.sh <valkey version, e.g. 9.2.0>}"
@@ -17,7 +15,7 @@ sed -e "s/^VALKEY_VERSION=.*/VALKEY_VERSION=$VERSION/" -e "s/^VALKEY_SHA256=.*/V
 cat "$HERE/build.sh.tmp" >"$HERE/build.sh" && rm "$HERE/build.sh.tmp" # cat keeps build.sh's mode
 echo "build.sh: Valkey $OLD -> $VERSION (sha256 $SUM)"
 
-# Patches apply in sequence: apply each to a scratch tree, skipping failures, so one run lists every failure.
+# Each patch applies on top of the ones before it; skip failures so one run lists them all.
 TREE=$(mktemp -d)
 trap 'rm -rf "$TREE"' EXIT
 tar -xzf "$TGZ" -C "$TREE" --strip-components=1
