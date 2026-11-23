@@ -1,6 +1,7 @@
 import type { ReactNode } from "react";
 import { createRootRoute, HeadContent, Link, Outlet, Scripts } from "@tanstack/react-router";
 import { DocsLayout } from "../components/layout";
+import { SERVER_SCRIPT } from "../components/server";
 import { THEME_SCRIPT } from "../components/theme-toggle";
 import stylesheet from "../styles.css?url";
 
@@ -31,6 +32,7 @@ function Shell({ children }: { children: ReactNode }) {
     <html lang="en" suppressHydrationWarning>
       <head>
         <script dangerouslySetInnerHTML={{ __html: THEME_SCRIPT }} />
+        <script dangerouslySetInnerHTML={{ __html: SERVER_SCRIPT }} />
         <HeadContent />
       </head>
       <body>

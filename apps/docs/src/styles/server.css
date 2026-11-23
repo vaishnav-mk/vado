@@ -1,0 +1,84 @@
+.by-valkey,
+.by-redis {
+  display: contents;
+}
+
+:root:not([data-server="redis"]) .by-redis,
+:root[data-server="redis"] .by-valkey {
+  display: none;
+}
+
+:root,
+[data-server="valkey"] {
+  --server-ink: var(--valkey);
+  --server-tint: var(--valkey-tint);
+}
+
+:root[data-server="redis"],
+[data-server="redis"] {
+  --server-ink: var(--redis);
+  --server-tint: var(--redis-tint);
+}
+
+.server-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 0 7px;
+  border: 1px solid color-mix(in srgb, var(--server-ink) 30%, transparent);
+  border-radius: 999px;
+  background: var(--server-tint);
+  color: var(--server-ink);
+  font-size: 11px;
+  font-weight: 550;
+  line-height: 18px;
+  white-space: nowrap;
+  vertical-align: 1px;
+}
+
+.server-badge::before {
+  content: "";
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--server-ink);
+}
+
+.server-switch {
+  display: inline-flex;
+  gap: 2px;
+  padding: 2px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--card);
+}
+
+.server-switch button {
+  display: flex;
+  padding: 0;
+  border: 0;
+  border-radius: 999px;
+  background: none;
+}
+
+.server-switch button:focus-visible {
+  outline-offset: 1px;
+}
+
+.server-switch .server-badge {
+  padding: 1px 9px;
+  border-color: transparent;
+  background: transparent;
+  color: var(--muted);
+}
+
+.server-switch button:hover .server-badge {
+  color: var(--ink);
+}
+
+:root:not([data-server="redis"]) .server-switch [data-option="valkey"] .server-badge,
+:root[data-server="redis"] .server-switch [data-option="redis"] .server-badge {
+  border-color: color-mix(in srgb, var(--server-ink) 30%, transparent);
+  background: var(--server-tint);
+  color: var(--server-ink);
+}

@@ -1,5 +1,12 @@
 import { Table } from "../components/blocks";
+import { ByServer, ServerBadge, ServerName } from "../components/server";
+import { SERVERS } from "./servers";
+import type { ServerFacts } from "./servers";
 import type { DocSection } from "./types";
+
+const measured = (pick: (facts: ServerFacts) => string) => (
+  <ByServer valkey={pick(SERVERS.valkey)} redis={pick(SERVERS.redis)} />
+);
 
 export const RESULT_SECTIONS: DocSection[] = [
   {
@@ -20,6 +27,10 @@ export const RESULT_SECTIONS: DocSection[] = [
         <p>
           Bursts, not a sustained ceiling. From a single laptop over TCP, throughput is bound by its round trips:
           valkey-benchmark with 200 connections and 64-deep pipelines reached 45.5k SET/s on one shard.
+        </p>
+        <p>
+          <ServerBadge /> A pipeline of 20,000 mixed commands over Spectrum TCP from one laptop ran at{" "}
+          {measured((facts) => facts.pipeline)}.
         </p>
       </>
     ),
@@ -83,13 +94,17 @@ export const RESULT_SECTIONS: DocSection[] = [
     title: "Cold starts",
     content: (
       <>
+        <p>
+          <ServerBadge /> Over TCP from one client to shards in one region. The <ServerName /> wasm module is{" "}
+          {measured((facts) => facts.wasm)}.
+        </p>
         <Table
-          headers={["Event", "Valkey", "Redis"]}
+          headers={["Event", "Time"]}
           rows={[
-            ["First SET on a new database", "486-648 ms", "512-642 ms"],
-            ["Next SET", "49-62 ms", "50-66 ms"],
-            ["First GET after an abort, 16 MB of data", "75-395 ms", "161-293 ms"],
-            ["First GET after an abort, 56 MB of data", "79-353 ms", "146-316 ms"],
+            ["First SET on a new database", measured((facts) => facts.firstSet)],
+            ["Next SET", measured((facts) => facts.nextSet)],
+            ["First GET after the shard restarts, 16 MB of data", measured((facts) => facts.firstGet16)],
+            ["First GET after the shard restarts, 56 MB of data", measured((facts) => facts.firstGet56)],
           ]}
         />
       </>

@@ -5,6 +5,7 @@
 @import "./styles/blocks.css";
 @import "./styles/diagrams.css";
 @import "./styles/slots.css";
+@import "./styles/server.css";
 
 @theme inline {
   --color-paper: var(--paper);
@@ -33,6 +34,10 @@
   --accent: #0e8f83;
   --deep: #0a6a61;
   --tint: #e2f3ef;
+  --valkey: #1d5bb8;
+  --valkey-tint: #e4edfa;
+  --redis: #b8312a;
+  --redis-tint: #fbe7e5;
 }
 
 :root[data-theme="dark"] {
@@ -47,4 +52,8 @@
   --accent: #4ccfbd;
   --deep: #7fdfd1;
   --tint: #16302b;
+  --valkey: #8ab8ff;
+  --valkey-tint: #1a2b45;
+  --redis: #ff9289;
+  --redis-tint: #3d1e1c;
 }

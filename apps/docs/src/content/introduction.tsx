@@ -2,6 +2,8 @@ import { BookOpenIcon } from "@phosphor-icons/react";
 import { CardLinks, Code } from "../components/blocks";
 import { ArchitectureDiagram } from "../components/diagrams/architecture";
 import { DocLink } from "../components/doc-link";
+import { ByServer, ServerBadge, ServerName } from "../components/server";
+import { SERVERS } from "./servers";
 import { source } from "./sources";
 import type { Doc } from "./types";
 
@@ -12,14 +14,15 @@ export const introduction: Doc = {
   group: "Start here",
   icon: BookOpenIcon,
   description:
-    "vado runs real Valkey 9.1, compiled to WebAssembly, in Cloudflare Durable Objects. A router in a Worker spreads keys over the shards, so valkey-cli and ioredis see one ordinary server.",
+    "vado runs real Valkey, or Redis if you opt in, compiled to WebAssembly, in Cloudflare Durable Objects. A router in a Worker spreads keys over the shards, so valkey-cli and ioredis see one ordinary server.",
   keywords: "overview what is vado valkey redis durable objects wasm introduction",
   intro: (
     <>
       <p>
-        Each shard is a Durable Object running the Valkey server itself, with its append-only file (AOF) in the object's
-        SQLite. <strong>Clients see one server.</strong> The router hashes each key to a slot, sends the command to the
-        shard that owns it, and can read from replicas in other regions.
+        Each shard is a Durable Object running the <ServerName /> server itself, version{" "}
+        <ByServer valkey={SERVERS.valkey.version} redis={SERVERS.redis.version} />, with its append-only file (AOF) in
+        the object's SQLite. <strong>Clients see one server.</strong> The router hashes each key to a slot, sends the
+        command to the shard that owns it, and can read from replicas in other regions.
       </p>
       <ArchitectureDiagram />
     </>
@@ -31,8 +34,12 @@ export const introduction: Doc = {
       content: (
         <ul>
           <li>
-            <strong>Valkey's own behaviour.</strong> Commands, replies and errors come from Valkey's code, not a
-            reimplementation. Clients connect over TCP, a WebSocket or a service binding.
+            <strong>
+              <ServerName />
+              's own behaviour.
+            </strong>{" "}
+            Commands, replies and errors come from <ServerName />
+            's code, not a reimplementation. Clients connect over TCP, a WebSocket or a service binding.
           </li>
           <li>
             <strong>Durable writes.</strong> A reply leaves only after its AOF entry is committed to SQLite.
@@ -70,6 +77,13 @@ export const introduction: Doc = {
               'npx vado-shim wss://<your-worker>.workers.dev/ws 6379\nvalkey-cli -p 6379 --user mydb --pass "$VALKEY_PASSWORD"\n127.0.0.1:6379> SET greeting hello\nOK'
             }
           </Code>
+          <p>
+            <ServerBadge /> In a <ServerName /> database, <code>INFO server</code> shows{" "}
+            <code>
+              <ByServer valkey={SERVERS.valkey.info} redis={SERVERS.redis.info} />
+            </code>
+            .
+          </p>
           <p>
             <DocLink slug="quick-start">Quick start</DocLink> covers deploying, TCP through Spectrum, and ioredis from
             another Worker.

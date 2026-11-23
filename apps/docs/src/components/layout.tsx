@@ -3,9 +3,11 @@ import { Link, useLocation } from "@tanstack/react-router";
 import { useRef } from "react";
 import type { ReactNode } from "react";
 import { docs } from "../content";
+import { SERVERS } from "../content/servers";
 import { Header } from "./header";
 import { Navigation } from "./navigation";
 import { SearchDialog } from "./search";
+import { ByServer, ServerBadge, ServerProvider } from "./server";
 import { OnThisPage } from "./toc";
 
 export function DocsLayout({ children }: { children: ReactNode }) {
@@ -15,7 +17,7 @@ export function DocsLayout({ children }: { children: ReactNode }) {
   const menu = useRef<HTMLDialogElement>(null);
 
   return (
-    <>
+    <ServerProvider>
       <a className="skip" href="#main">
         Skip to content
       </a>
@@ -25,7 +27,7 @@ export function DocsLayout({ children }: { children: ReactNode }) {
           <Navigation />
           <div className="mx-3 border-t border-line pt-4 text-[11px] leading-relaxed text-muted">
             <span className="inline-flex items-center gap-1.5">
-              <span className="size-1.5 rounded-full bg-accent" /> Valkey 9.1 · Redis 8.12
+              <ServerBadge /> <ByServer valkey={SERVERS.valkey.version} redis={SERVERS.redis.version} />
             </span>
             <p className="mt-2! text-[11px]!">
               Experimental.
@@ -54,6 +56,6 @@ export function DocsLayout({ children }: { children: ReactNode }) {
         </div>
         <Navigation onNavigate={() => menu.current?.close()} />
       </dialog>
-    </>
+    </ServerProvider>
   );
 }

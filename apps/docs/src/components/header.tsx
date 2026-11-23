@@ -1,6 +1,7 @@
 import { GithubLogoIcon, ListIcon, MagnifyingGlassIcon } from "@phosphor-icons/react";
 import { Link } from "@tanstack/react-router";
 import { REPO } from "../content/sources";
+import { ServerSwitch } from "./server";
 import { ThemeToggle } from "./theme-toggle";
 
 interface Props {
@@ -50,6 +51,7 @@ export function Header({ onSearch, onMenu }: Props) {
           ))}
         </div>
         <div className="ml-auto flex items-center gap-4 max-md:gap-1">
+          <ServerSwitch />
           <button
             type="button"
             className="flex min-w-[166px] items-center gap-2 rounded-lg border border-line bg-card px-2.5 py-1.5 text-xs text-muted hover:border-accent/40 max-md:min-w-0 max-md:border-0 max-md:bg-transparent max-md:p-2"

@@ -1,5 +1,6 @@
 import { ChartBarIcon } from "@phosphor-icons/react";
 import { Note, Table } from "../components/blocks";
+import { ServerBadge } from "../components/server";
 import { RESULT_SECTIONS } from "./measurements-results";
 import { server, source } from "./sources";
 import type { Doc } from "./types";
@@ -19,6 +20,10 @@ export const measurements: Doc = {
         Most numbers come from the bench API, which runs its clients inside Cloudflare: load generators through the
         router, Sender objects in each of the nine regions, or straight to one shard. Latency over TCP came from one
         laptop on a home connection.
+      </p>
+      <p>
+        Cold starts and the TCP pipeline follow the server picked in the header. Everything else was measured on{" "}
+        <ServerBadge server="valkey" />.
       </p>
     </>
   ),

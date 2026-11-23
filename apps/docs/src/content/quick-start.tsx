@@ -1,6 +1,8 @@
 import { RocketLaunchIcon } from "@phosphor-icons/react";
 import { Code, Note, Table } from "../components/blocks";
 import { DocLink } from "../components/doc-link";
+import { ByServer, ServerBadge } from "../components/server";
+import { SERVERS } from "./servers";
 import { REPO, source } from "./sources";
 import type { Doc } from "./types";
 
@@ -10,7 +12,8 @@ export const quickStart: Doc = {
   group: "Start here",
   icon: RocketLaunchIcon,
   description: "Deploy the Worker, then connect valkey-cli or ioredis. About ten minutes on Workers Paid.",
-  keywords: "install setup deploy button connect valkey-cli ioredis shim spectrum service binding local dev",
+  keywords:
+    "install setup deploy button connect valkey-cli ioredis shim spectrum service binding local dev redis flavour VADO_REDIS",
   sections: [
     {
       id: "deploy",
@@ -39,7 +42,33 @@ export const quickStart: Doc = {
             ]}
           />
           <p>Or from a checkout:</p>
-          <Code label="Terminal">{"npm install\nnpx wrangler secret put VALKEY_PASSWORD\nnpm run deploy"}</Code>
+          <ByServer
+            valkey={
+              <Code label="Terminal">{"npm install\nnpx wrangler secret put VALKEY_PASSWORD\nnpm run deploy"}</Code>
+            }
+            redis={
+              <Code label="Terminal">
+                {"npm install\nnpx wrangler secret put VALKEY_PASSWORD\nVADO_REDIS=1 npm run deploy"}
+              </Code>
+            }
+          />
+          <p>
+            <ServerBadge />{" "}
+            <ByServer
+              valkey={
+                <>
+                  Every build carries Valkey, whose wasm build is {SERVERS.valkey.licence}. A database runs it unless it
+                  was created as Redis.
+                </>
+              }
+              redis={
+                <>
+                  Redis ships only in builds made with <code>VADO_REDIS=1</code>, and its wasm build is{" "}
+                  {SERVERS.redis.licence} (<DocLink slug="redis">what that asks of you</DocLink>).
+                </>
+              }
+            />
+          </p>
         </>
       ),
     },
@@ -48,10 +77,27 @@ export const quickStart: Doc = {
       title: "2. Connect valkey-cli",
       content: (
         <>
-          <p>
-            The AUTH username picks the database; a new one is created on first use. There are two ways in from outside
-            Cloudflare.
-          </p>
+          <ByServer
+            valkey={<p>The AUTH username picks the database; a new one is created on first use, running Valkey.</p>}
+            redis={
+              <>
+                <p>
+                  The AUTH username picks the database. One created on first use runs Valkey, so create a Redis database
+                  first: in the dashboard's New database dialog, or with <code>flavour=redis</code> on the{" "}
+                  <DocLink slug="operations" hash="bench">
+                    bench API
+                  </DocLink>
+                  . The flavour never changes after that.
+                </p>
+                <Code label="Bench API">
+                  {
+                    'curl -H "authorization: Bearer $BENCH_TOKEN" \\\n  "https://<your-worker>.workers.dev/db?db=mydb&flavour=redis"'
+                  }
+                </Code>
+              </>
+            }
+          />
+          <p>There are two ways in from outside Cloudflare.</p>
           <p>
             <strong>Over TCP:</strong> add a Spectrum application of type Workers (tcp) with this Worker as origin, on
             port 6379, with TLS on (<code>flexible</code>). Spectrum doesn't pass a hostname, so the database comes from
