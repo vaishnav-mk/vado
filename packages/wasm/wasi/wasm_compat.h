@@ -88,7 +88,7 @@ static inline int setitimer(int which, const struct itimerval *nv, struct itimer
 static inline int getitimer(int which, struct itimerval *cv) { (void)which; (void)cv; return 0; }
 #endif
 
-/* Defined in stubs.c and sock_shim.c. Without a prototype, callers assume int f() and wasm-ld
+/* Defined in shared_stubs.c and sock_shim.c. Without a prototype, callers assume int f() and wasm-ld
  * links a stub that traps on the signature mismatch. */
 void tzset(void);
 int  flock(int fd, int op);

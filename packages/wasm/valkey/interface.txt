@@ -3,11 +3,9 @@ export _initialize function
 export memory memory
 export rk_args_cap function
 export rk_args_ptr function
-export rk_boot function
 export rk_boot_args function
 export rk_next_timeout_ms function
 export rk_rewrite_done function
-export rk_step function
 export rk_tick function
 import env.__c_longjmp tag
 import host.accept function

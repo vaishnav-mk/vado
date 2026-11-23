@@ -9,7 +9,6 @@
 #include <sys/uio.h>
 #include <string.h>
 #include <stdlib.h>
-#include <stdio.h>
 #include <fcntl.h>
 #include <stdint.h>
 
@@ -42,37 +41,31 @@ int socket(int domain, int type, int protocol) {
     return fd;
 }
 
-/* bind() records the port for host_listen, which ignores it. */
-#define PORTMAP_MAX 16
-static struct { int fd, port; } portmap[PORTMAP_MAX];
-static void port_set(int fd, int port) {
-    for (int i = 0; i < PORTMAP_MAX; i++)
-        if (portmap[i].fd == 0 || portmap[i].fd == fd) { portmap[i].fd = fd; portmap[i].port = port; return; }
-}
-static int port_get(int fd) {
-    for (int i = 0; i < PORTMAP_MAX; i++) if (portmap[i].fd == fd) return portmap[i].port;
-    return 0;
-}
-
+/* The host has one listener and no ports. */
 int bind(int fd, const struct sockaddr *addr, socklen_t len) {
-    (void)len;
-    if (addr && addr->sa_family == AF_INET) {
-        const struct sockaddr_in *in = (const struct sockaddr_in *)addr;
-        port_set(fd, __builtin_bswap16(in->sin_port));
-    }
-    return 0;
+    (void)fd; (void)addr; (void)len; return 0;
 }
 
 int listen(int fd, int backlog) {
     (void)backlog;
-    if (host_listen(fd, port_get(fd)) < 0) { errno = EADDRINUSE; return -1; }
+    if (host_listen(fd, 0) < 0) { errno = EADDRINUSE; return -1; }
     return 0;
 }
 
+/* Host sockets have no address, so every end reads as 127.0.0.1 port 0. */
+static void loopback(struct sockaddr *addr, socklen_t *len) {
+    if (!addr || !len) return;
+    struct sockaddr_in in = {0};
+    in.sin_family = AF_INET;
+    in.sin_addr.s_addr = __builtin_bswap32(INADDR_LOOPBACK);
+    memcpy(addr, &in, *len < sizeof in ? *len : sizeof in);
+    *len = sizeof in;
+}
+
 int accept(int sfd, struct sockaddr *addr, socklen_t *len) {
-    (void)addr; if (len) *len = 0;
     int c = host_accept(sfd);
     if (c < 0) { errno = EAGAIN; return -1; }
+    loopback(addr, len);
     return c;
 }
 int accept4(int sfd, struct sockaddr *addr, socklen_t *len, int flags) {
@@ -94,10 +87,10 @@ int getsockopt(int fd, int lvl, int opt, void *val, socklen_t *len) {
     return 0;
 }
 int getsockname(int fd, struct sockaddr *addr, socklen_t *len) {
-    (void)fd; if (len) *len = 0; (void)addr; return 0;
+    (void)fd; loopback(addr, len); return 0;
 }
 int getpeername(int fd, struct sockaddr *addr, socklen_t *len) {
-    (void)fd; if (len) *len = 0; (void)addr; return 0;
+    (void)fd; loopback(addr, len); return 0;
 }
 
 /* No DNS: lookups answer 127.0.0.1 with the service as the port, enough for anet to bind. */
@@ -134,24 +127,6 @@ void freeaddrinfo(struct addrinfo *res) {
 }
 
 const char *gai_strerror(int errcode) { (void)errcode; return "name resolution disabled"; }
-
-/* Host sockets have no real peer address. */
-int getnameinfo(const struct sockaddr *sa, socklen_t salen,
-                char *host, socklen_t hostlen,
-                char *serv, socklen_t servlen, int flags) {
-    (void)salen; (void)flags;
-    if (host && hostlen) {
-        const char *h = "127.0.0.1";
-        strncpy(host, h, hostlen - 1); host[hostlen - 1] = 0;
-    }
-    if (serv && servlen) {
-        uint16_t port = 0;
-        if (sa && sa->sa_family == AF_INET)
-            port = __builtin_bswap16(((const struct sockaddr_in *)sa)->sin_port);
-        snprintf(serv, servlen, "%u", port);
-    }
-    return 0;
-}
 
 ssize_t __wrap_read(int fd, void *buf, size_t n) {
     if (is_host_fd(fd)) {

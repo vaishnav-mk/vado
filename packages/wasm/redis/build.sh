@@ -32,7 +32,7 @@ compile "$DEPS/fpconv" fpconv_dtoa
 compile "$DEPS/hdr_histogram" hdr_histogram '-DHDR_MALLOC_INCLUDE="hdr_redis_malloc.h"'
 compile "$DEPS/xxhash" xxhash
 for f in regcomp regerror regexec tre-ast tre-compile tre-filter tre-match-backtrack tre-match-parallel tre-mem tre-parse tre-stack; do
-  [ -f "$DEPS/tre/lib/$f.c" ] && compile "$DEPS/tre/lib" "$f" -DTRE_REGEX_T_FIELD=value -I"$DEPS/tre/local_includes" -I"$DEPS/tre/lib"
+  compile "$DEPS/tre/lib" "$f" -DTRE_REGEX_T_FIELD=value -I"$DEPS/tre/local_includes" -I"$DEPS/tre/lib"
 done
 for f in isadetection array_util bitset_util art/art bitset containers/array containers/bitset containers/containers \
   containers/convert containers/mixed_intersection containers/mixed_union containers/mixed_equal containers/mixed_subset \

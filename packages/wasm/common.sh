@@ -59,6 +59,7 @@ link() {
   echo "[wasi]"
   compile "$WASI" sock_shim
   compile "$WASI" reactor
+  compile "$WASI" shared_stubs
   compile "$HERE" stubs
   compile "$WASI" wasm_sjlj "${LUA_CFLAGS[@]}" # setjmp/longjmp needs the same codegen as Lua
   echo "[link]"

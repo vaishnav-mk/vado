@@ -3,31 +3,8 @@
 #include "server.h"
 #include "ae.h"
 #include "module.h"
-#include <stdio.h>
-#include <string.h>
 
 extern int main(int argc, char **argv);
-
-/* Unused by the host, which boots through rk_boot_args. */
-__attribute__((export_name("rk_boot")))
-int rk_boot(int port) {
-    static char portbuf[16];
-    snprintf(portbuf, sizeof portbuf, "%d", port);
-    char *argv[] = {
-        "valkey-server",
-        "--port", portbuf,
-        "--bind", "127.0.0.1",
-        "--save", "",
-        "--appendonly", "no",
-        "--protected-mode", "no",
-        "--daemonize", "no",
-        "--io-threads", "1",
-        "--logfile", "",
-        NULL
-    };
-    int argc = (int)(sizeof(argv) / sizeof(argv[0])) - 1;
-    return main(argc, argv);
-}
 
 /* The host writes NUL-separated arguments after argv[0] here, then calls rk_boot_args(len). */
 static char rk_args[8192];
@@ -50,13 +27,6 @@ int rk_boot_args(int len) {
     }
     argv[argc] = NULL;
     return main(argc, argv);
-}
-
-/* Unused by the host, which calls rk_tick. */
-__attribute__((export_name("rk_step")))
-int rk_step(void) {
-    return aeProcessEvents(server.el,
-        AE_ALL_EVENTS | AE_DONT_WAIT | AE_CALL_BEFORE_SLEEP | AE_CALL_AFTER_SLEEP);
 }
 
 /* aeMain's order (afterSleep, events, timers, beforeSleep), so this pass's AOF write and reply
