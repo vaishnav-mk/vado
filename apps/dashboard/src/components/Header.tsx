@@ -1,5 +1,6 @@
 import { Badge, Select, Text, Tooltip } from "@cloudflare/kumo";
 import { useNavigate } from "@tanstack/react-router";
+import { FLAVOUR_NAMES } from "@vado/server/catalog/flavours.ts";
 import { NewDatabase } from "./NewDatabase";
 import { SignIn } from "./SignIn";
 import { plural } from "../lib/format";
@@ -10,7 +11,7 @@ import type { Database, LiveState, Options } from "../lib/types";
 function describe(d: Database) {
   const spread = (d.regions?.length ?? 0) > 1 ? " around the world" : "";
 
-  return `${d.name} · ${{ valkey: "Valkey", redis: "Redis", "redis-native": "native Redis" }[d.flavour] ?? d.flavour} · ${plural(d.shards, "shard")}${spread}${d.replicas?.length ? " · replicas" : ""}`;
+  return `${d.name} · ${FLAVOUR_NAMES[d.flavour]} · ${plural(d.shards, "shard")}${spread}${d.replicas?.length ? " · replicas" : ""}`;
 }
 
 function Health({ state, connection }: { state: LiveState | null; connection: Connection }) {

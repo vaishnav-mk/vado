@@ -1,3 +1,4 @@
+import type { Flavour } from "@vado/server/catalog/types.ts";
 import type { CommandResult, ReplicaState } from "@vado/server/admin/live-types.ts";
 
 export type {
@@ -24,7 +25,7 @@ export type {
 
 export interface Options {
   regions: Record<string, string>;
-  flavours: string[];
+  flavours: Flavour[];
 }
 
 export interface LastCommand extends CommandResult {
