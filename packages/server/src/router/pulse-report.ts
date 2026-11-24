@@ -23,13 +23,11 @@ export function report(env: Env, minGap = PULSE_MS): void {
   if (now - live.flushed < minGap) return;
   live.flushed = now;
 
-  const conns = [...live.conns.values()].map(({ router, ...c }) => ({
-    ...c,
-    db: router?.db.name ?? c.db,
+  // Only what Pulse's readers use: not the client's address.
+  const conns = Array.from(live.conns.values(), ({ router, db }) => ({
+    db: router?.db.name ?? db,
     commands: router?.commands ?? 0,
   }));
 
-  const pulse = env.PULSE.getByName("pulse");
-
-  pulse.report({ isolate: isolate(), colo: live.colo, conns, done: live.done }).catch(noop);
+  env.PULSE.getByName("pulse").report({ isolate: isolate(), colo: live.colo, conns, done: live.done }).catch(noop);
 }

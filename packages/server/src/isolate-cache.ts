@@ -1,5 +1,4 @@
-// A promise settles only in the request that made it (handle_cross_request_promise_resolution), so a waiter whose
-// shared fetch fails or whose fetching connection ends fetches for itself, and settled values are kept.
+// Promises settle only in their own request, so a waiter whose shared fetch fails fetches for itself.
 export class IsolateCache<K, V extends object> {
   readonly #values = new Map<K, V>();
   readonly #fetching = new Map<K, Promise<V>>();

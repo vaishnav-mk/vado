@@ -1,9 +1,12 @@
 import { expect, test } from "vite-plus/test";
 import { EventLog, summarize } from "../../../src/admin/watcher/events";
+import type { ReplicaState } from "../../../src/admin/live-types";
 import type { Changes } from "../../../src/admin/watcher/types";
 
 const none: Changes = { restarts: [], replicas: [], rewrites: [] };
-const texts = (changes: Partial<Changes>, shards = 4) => summarize({ ...none, ...changes }, shards).map((e) => e.text);
+
+const texts = (changes: Partial<Changes>, native = false) =>
+  summarize({ ...none, ...changes }, 4, native).map((e) => e.text);
 
 test("the same text within a minute counts up instead of adding an event", () => {
   const log = new EventLog();
@@ -50,15 +53,19 @@ test("rewrites", () => {
     "Shard 2 couldn't compact its log in a helper, so it did it itself",
     "2 shards compacted their logs, the slowest in 2.5 s",
   ]);
+  // A container has no rewriter to fall back from.
+  expect(texts({ rewrites: [{ i: 2, ms: 1, bytes: null, error: "timeout" }] }, true)).toEqual([
+    "Shard 2 couldn't compact its log (timeout)",
+  ]);
 });
 
 test("replica changes are grouped by what happened", () => {
-  const change = (i: number, from: string, to: string) => ({ i, region: "weur", from, to, error: null });
-  const events = summarize({ ...none, replicas: [change(0, "ready", "asleep"), change(1, "ready", "asleep")] }, 4);
-  expect(events).toEqual([
+  const change = (i: number, from: ReplicaState, to: ReplicaState) => ({ i, region: "weur", from, to, error: null });
+  const replicas = (...xs: Changes["replicas"]) => summarize({ ...none, replicas: xs }, 4, false);
+  expect(replicas(change(0, "ready", "asleep"), change(1, "ready", "asleep"))).toEqual([
     { level: "info", kind: "replica", text: "2 replicas went to sleep: no traffic for 10 minutes" },
   ]);
-  expect(summarize({ ...none, replicas: [change(3, "asleep", "copying"), change(1, "copying", "ready")] }, 4)).toEqual([
+  expect(replicas(change(3, "asleep", "copying"), change(1, "copying", "ready"))).toEqual([
     {
       level: "info",
       kind: "replica",

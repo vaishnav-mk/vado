@@ -1,11 +1,5 @@
 import { ms, plural } from "./format";
-import type { ReplicaState, TypedReply } from "./types";
-
-export interface Arg {
-  name: string;
-  placeholder: string;
-  many?: boolean;
-}
+import type { Arg, ReplicaState, TypedReply } from "./types";
 
 export const OTHER = "Other" as const; // as const, or the command Select's value type widens to string
 
@@ -183,18 +177,13 @@ export function replicationLine(rep: { acked: number; of: number; ms: number }, 
   const n = rep.of,
     took = ms(rep.ms);
 
-  if (!before?.length)
-    return rep.acked >= n
-      ? `Copied to ${plural(n, "replica")} in ${took}.`
-      : `Copied to ${rep.acked} of ${plural(n, "replica")} in ${took}. The others catch up on their own.`;
+  const ready = before?.filter((s) => s === "ready").length ?? 0;
 
-  const ready = before.filter((s) => s === "ready").length,
-    asleep = before.filter((s) => s === "asleep").length;
-
-  if (ready === before.length)
+  if (!before?.length || ready === before.length)
     return rep.acked >= n
-      ? `Copied to all ${plural(n, "replica")} in ${took}.`
+      ? `Copied to ${before?.length ? "all " : ""}${plural(n, "replica")} in ${took}.`
       : `Copied to ${rep.acked} of ${plural(n, "replica")} in ${took}. The others catch up on their own.`;
+  const asleep = before.filter((s) => s === "asleep").length;
   const its = n === 1 ? "Its replica was" : `Its ${n} replicas were`;
 
   if (asleep === before.length)

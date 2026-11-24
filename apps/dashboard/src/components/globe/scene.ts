@@ -1,7 +1,6 @@
-// Places are grouped, so 64 shards in 9 cities are 9 markers.
 import { place } from "@vado/server/admin/views.ts";
 import { HIGHLIGHT, replicaColor, replicaWords, SHARD, traffic } from "../../lib/colors";
-import { MAX_ENTRY_ARCS, MAX_STREAMS } from "../../lib/config";
+import { MAX_ENTRY_SOURCES, MAX_ENTRY_TARGETS, MAX_STREAMS } from "../../lib/config";
 import { list, ms, num, plural } from "../../lib/format";
 import type { LastCommand, LiveState, ReplicaState } from "../../lib/types";
 import { arc, has, hash, key } from "./geo";
@@ -15,6 +14,7 @@ export function scene(state: LiveState | null, last: LastCommand | null, dark: b
   const arcs: Arc[] = [],
     spots = new Map<string, Spot>();
 
+  // Places are grouped, so 64 shards in 9 cities are 9 markers.
   const spot = (at: LonLat, title: string, layer: Layer, line: string) => {
     const k = key({ lon: at[0], lat: at[1] }),
       x = spots.get(k) ?? { at, title, lines: [], layers: [], seed: hash(k) };
@@ -25,7 +25,7 @@ export function scene(state: LiveState | null, last: LastCommand | null, dark: b
   };
 
   const shards = state?.shards ?? [],
-    entries = (state?.map?.entries ?? []).filter(has);
+    entries = (state?.map.entries ?? []).filter(has);
 
   const blue = traffic(dark);
 
@@ -35,7 +35,7 @@ export function scene(state: LiveState | null, last: LastCommand | null, dark: b
     if (!has(s)) continue;
     const h = homes.get(key(s)) ?? { at: [s.lon, s.lat], city: s.city || "an unknown place", shards: [], writes: 0 };
     h.shards.push(s.i);
-    h.writes += s.ok ? (s.writes ?? 0) : 0;
+    h.writes += s.ok ? s.writes : 0;
     homes.set(key(s), h);
   }
 
@@ -47,7 +47,7 @@ export function scene(state: LiveState | null, last: LastCommand | null, dark: b
   const streams = new Map<string, { from: LonLat; to: LonLat; rate: number; states: ReplicaState[] }>();
 
   for (const s of shards) {
-    for (const r of s.replicas ?? []) {
+    for (const r of s.replicas) {
       if (!has(r)) continue;
 
       const c = copies.get(key(r)) ?? {
@@ -60,7 +60,7 @@ export function scene(state: LiveState | null, last: LastCommand | null, dark: b
       };
 
       c.states.push(r.state);
-      c.reads += r.reads ?? 0;
+      c.reads += r.reads;
 
       if (r.state === "ready") c.lag = Math.max(c.lag, r.lagMs ?? 0);
       copies.set(key(r), c);
@@ -89,11 +89,10 @@ export function scene(state: LiveState | null, last: LastCommand | null, dark: b
         0.3 + 0.3 * Math.min(1, Math.log10(1 + st.rate) / 3),
       ),
     );
-  // Every client talks to every shard, so for widely spread shards these arcs would join everything to everything.
   const targets = [...homes.values()];
 
-  if (targets.length <= MAX_ENTRY_ARCS) {
-    for (const e of [...entries].sort((a, b) => b.ops - a.ops).slice(0, 8))
+  if (targets.length <= MAX_ENTRY_TARGETS) {
+    for (const e of [...entries].sort((a, b) => b.ops - a.ops).slice(0, MAX_ENTRY_SOURCES))
       for (const h of targets)
         if (key(e) !== key({ lat: h.at[1], lon: h.at[0] }))
           arcs.push(arc(`${key(e)}>${h.at.join()}`, [e.lon, e.lat], h.at, blue, e.ops / targets.length, 0.25));
@@ -126,8 +125,8 @@ export function scene(state: LiveState | null, last: LastCommand | null, dark: b
     spot(
       [e.lon, e.lat],
       e.city || "Traffic",
-      { kind: "entry", color: blue, size: 3 + 2.2 * Math.log10(1 + (e.ops ?? 0)) },
-      `${num(e.ops)} commands/s from ${plural(e.conns ?? 0, "open connection")} entering Cloudflare here`,
+      { kind: "entry", color: blue, size: 3 + 2.2 * Math.log10(1 + e.ops) },
+      `${num(e.ops)} commands/s from ${plural(e.conns, "open connection")} entering Cloudflare here`,
     );
   }
 
@@ -137,16 +136,14 @@ export function scene(state: LiveState | null, last: LastCommand | null, dark: b
     shard = last?.shard !== null && last?.shard !== undefined ? shards[last.shard] : undefined;
 
   if (last && has(from) && has(shard)) {
-    const copy = last.replica ? shard.replicas?.find((r) => r.region === last.replica) : undefined;
+    const copy = last.replica ? shard.replicas.find((r) => r.region === last.replica) : undefined;
     const end = has(copy) ? copy : shard;
     path = {
       at: last.at,
       legs: [arc("leg", [from.lon, from.lat], [end.lon, end.lat], HIGHLIGHT, 0)],
       fan:
         last.write && last.replication
-          ? (shard.replicas ?? [])
-              .filter(has)
-              .map((r) => arc(r.region, [shard.lon, shard.lat], [r.lon, r.lat], HIGHLIGHT, 0))
+          ? shard.replicas.filter(has).map((r) => arc(r.region, [shard.lon, shard.lat], [r.lon, r.lat], HIGHLIGHT, 0))
           : [],
     };
   }
@@ -165,7 +162,7 @@ export function scene(state: LiveState | null, last: LastCommand | null, dark: b
 
 export function summary(state: LiveState | null): string {
   const shards = state?.shards ?? [],
-    entries = state?.map?.entries ?? [];
+    entries = state?.map.entries ?? [];
 
   const homes = [...new Set(shards.map((s) => s.city).filter((c): c is string => !!c))];
 
@@ -174,10 +171,8 @@ export function summary(state: LiveState | null): string {
     .map((e) => e.city)
     .filter((c): c is string => !!c);
 
-  const anyReplicas = shards.some((s) => s.replicas?.length);
-
   return from.length
-    ? `Traffic from ${list(from)}${anyReplicas ? ". Reads go to the nearest replica; writes go to" : " reaches"} shards in ${list(homes)}.`
+    ? `Traffic from ${list(from)}${state?.totals.replicas ? ". Reads go to the nearest replica; writes go to" : " reaches"} shards in ${list(homes)}.`
     : homes.length
       ? `Shards in ${list(homes)}. No traffic right now.`
       : "Waiting for the first numbers.";

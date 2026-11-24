@@ -1,4 +1,5 @@
 import type { DurableMigrations } from "@durability/storage";
+import type { Legacy } from "../migrate";
 
 export const catalogMigrations = [
   {
@@ -8,3 +9,16 @@ export const catalogMigrations = [
     down: "SELECT 1;",
   },
 ] satisfies DurableMigrations;
+
+// A dbs table from before catalog_0001_dbs, made by code that predates these columns.
+export const catalogLegacy: Legacy = {
+  table: "dbs",
+  columns: [
+    ["regions", "TEXT"],
+    ["replicas", "TEXT"],
+    ["classes", "INTEGER"],
+    ["secret", "TEXT"],
+    ["dropped", "INTEGER"],
+    ["flavour", "TEXT"],
+  ],
+};

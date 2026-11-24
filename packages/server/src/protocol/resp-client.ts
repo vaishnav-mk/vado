@@ -1,14 +1,14 @@
 import { decode } from "./decode";
 import { command, concat, frameEnd } from "./resp";
-import type { CommandArg, Reply, ByteSocket } from "./types";
+import type { ByteSocket, CommandArg, FrameParser, FrameResume, Reply } from "./types";
+import { append } from "./bytes";
 import { noop, withTimeout } from "../shared";
-
-type Parse<T> = (frame: Uint8Array) => [T, number];
 
 export class RespClient {
   #writer: WritableStreamDefaultWriter<Uint8Array>;
   #reader: ReadableStreamDefaultReader<Uint8Array>;
   #buf: Uint8Array = new Uint8Array(0);
+  #resume: FrameResume = {};
   #stallMs: number;
 
   constructor(socket: ByteSocket, stallMs = 30_000) {
@@ -32,14 +32,14 @@ export class RespClient {
   }
 
   read(n: number): Promise<Reply[]>;
-  read<T>(n: number, parse: Parse<T>): Promise<T[]>;
-  async read<T>(n: number, parse?: Parse<T>): Promise<(T | Reply)[]> {
-    const decodeOne: Parse<T | Reply> = parse ?? decode;
+  read<T>(n: number, parse: FrameParser<T>): Promise<T[]>;
+  async read<T>(n: number, parse?: FrameParser<T>): Promise<(T | Reply)[]> {
+    const decodeOne: FrameParser<T | Reply> = parse ?? decode;
     const out = [];
     let pos = 0;
 
     while (out.length < n) {
-      const end = frameEnd(this.#buf, pos, this.#buf.length);
+      const end = frameEnd(this.#buf, pos, this.#buf.length, this.#resume);
 
       if (end >= 0) {
         out.push(decodeOne(this.#buf.subarray(pos, end))[0]);
@@ -47,10 +47,14 @@ export class RespClient {
         continue;
       }
 
-      const { value, done } = await this.#next(`reply ${out.length + 1}/${n}`);
+      const { value, done } = await withTimeout(
+        this.#reader.read(),
+        this.#stallMs,
+        `waiting for reply ${out.length + 1}/${n}`,
+      );
 
       if (done) throw new Error(`connection closed after ${out.length}/${n} replies`);
-      this.#buf = concat([this.#buf.subarray(pos), value]);
+      this.#buf = append(this.#buf.subarray(pos), value);
       pos = 0;
     }
 
@@ -61,9 +65,5 @@ export class RespClient {
 
   close(): void {
     this.#writer.close().catch(noop);
-  }
-
-  #next(waitingFor: string): Promise<ReadableStreamReadResult<Uint8Array>> {
-    return withTimeout(this.#reader.read(), this.#stallMs, `waiting for ${waitingFor}`);
   }
 }

@@ -2,13 +2,14 @@ import { useState } from "react";
 import { Badge, LayerCard, Text } from "@cloudflare/kumo";
 import { REPLICA, replicaWords } from "../../lib/colors";
 import { ms, num, plural, share } from "../../lib/format";
-import { replicaCounts, replicaLine, SLEEP_NOTE } from "../../lib/replicas";
+import { IDLE_MINUTES, replicaCounts, replicaLine } from "../../lib/replicas";
 import type { LiveState } from "../../lib/types";
 import { Legend } from "../Legend";
 import { LAG, READS, ROW, STRIP } from "./layout";
 import { ReplicaRow } from "./ReplicaRow";
 import { rows } from "./rows";
-import { REPL_IDLE_MS } from "@vado/server/wasm-shard/replication/config.ts";
+
+const SLEEP_NOTE = `A shard's replicas sleep after ${IDLE_MINUTES} without traffic to that shard, and its next read or write wakes them in a few seconds.`;
 
 export function Replicas({
   state,
@@ -26,10 +27,12 @@ export function Replicas({
   const counts = replicaCounts(state?.shards);
 
   if (!counts.total) return null;
-  const n = state?.shards?.length ?? 0;
-  const maxLag = Math.max(50, ...board.flatMap((r) => r.cells.map((c) => (c?.state === "ready" ? (c.lagMs ?? 0) : 0))));
-  const served = state?.totals?.replicaReads ?? 0;
-  const worst = Math.max(0, ...board.map((r) => r.lag ?? 0));
+  const n = state?.shards.length ?? 0;
+
+  const worst = state?.totals.replicaLagMs ?? 0,
+    maxLag = Math.max(50, worst);
+
+  const served = state?.totals.replicaReads ?? 0;
   const line = replicaLine(counts);
 
   const tip =
@@ -42,7 +45,7 @@ export function Replicas({
 
       const bits =
         r.state === "asleep"
-          ? [`Asleep: no traffic to this shard for ${plural(REPL_IDLE_MS / 60_000, "minute")}`]
+          ? [`Asleep: no traffic to this shard for ${IDLE_MINUTES}`]
           : [
               replicaWords(r.state),
               r.state === "ready" && r.lagMs !== null ? `${ms(r.lagMs)} behind` : null,

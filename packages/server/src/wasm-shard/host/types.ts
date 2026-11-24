@@ -27,7 +27,6 @@ export type RewriteHook = (tmp: string, rdb: boolean) => RewriteJob | null;
 
 export interface SocketWriter {
   write(bytes: Uint8Array): Promise<void>;
-  close(): Promise<void>;
 }
 
 export interface HostSocket {

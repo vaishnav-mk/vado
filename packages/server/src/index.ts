@@ -3,7 +3,8 @@ import { SIGNED_IN } from "./admin/watcher/watcher";
 import { bench } from "./bench/bench";
 import { existing } from "./catalog/databases";
 import { DB_NAME } from "./catalog/names";
-import { live, serve } from "./router/serve";
+import { live } from "./router/pulse-report";
+import { serve } from "./router/serve";
 import { ACKS, wsSocket } from "./router/websocket";
 
 export { Admin } from "./admin/admin";
@@ -12,11 +13,9 @@ export { accessUser } from "./admin/access";
 
 export { flavoursOf } from "./shard/servers";
 
-export type * from "./admin/live-types";
-
 type IncomingRequest = Request<unknown, IncomingRequestCfProperties>;
 
-export interface App {
+interface App {
   fetch(req: Request, env: Env, ctx: ExecutionContext): Response | Promise<Response>;
 }
 
@@ -67,8 +66,7 @@ async function watch(req: Request, env: Env): Promise<Response> {
   return env.WATCHER.getByName(name).fetch(new Request(req, { headers }));
 }
 
-// Public, so served only when VALKEY_PASSWORD makes AUTH mandatory. Unauthenticated callers run no commands, but a
-// connection still looks up the default database, creating it if it doesn't exist.
+// Public, so served only when VALKEY_PASSWORD makes AUTH mandatory.
 function websocket(req: IncomingRequest, env: Env, ctx: ExecutionContext): Response {
   if (!isUpgrade(req)) return upgradeRequired();
 

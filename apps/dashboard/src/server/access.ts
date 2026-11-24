@@ -5,9 +5,7 @@ import { accessUser } from "@vado/server";
 
 const signIn = () => !!env.ACCESS_TEAM_DOMAIN && !!env.ACCESS_AUD;
 
-const user = createServerOnlyFn((): Promise<string | null> =>
-  signIn() ? accessUser(getRequest(), env) : Promise.resolve(null),
-);
+const user = createServerOnlyFn(() => accessUser(getRequest(), env));
 
 export const requireUser = createServerOnlyFn(async () => {
   if (!(await user())) throw new Error("Sign in first");

@@ -1,5 +1,3 @@
-// Blocks guessing of passwords and database names (each unknown name asks the catalog). Blocks are kept per isolate,
-// and decided by the AUTH_LIMIT rate limiter, which every failure calls.
 import type { SignIns, Where } from "./types";
 import { noop } from "../shared";
 import { BLOCK_MS, MAX_BLOCKED } from "./config";
@@ -14,6 +12,7 @@ export function ipOf(addr: string | null | undefined): string | null {
   return /^[\d.]+:\d+$/.test(addr) ? addr.slice(0, addr.lastIndexOf(":")) : addr;
 }
 
+// Unknown names count as failures too: each one costs a catalog lookup.
 export function signIns(env: Env, where: Where | null): SignIns | null {
   const ip = ipOf(where?.addr);
 

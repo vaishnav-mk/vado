@@ -1,5 +1,5 @@
 import { concat } from "../../protocol/resp";
-import { growLastRow, indexRows, pushRow, rowAt } from "./chunks";
+import { indexRows, rowAt } from "./chunks";
 import { VFS_CHUNK, VFS_TAIL } from "./config";
 import { Listing } from "./listing";
 import { prepareStatements, type Statements } from "./statements";
@@ -9,7 +9,7 @@ const DELETED = "\0deleted:";
 
 export const isDeleted = (n: FileNode) => n.path.startsWith(DELETED);
 
-export class Store {
+export class VfsStore {
   readonly #q: Statements;
   readonly #stats: VfsStats;
   readonly #trashed: () => void;
@@ -81,8 +81,10 @@ export class Store {
       const data = concat([tail.data, ...n.pending]);
       this.#q.updateChunk.run({ data, key: n.key, seq: tail.seq });
       tail.data = data;
+      const last = n.rows?.at(-1);
 
-      if (n.rows && !growLastRow(n.rows, tail.seq, data.length)) n.rows = null;
+      if (last?.seq === tail.seq) last.len = data.length;
+      else n.rows = null;
 
       if (n.cache?.seq === tail.seq) n.cache = tail;
       this.#listing.grew(n.key, n.pendingLen, 0);
@@ -95,7 +97,8 @@ export class Store {
         this.#q.insertChunk.run({ key: n.key, seq, data: part });
         n.tail = part.length < VFS_TAIL ? { seq, data: part.slice() } : null;
 
-        if (n.rows) pushRow(n.rows, seq, part.length);
+        const last = n.rows?.at(-1);
+        n.rows?.push({ seq, start: last ? last.start + last.len : 0, len: part.length });
         this.#listing.grew(n.key, part.length, 1);
       }
     }
@@ -228,12 +231,6 @@ export class Store {
     else this.#q.deleteChunksFrom.run({ key: trash.key, seq: from });
 
     return true;
-  }
-
-  clear(): void {
-    for (const statement of this.#q.clear) statement.run();
-    this.#nodes.clear();
-    this.#listing.reset();
   }
 
   listing(): FileEntry[] {

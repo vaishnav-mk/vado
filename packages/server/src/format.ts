@@ -1,4 +1,4 @@
-// Numbers and lists as the dashboard and the watcher's events show them. Runs in the browser too.
+// Runs in the browser too.
 
 export const compact = (digits: number) =>
   new Intl.NumberFormat("en", { notation: "compact", maximumFractionDigits: digits });
@@ -65,15 +65,7 @@ export const dateTime = (t: number) => new Date(t).toLocaleString([], { dateStyl
 export function ago(t: number, now: number) {
   const s = (now - t) / 1000;
 
-  return s < 5
-    ? "just now"
-    : s < 60
-      ? `${Math.round(s)} s ago`
-      : s < 3600
-        ? `${Math.round(s / 60)} min ago`
-        : s < 86400
-          ? `${Math.round(s / 3600)} h ago`
-          : `${Math.round(s / 86400)} d ago`;
+  return s < 5 ? "just now" : `${duration(s)} ago`;
 }
 
 // "a, b and c", or "a, b, c and 4 more" past `max`.
@@ -84,6 +76,5 @@ export const list = (xs: readonly (string | number)[], max = 3) =>
       ? `${xs.slice(0, -1).join(", ")} and ${xs.at(-1)}`
       : String(xs[0] ?? "");
 
-// `part` as a percentage of `whole`, at most 100; null without a whole.
 export const share = (part: number, whole: number | null | undefined) =>
   whole ? Math.min(100, (100 * part) / whole) : null;

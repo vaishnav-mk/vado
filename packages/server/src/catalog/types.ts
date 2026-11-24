@@ -1,9 +1,11 @@
+import type { HINT_LIST } from "./regions";
+
 export type Server = "valkey" | "redis";
 
-// A server compiled to wasm inside each shard's object, or "-native": unmodified in a container beside it (box/).
+// A server compiled to wasm inside each shard's object, or "-native": unmodified in a container beside it.
 export type Flavour = Server | `${Server}-native`;
 
-export type Hint = "wnam" | "enam" | "sam" | "weur" | "eeur" | "apac" | "apac-ne" | "apac-se" | "oc" | "afr" | "me";
+export type Hint = (typeof HINT_LIST)[number];
 
 export interface DatabaseRecord {
   name: string;
@@ -18,16 +20,7 @@ export interface DatabaseRecord {
   flavour: Flavour;
 }
 
-export interface DatabaseSummary {
-  name: string;
-  created: number;
-  shards: number;
-  regions: Hint[] | null;
-  replicas: Hint[] | null;
-  classes: number | null;
-  flavour: Flavour;
-  password: number;
-}
+export type DatabaseSummary = Omit<DatabaseRecord, "secret" | "dropped"> & { password: number };
 
 export interface Epoch {
   from: number;

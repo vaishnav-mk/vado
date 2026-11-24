@@ -1,7 +1,4 @@
 import { shardOfSlot, slotOf } from "../protocol/slots";
-import type { UpKey } from "./types";
-
-export const isPrimary = (key: UpKey): key is number => Number.isInteger(key);
 
 // -1 if the keys at argv[idx[...]] aren't all in one slot.
 export function shardAt(argv: Uint8Array[], idx: number[], shards: number): number {

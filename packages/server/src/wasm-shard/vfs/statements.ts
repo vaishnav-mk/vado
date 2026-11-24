@@ -1,5 +1,6 @@
 import { and, asc, desc, eq, gte, like, sql } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/durable-sqlite";
+import { VFS_SWEEP_ROWS } from "./config";
 import { vfsChunk, vfsNode, vfsTrash } from "./schema";
 import type { VfsStats, VfsStorage } from "./types";
 
@@ -91,12 +92,11 @@ export function prepareStatements(storage: VfsStorage, stats: VfsStats) {
     trash: db.insert(vfsTrash).values({ key }).onConflictDoNothing().prepare(),
     firstTrash: db.select({ key: vfsTrash.key }).from(vfsTrash).limit(1).prepare(),
     untrash: db.delete(vfsTrash).where(eq(vfsTrash.key, key)).prepare(),
-    trashRows: rowLengths().orderBy(desc(vfsChunk.seq)).limit(4096).prepare(),
+    trashRows: rowLengths().orderBy(desc(vfsChunk.seq)).limit(VFS_SWEEP_ROWS).prepare(),
     deleteChunksFrom: db
       .delete(vfsChunk)
       .where(and(ofKey, gte(vfsChunk.seq, seq)))
       .prepare(),
-    clear: [db.delete(vfsChunk).prepare(), db.delete(vfsNode).prepare(), db.delete(vfsTrash).prepare()],
   };
 }
 

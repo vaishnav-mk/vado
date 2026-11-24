@@ -1,9 +1,9 @@
 import type { DurableMigrations } from "@durability/storage";
 import { DatabaseSync } from "node:sqlite";
 import { expect, test } from "vite-plus/test";
-import { addMissingColumns } from "../../src/catalog/legacy";
-import type { ColumnsSql } from "../../src/catalog/legacy";
-import { catalogMigrations } from "../../src/catalog/migrations";
+import { catalogLegacy, catalogMigrations } from "../../src/catalog/migrations";
+import { addMissingColumns } from "../../src/migrate";
+import { fakeStorage } from "../wasm-shard/vfs/fake-storage";
 
 // The catalog as code from before regions, replicas and the rest created it.
 const OLD = [
@@ -14,18 +14,6 @@ const OLD = [
   },
 ] satisfies DurableMigrations;
 
-// SqlStorage on node:sqlite, one statement at a time.
-function sqlOn(db: DatabaseSync): ColumnsSql {
-  return {
-    exec: (query: string) => {
-      const statement = db.prepare(query);
-      const rows = statement.columns().length ? statement.all() : (statement.run(), []);
-
-      return { toArray: () => rows.map((r) => ({ name: String(r.name) })) };
-    },
-  };
-}
-
 const columns = (db: DatabaseSync) =>
   db
     .prepare("PRAGMA table_info(dbs)")
@@ -33,22 +21,22 @@ const columns = (db: DatabaseSync) =>
     .map((c) => `${String(c.name)} ${String(c.type)}`);
 
 test("an old catalog gets every column it lacks, in order, and keeps its rows", () => {
-  const db = new DatabaseSync(":memory:");
-  db.exec(OLD[0].up);
-  db.exec("INSERT INTO dbs VALUES ('old', 1, 2, NULL)");
-  addMissingColumns(sqlOn(db));
-  addMissingColumns(sqlOn(db));
+  const old = fakeStorage();
+  old.db.exec(OLD[0].up);
+  old.db.exec("INSERT INTO dbs VALUES ('old', 1, 2, NULL)");
+  addMissingColumns(old.sql, catalogLegacy);
+  addMissingColumns(old.sql, catalogLegacy);
 
   const fresh = new DatabaseSync(":memory:");
   fresh.exec(catalogMigrations[0].up);
-  expect(columns(db)).toEqual(columns(fresh));
-  expect(db.prepare("SELECT name, shards, flavour FROM dbs").all()).toEqual([
+  expect(columns(old.db)).toEqual(columns(fresh));
+  expect(old.db.prepare("SELECT name, shards, flavour FROM dbs").all()).toEqual([
     { name: "old", shards: 2, flavour: null },
   ]);
 });
 
 test("a new catalog is left to the migration", () => {
-  const db = new DatabaseSync(":memory:");
-  addMissingColumns(sqlOn(db));
-  expect(columns(db)).toEqual([]);
+  const db = fakeStorage();
+  addMissingColumns(db.sql, catalogLegacy);
+  expect(columns(db.db)).toEqual([]);
 });

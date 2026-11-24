@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "vite-plus/test";
 import { fakeStorage } from "./fake-storage";
-import { iovecs } from "../../../src/wasm-shard/vfs/memory";
+import { iovecs, viewsOf } from "../../../src/wasm-shard/vfs/memory";
 import { Vfs } from "../../../src/wasm-shard/vfs/vfs";
 import { E, OFLAG, PREOPEN_FD } from "../../../src/wasm-shard/vfs/wasi-abi";
 import { resolvePath } from "../../../src/wasm-shard/vfs/wasi-paths";
@@ -33,7 +33,12 @@ test("iovecs", () => {
 
 test("WASI calls on files and directories", () => {
   const memory = new WebAssembly.Memory({ initial: 1 });
-  const vfs = new Vfs(fakeStorage(), () => memory);
+
+  const vfs = new Vfs(
+    fakeStorage(),
+    viewsOf(() => memory),
+  );
+
   const wasi = vfs.imports();
   const u8 = new Uint8Array(memory.buffer);
   const dv = new DataView(memory.buffer);
@@ -87,4 +92,30 @@ test("WASI calls on files and directories", () => {
   assert.equal(wasi.path_unlink_file(PREOPEN_FD, ...path("aof/y.incr.aof")), E.OK);
   assert.equal(vfs.write(gone, [encoder.encode("lost")]), E.OK); // writes to an unlinked-but-open file vanish
   assert.equal(vfs.size("aof/y.incr.aof"), null);
+});
+
+test("a closed fd is reused, so file fds never reach sock_shim's pipes at 3072", () => {
+  const memory = new WebAssembly.Memory({ initial: 1 });
+
+  const wasi = new Vfs(
+    fakeStorage(),
+    viewsOf(() => memory),
+  ).imports();
+
+  const name = encoder.encode("f");
+  new Uint8Array(memory.buffer).set(name, 1000);
+
+  const open = () => {
+    assert.equal(wasi.path_open(PREOPEN_FD, 0, 1000, name.length, OFLAG.CREAT, 0n, 0n, 0, 2000), E.OK);
+
+    return new DataView(memory.buffer).getUint32(2000, true);
+  };
+
+  const kept = open();
+
+  for (let i = 0; i < 3100; i++) {
+    const fd = open();
+    assert.equal(fd, kept + 1);
+    assert.equal(wasi.fd_close(fd), E.OK);
+  }
 });

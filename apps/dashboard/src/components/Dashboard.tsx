@@ -9,8 +9,7 @@ import { ShardDial } from "./dial/ShardDial";
 import { ShardTable } from "./ShardTable";
 import { Stats } from "./Stats";
 import { TestTraffic } from "./TestTraffic";
-import type { Live } from "../lib/live";
-import type { LastCommand } from "../lib/types";
+import type { LastCommand, Live } from "../lib/types";
 
 export function Dashboard({
   name,

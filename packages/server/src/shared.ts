@@ -11,7 +11,6 @@ export const failure = (r: Reply): string | null => (r instanceof Object && "err
 export const percentile = (xs: readonly number[], p: number): number | null =>
   xs.length ? [...xs].sort((a, b) => a - b)[Math.min(xs.length - 1, Math.floor(xs.length * p))] : null;
 
-// The reply, unless it's an error: that is thrown.
 export function ok(r: Reply): Reply {
   const err = failure(r);
 
@@ -43,7 +42,6 @@ export function withTimeout<T>(work: Promise<T>, ms: number, what: string): Prom
   return Promise.race([work, late]).finally(() => clearTimeout(timer));
 }
 
-// Whether `work` settled within `ms`.
 export const within = (work: Promise<void>, ms: number): Promise<boolean> =>
   withTimeout(work, ms, "work").then(
     () => true,

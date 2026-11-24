@@ -1,4 +1,3 @@
-// Stored, so a restarted Watcher can still show and stop the running test.
 import * as v from "valibot";
 import { existing } from "../../catalog/databases";
 import { regionName, WORLD } from "../../catalog/regions";
@@ -67,6 +66,7 @@ export class TestTraffic {
     // Senders share a budget that grows with the shards, so a 1-shard database stays inside its memory.
     const keys = Math.max(100, Math.floor((record.shards * TEST_KEYS_PER_SHARD) / senders.length));
     this.#test = { level, from, since, until, senders };
+    // Stored, so a restarted Watcher can still show and stop the running test.
     await this.#storage.put("test", this.#test);
     await Promise.all(
       senders.map(({ region, k }) => this.#sender(region, k).loop(this.#db, `test-${region}${k}-`, until, keys)),
@@ -74,7 +74,7 @@ export class TestTraffic {
     this.#log.add({
       level: "info",
       kind: "test",
-      text: `Test traffic started: ${level}, from ${from === "everywhere" ? "everywhere" : regionName(from)}`,
+      text: `Test traffic started: ${level}, from ${regionName(from)}`,
     });
 
     return { level, from, since, until, senders: senders.length };

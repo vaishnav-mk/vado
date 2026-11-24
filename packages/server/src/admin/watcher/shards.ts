@@ -1,33 +1,8 @@
 import { MEMORY_HIGH, MEMORY_OK, WATCH_RATE_POLLS } from "../config";
-import type { Place, Replica, ReplicaState, Shard, ShardDown } from "../live-types";
-import type { ShardReading, ShardSeen } from "../types";
-import type { Changes, EventInput } from "./types";
+import type { Replica, Shard } from "../live-types";
+import type { Look, ShardReading, ShardSeen, Tracked } from "./types";
 import { keep, rate } from "./state";
 import { place } from "../views";
-
-interface TrackedReplica {
-  state: ReplicaState | null;
-  instance: string | null;
-  points: { at: number; reads: number }[];
-}
-
-interface Tracked {
-  points: { at: number; reads: number; writes: number }[];
-  replicas: Map<string, TrackedReplica>;
-  down: boolean;
-  instance: string | null;
-  version: string | null;
-  place: Place;
-  restartedAt: number;
-  memoryHigh: boolean;
-  rewriteAt: number | undefined; // undefined: none seen yet
-}
-
-export interface Look {
-  shards: Shard[];
-  changes: Changes;
-  alerts: EventInput[];
-}
 
 const NOWHERE = place(null);
 
@@ -79,16 +54,7 @@ export class Shards {
         look.alerts.push({ level: "warning", kind: "restart", text: `Shard ${v.i} stopped responding`, shard: v.i });
       k.down = true;
 
-      const down: ShardDown = {
-        i: v.i,
-        ok: false,
-        error: v.down,
-        ...k.place,
-        restartedAt: k.restartedAt,
-        replicas: [],
-      };
-
-      return down;
+      return { i: v.i, ok: false, error: v.down, ...k.place, restartedAt: k.restartedAt, replicas: [] };
     }
 
     if (k.instance && k.instance !== v.instance) {

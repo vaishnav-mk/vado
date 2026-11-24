@@ -1,4 +1,3 @@
-// The dashboard's server functions check input shapes, and sign-in for anything that changes something; this checks the rules.
 import { FLAVOUR_NAMES } from "../catalog/flavours";
 import { catalogStub, current, database, existing, parseFlavour } from "../catalog/databases";
 import { DB_NAME, DB_NAME_RULE, SHARD_COUNTS } from "../catalog/names";
@@ -11,6 +10,7 @@ import type { CommandResult, Database, TestLevel, TestView } from "./live-types"
 import type { NewDatabase } from "./types";
 import { dbView } from "./views";
 import { plural } from "../format";
+import type { RegionNames } from "../catalog/regions";
 
 export class Admin {
   #env: Env;
@@ -23,14 +23,8 @@ export class Admin {
     return (await catalogStub(this.#env).list()).map(dbView);
   }
 
-  async database(name: string): Promise<Database | null> {
-    const db = await this.#find(name);
-
-    return db && dbView(db);
-  }
-
-  regions(): Record<string, string> {
-    return Object.fromEntries(WORLD.map((r) => [r, REGION_NAMES[r]]));
+  regions(): RegionNames {
+    return { ...REGION_NAMES };
   }
 
   async create({ name, shards, place, replicas, flavour: asked = "valkey" }: NewDatabase): Promise<Database> {

@@ -1,9 +1,9 @@
-// Checked here because ctx.access doesn't reach a Worker that has static assets.
 import { createRemoteJWKSet, jwtVerify } from "jose";
 import * as v from "valibot";
 
 let keys: ReturnType<typeof createRemoteJWKSet> | null = null; // jose fetches, caches and refreshes them
 
+// Checked here because ctx.access doesn't reach a Worker that has static assets.
 export async function accessUser(
   request: Request,
   env: Pick<Env, "ACCESS_TEAM_DOMAIN" | "ACCESS_AUD">,

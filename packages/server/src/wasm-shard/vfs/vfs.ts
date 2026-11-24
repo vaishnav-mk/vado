@@ -1,11 +1,9 @@
-// O_APPEND writes (the AOF) are stored at once, so the output gate holds a reply until its AOF bytes are durable.
 import { migrate } from "../../migrate";
-import { addMissingColumns } from "./legacy";
-import { vfsMigrations } from "./migrations";
+import { vfsLegacy, vfsMigrations } from "./migrations";
 import { concat } from "../../protocol/resp";
 import { viewsOf } from "./memory";
-import { isDeleted, Store } from "./store";
-import type { FileEntry, Memory, VfsStats, VfsStorage, Views } from "./types";
+import { isDeleted, VfsStore } from "./store";
+import type { FileEntry, VfsStats, VfsStorage, Views } from "./types";
 import { E, FdTable } from "./wasi-abi";
 import { fdImports } from "./wasi-fds";
 import { parentOf, pathImports } from "./wasi-paths";
@@ -18,14 +16,14 @@ export class Vfs {
   readonly stats: VfsStats = { writes: 0, writeBytes: 0, reads: 0, readBytes: 0, rowsWritten: 0 };
   onAppend: ((bytes: Uint8Array) => void) | null = null;
   onTrash: (() => void) | null = null;
-  readonly #store: Store;
+  readonly #store: VfsStore;
   readonly #fds = new FdTable();
   readonly #views: Views;
 
-  constructor(storage: VfsStorage, memory: Memory = noMemory) {
-    migrate(storage, vfsMigrations, addMissingColumns);
-    this.#store = new Store(storage, this.stats, () => this.onTrash?.());
-    this.#views = viewsOf(memory);
+  constructor(storage: VfsStorage, views: Views = viewsOf(noMemory)) {
+    migrate(storage, vfsMigrations, vfsLegacy);
+    this.#store = new VfsStore(storage, this.stats, () => this.onTrash?.());
+    this.#views = views;
   }
 
   imports() {
@@ -82,10 +80,6 @@ export class Vfs {
 
   sweep(bytes: number): boolean {
     return this.#store.sweep(bytes);
-  }
-
-  clear(): void {
-    this.#store.clear();
   }
 
   append(path: string, bytes: Uint8Array): void {

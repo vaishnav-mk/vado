@@ -1,23 +1,19 @@
 import { DurableObject } from "cloudflare:workers";
 import { DurabilityScheduler } from "durability";
 import { drizzle } from "drizzle-orm/durable-sqlite";
-import { replicaNamespace } from "../catalog/placement";
 import type { Hint } from "../catalog/types";
-import { decodeAll } from "../protocol/decode";
 import { command, concat, error, str } from "../protocol/resp";
-import type { CommandArg, Protocol, Reply } from "../protocol/types";
+import type { CommandArg, Protocol } from "../protocol/types";
 import { coloOf } from "../catalog/regions";
 import { keepSettings } from "../settings";
 import { bootShard } from "./boot";
-import type { LiveShard } from "./boot";
 import type { PrimaryRole } from "./primary";
 import { commitTimes, vfsTimes } from "./probes";
-import type { VfsProbe } from "./probes";
 import { resetSoon } from "./reset";
-import { droppedStats, isolate, SNAPSHOT_INFO, snapshotOf } from "../shard/stats";
+import { DATABASE_DROPPED, droppedStats, isolate, SNAPSHOT_INFO, snapshotOf } from "../shard/stats";
 import { bury, isDropped } from "./tombstone";
-import { DATABASE_DROPPED } from "../shard/stats";
 import type { DroppedStats, Shard, ShardSnapshot, ShardStats } from "../shard/types";
+import type { LiveShard, VfsProbe } from "./types";
 import { dialedFrom, RESTARTING } from "../shard/version";
 import { closeWith, encoder, noop } from "../shared";
 
@@ -35,8 +31,7 @@ export class ValkeyShard extends DurableObject<Env> implements Shard {
 
     if (isDropped(ctx.storage.sql)) return;
 
-    const shardClass = new.target.shardClass;
-    this.#shard = bootShard(ctx, env, this.#db, this.#scheduler, shardClass, replicaNamespace(env, shardClass));
+    this.#shard = bootShard(ctx, env, this.#db, this.#scheduler, new.target.shardClass);
   }
 
   override alarm(info?: AlarmInvocationInfo): Promise<void> {
@@ -125,9 +120,10 @@ export class ValkeyShard extends DurableObject<Env> implements Shard {
       if (!shard.replica.ready) return await socket.close(); // the router reads from the primary instead
     }
 
-    const greeting = address.startsWith("router") ? `+${this.#instance}\r\n` : null;
+    const hello = `+${this.#instance}\r\n`;
+    const greeting = address.startsWith("router") ? hello : null;
     const caller = dialedFrom(address, "router");
-    const marker = caller === null ? null : `+${this.#instance}\r\n`;
+    const marker = caller === null ? null : hello;
 
     if (caller === null) shard.upgrader.checkVersion();
     else shard.upgrader.upgradeTo(caller).catch((e: Error) => console.log(`upgrade: ${e.stack}`));
@@ -136,10 +132,6 @@ export class ValkeyShard extends DurableObject<Env> implements Shard {
     if (shard.upgrader.restarting) return await closeWith(socket, marker ? encoder.encode(marker + marker) : null);
     shard.primary?.repl.wake();
     await shard.host.serve(socket, greeting, false, marker);
-  }
-
-  async run(cmds: CommandArg[][]): Promise<Reply[]> {
-    return decodeAll(await this.runRaw(cmds));
   }
 
   async execRaw(bytes: Uint8Array, count: number, proto: Protocol = 2): Promise<Uint8Array> {
@@ -186,10 +178,12 @@ export class ValkeyShard extends DurableObject<Env> implements Shard {
   }
 
   stats(): ShardStats | DroppedStats {
-    return this.#shard ? this.#stats(this.#shard) : droppedStats(this.#instance);
+    const shard = this.#shard;
+
+    return shard ? { ...this.#stats(shard), files: shard.host.files() } : droppedStats(this.#instance);
   }
 
-  #stats({ host, flavour, upgrader, primary, replica }: LiveShard): ShardStats {
+  #stats({ host, flavour, upgrader, primary, replica }: LiveShard): Omit<ShardStats, "files"> {
     if (this.#colo === undefined) {
       this.#colo = null;
       void coloOf().then((colo) => {
@@ -209,7 +203,6 @@ export class ValkeyShard extends DurableObject<Env> implements Shard {
       aliveSeconds: (Date.now() - this.#bornAt) / 1000,
       restarting: upgrader.restarting,
       lastUpgrade: upgrader.lastUpgrade(),
-      files: host.files(),
       role: replica ? "replica" : "primary",
       replicas: primary ? primary.repl.status() : [],
       lastRewrite: last ? { ...last, doneMs: host.rewriteDoneMs } : null,

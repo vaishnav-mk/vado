@@ -1,6 +1,6 @@
 import { integer, sqliteTable, text } from "drizzle-orm/sqlite-core";
 
-// The table's existence is the tombstone (older code checks for it).
+// Older code checks for the table, not a row.
 export const dropped = sqliteTable("dropped", { at: integer("at").notNull() });
 
 export const restarts = sqliteTable("restarts", {

@@ -1,11 +1,7 @@
 import { concat, EMPTY } from "../protocol/resp";
 import { lostOr } from "./replies-text";
-import type { ReplyOwner } from "./types";
+import type { ReplyOwner, Slot } from "./types";
 import { noop } from "../shared";
-
-export interface Slot {
-  b: Uint8Array | null;
-}
 
 export class ReplyQueue {
   inflight = 0;
@@ -44,8 +40,8 @@ export class ReplyQueue {
   }
 
   push(frame: Uint8Array): void {
-    if (this.#queue.length) this.#pushes.push(frame.slice());
-    else this.#write(frame.slice());
+    if (this.#queue.length) this.#pushes.push(frame);
+    else this.#write(frame);
   }
 
   afterEarlier(s: Slot): Promise<void> {
@@ -67,11 +63,11 @@ export class ReplyQueue {
   }
 
   // An RPC rejects only when its shard can't answer (Valkey errors are values), so it may or may not have run.
-  lost(s: Slot): (cause: unknown) => void {
-    return (cause) =>
+  lost(s: Slot): (e: Error) => void {
+    return (e) =>
       this.resolve(
         s,
-        lostOr(cause, () => this.#owner.dropped()),
+        lostOr(e, () => this.#owner.dropped()),
       );
   }
 

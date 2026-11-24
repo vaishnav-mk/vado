@@ -2,6 +2,8 @@ import { test } from "vite-plus/test";
 import assert from "node:assert/strict";
 import { replicationLine, showArgv, showReply, splitArgs, toArgv } from "../../src/lib/command";
 import { axisLabel, niceAxis } from "../../src/lib/format";
+import { summaryState } from "../../src/lib/replicas";
+import type { Replica, ReplicaState } from "../../src/lib/types";
 
 test("splitArgs", () => {
   assert.deepEqual(splitArgs(`SET "my key" 'it is' x`), ["SET", "my key", "it is", "x"]);
@@ -92,4 +94,36 @@ test("replicationLine only says copied when the replicas were ready", () => {
     "Copied to 2 of the 3 ready replicas in 50 ms. The other 6 weren't ready and catch up in a few seconds.",
   );
   assert.match(replicationLine(rep, Array(9).fill("copying")), /still copying/);
+  assert.equal(replicationLine({ acked: 9, of: 9, ms: 410 }, null), "Copied to 9 replicas in 410 ms.");
+  assert.equal(
+    replicationLine({ acked: 7, of: 9, ms: 410 }, Array(9).fill("ready")),
+    "Copied to 7 of 9 replicas in 410 ms. The others catch up on their own.",
+  );
+  assert.equal(
+    replicationLine({ acked: 7, of: 9, ms: 410 }, []),
+    "Copied to 7 of 9 replicas in 410 ms. The others catch up on their own.",
+  );
+});
+
+test("summaryState picks the best state a shard's replicas are in", () => {
+  const reps = (...states: ReplicaState[]): Replica[] =>
+    states.map((state) => ({
+      region: "weur",
+      regionName: "Western Europe",
+      state,
+      lagMs: null,
+      behindBytes: 0,
+      error: null,
+      reads: 0,
+      colo: null,
+      city: null,
+      lat: null,
+      lon: null,
+    }));
+
+  assert.equal(summaryState(reps("asleep", "idle", "ready")), "ready");
+  assert.equal(summaryState(reps("idle", "copying")), "copying");
+  assert.equal(summaryState(reps("asleep", "idle")), "idle");
+  assert.equal(summaryState(reps("asleep")), "asleep");
+  assert.equal(summaryState([]), "asleep");
 });

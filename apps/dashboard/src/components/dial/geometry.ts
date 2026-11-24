@@ -1,6 +1,6 @@
 import { SLOTS } from "@vado/server/protocol/slots.ts";
 import { replicaReads } from "../../lib/replicas";
-import type { ReplicaState, Shard } from "../../lib/types";
+import type { Shard } from "../../lib/types";
 
 export const R_IN = 120,
   R_OUT = 178,
@@ -30,13 +30,4 @@ export function annulus(r0: number, r1: number, a0: number, a1: number) {
   return `M${x0} ${y0}A${r1} ${r1} 0 ${large} 1 ${x1} ${y1}L${x2} ${y2}A${r0} ${r0} 0 ${large} 0 ${x3} ${y3}Z`;
 }
 
-export const summaryState = (reps: { state: string }[]): ReplicaState =>
-  reps.some((r) => r.state === "ready")
-    ? "ready"
-    : reps.some((r) => r.state === "copying" || r.state === "catching up")
-      ? "copying"
-      : reps.some((r) => r.state === "idle")
-        ? "idle"
-        : "asleep";
-
-export const ops = (s: Shard | undefined) => (s?.ok ? (s.reads ?? 0) + (s.writes ?? 0) + replicaReads(s.replicas) : 0);
+export const ops = (s: Shard | undefined) => (s?.ok ? s.reads + s.writes + replicaReads(s.replicas) : 0);

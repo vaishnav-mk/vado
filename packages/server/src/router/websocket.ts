@@ -1,8 +1,8 @@
-// A Worker can't tell what a WebSocket client has read, so with "vado-acks" it sends text messages counting bytes.
 import { WS_MAX_QUEUED, WS_UNACKED } from "./config";
 import { encoder } from "../shared";
 import type { ByteSocket } from "../protocol/types";
 
+// A Worker can't tell what a WebSocket client has read, so with "vado-acks" it sends text messages counting bytes.
 export const ACKS = "vado-acks";
 
 const quietly = (f: () => void) => {

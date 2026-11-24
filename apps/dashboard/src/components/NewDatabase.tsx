@@ -39,8 +39,7 @@ export function NewDatabase({ options: { regions, flavours } }: { options: Optio
   const native = isNative(flavour);
 
   const n = name.trim(),
-    nameError =
-      error && [DB_NAME_RULE, `${n} already exists`, `database ${n} was dropped`].includes(error) ? error : undefined;
+    nameError = error && [DB_NAME_RULE, `${n} already exists`].includes(error) ? error : undefined;
 
   const navigate = useNavigate(),
     router = useRouter();

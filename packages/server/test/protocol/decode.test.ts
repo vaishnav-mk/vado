@@ -1,6 +1,5 @@
 import { expect, test } from "vite-plus/test";
-import { decode, decodeAll } from "../../src/protocol/decode";
-import { bulk, elements, error, lower } from "../../src/protocol/resp";
+import { decode, decodeAll, decodeTyped } from "../../src/protocol/decode";
 
 const enc = new TextEncoder();
 const one = (s: string) => decode(enc.encode(s))[0];
@@ -30,14 +29,22 @@ test("decodeAll reads frames back to back", () => {
   expect(decodeAll(enc.encode("+OK\r\n:2\r\n$1\r\nx\r\n"))).toEqual(["OK", 2, "x"]);
 });
 
-test("encoders and helpers", () => {
-  expect(new TextDecoder().decode(error("ERR a\r\nb"))).toBe("-ERR a  b\r\n");
-  expect(new TextDecoder().decode(bulk(null))).toBe("$-1\r\n");
-  expect(new TextDecoder().decode(bulk(42))).toBe("$2\r\n42\r\n");
-  expect(elements(enc.encode("*2\r\n:1\r\n$1\r\nx\r\n")).map((e) => new TextDecoder().decode(e))).toEqual([
-    ":1\r\n",
-    "$1\r\nx\r\n",
-  ]);
-  expect(lower(enc.encode("GeT"))).toBe("get");
-  expect(lower(enc.encode("X".repeat(70)))).toBe("x".repeat(70));
+test("decodeTyped keeps each RESP2 reply's type", () => {
+  const typed = (s: string) => decodeTyped(enc.encode(s))[0];
+  expect(typed("+OK\r\n")).toEqual({ type: "status", value: "OK" });
+  expect(typed("$2\r\nOK\r\n")).toEqual({ type: "bulk", value: "OK" });
+  expect(typed("-ERR nope\r\n")).toEqual({ type: "error", value: "ERR nope" });
+  expect(typed(":-3\r\n")).toEqual({ type: "integer", value: -3 });
+  expect(typed("$-1\r\n")).toEqual({ type: "nil" });
+  expect(typed("*-1\r\n")).toEqual({ type: "nil" });
+  expect(typed("*3\r\n$0\r\n\r\n*2\r\n:1\r\n$-1\r\n+QUEUED\r\n")).toEqual({
+    type: "array",
+    value: [
+      { type: "bulk", value: "" },
+      { type: "array", value: [{ type: "integer", value: 1 }, { type: "nil" }] },
+      { type: "status", value: "QUEUED" },
+    ],
+  });
+  expect(decodeTyped(enc.encode("$2\r\nhi\r\n:1\r\n"))[1], "the next frame's offset").toBe(8);
+  expect(() => typed("%1\r\n+k\r\n:1\r\n")).toThrow(/RESP2/);
 });

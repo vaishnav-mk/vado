@@ -1,4 +1,4 @@
-import type { Store } from "./store";
+import type { VfsStore } from "./store";
 import type { Views } from "./types";
 import { E, FD_APPEND, FILETYPE, type FdTable, OFLAG, PREOPEN_FD, writeFilestat } from "./wasi-abi";
 import { decoder } from "../../shared";
@@ -19,7 +19,7 @@ export function resolvePath(dir: string, path: string): string {
   return parts.join("/");
 }
 
-export function pathImports(fds: FdTable, store: Store, { u8, dv }: Views) {
+export function pathImports(fds: FdTable, store: VfsStore, { u8, dv }: Views) {
   const resolve = (dirfd: number, ptr: number, len: number) => {
     let dir = "";
 

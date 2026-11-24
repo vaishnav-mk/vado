@@ -25,7 +25,10 @@ export const SNAPSHOT_INFO = [
   "commandstats",
 ];
 
-export function snapshotOf({ files: _files, ...stats }: ShardStats, info: string): ShardSnapshot {
+export function snapshotOf(
+  { files: _files, ...stats }: Omit<ShardStats, "files"> & { files?: ShardStats["files"] },
+  info: string,
+): ShardSnapshot {
   return { ...stats, info: infoFields(info) };
 }
 

@@ -1,7 +1,6 @@
 import { expect, test } from "vite-plus/test";
-import { decodeTyped } from "../../src/protocol/decode";
 import { request } from "../../src/protocol/request";
-import { command, concat, frameEnd } from "../../src/protocol/resp";
+import { bulk, bulkBytes, bulkText, command, concat, elements, error, frameEnd, lower } from "../../src/protocol/resp";
 import type { FrameResume, RequestResume } from "../../src/protocol/types";
 
 const enc = new TextEncoder();
@@ -68,26 +67,6 @@ test("replies of every RESP type in pieces", () => {
   for (const size of [1, 5, 64, bytes.length]) expect(chunked(bytes, size, frame)).toEqual(replies);
 });
 
-test("decodeTyped keeps each RESP2 reply's type", () => {
-  const typed = (s: string) => decodeTyped(enc.encode(s))[0];
-  expect(typed("+OK\r\n")).toEqual({ type: "status", value: "OK" });
-  expect(typed("$2\r\nOK\r\n")).toEqual({ type: "bulk", value: "OK" });
-  expect(typed("-ERR nope\r\n")).toEqual({ type: "error", value: "ERR nope" });
-  expect(typed(":-3\r\n")).toEqual({ type: "integer", value: -3 });
-  expect(typed("$-1\r\n")).toEqual({ type: "nil" });
-  expect(typed("*-1\r\n")).toEqual({ type: "nil" });
-  expect(typed("*3\r\n$0\r\n\r\n*2\r\n:1\r\n$-1\r\n+QUEUED\r\n")).toEqual({
-    type: "array",
-    value: [
-      { type: "bulk", value: "" },
-      { type: "array", value: [{ type: "integer", value: 1 }, { type: "nil" }] },
-      { type: "status", value: "QUEUED" },
-    ],
-  });
-  expect(decodeTyped(enc.encode("$2\r\nhi\r\n:1\r\n"))[1], "the next frame's offset").toBe(8);
-  expect(() => typed("%1\r\n+k\r\n:1\r\n")).toThrow(/RESP2/);
-});
-
 // Without resuming, each 1 KB piece re-parses everything before it (about 30 s).
 test("200k arguments and a 200k-element reply parse in linear time", () => {
   let t = performance.now();
@@ -98,4 +77,17 @@ test("200k arguments and a 200k-element reply parse in linear time", () => {
   t = performance.now();
   expect(chunked(enc.encode(`*200000\r\n${":1\r\n".repeat(200_000)}`), 1024, frame)).toHaveLength(1);
   expect(performance.now() - t).toBeLessThan(3000);
+});
+
+test("encoders and helpers", () => {
+  expect(dec.decode(error("ERR a\r\nb"))).toBe("-ERR a  b\r\n");
+  expect(dec.decode(bulk(null))).toBe("$-1\r\n");
+  expect(dec.decode(bulk(42))).toBe("$2\r\n42\r\n");
+  expect(elements(enc.encode("*2\r\n:1\r\n$1\r\nx\r\n")).map((e) => dec.decode(e))).toEqual([":1\r\n", "$1\r\nx\r\n"]);
+  expect(lower(enc.encode("GeT"))).toBe("get");
+  expect(lower(enc.encode("X".repeat(70)))).toBe("x".repeat(70));
+  expect(dec.decode(bulkBytes(bulk("hello")))).toBe("hello");
+  expect(bulkText(bulk("a\r\nb"))).toBe("a\r\nb");
+  expect(bulkText(bulk(null))).toBe("");
+  expect(bulkText(enc.encode("-ERR x\r\n")), "not a bulk string").toBe("");
 });

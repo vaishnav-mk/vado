@@ -1,12 +1,11 @@
 import type { DurableMigrations } from "@durability/storage";
 import assert from "node:assert/strict";
 import { test } from "vite-plus/test";
-import { growLastRow, indexRows, pushRow, rowAt } from "../../../src/wasm-shard/vfs/chunks";
+import { indexRows, rowAt } from "../../../src/wasm-shard/vfs/chunks";
 import { VFS_TAIL } from "../../../src/wasm-shard/vfs/config";
 import { fakeStorage } from "./fake-storage";
-import { addMissingColumns } from "../../../src/wasm-shard/vfs/legacy";
-import { migrate } from "../../../src/migrate";
-import { vfsMigrations } from "../../../src/wasm-shard/vfs/migrations";
+import { addMissingColumns, migrate } from "../../../src/migrate";
+import { vfsLegacy, vfsMigrations } from "../../../src/wasm-shard/vfs/migrations";
 import { Vfs } from "../../../src/wasm-shard/vfs/vfs";
 
 // The tables as objects from before migrations and chunk keys have them.
@@ -46,16 +45,12 @@ test("row index arithmetic", () => {
   assert.equal(rowAt(rows, 10), 1);
   assert.equal(rowAt(rows, 99), 1);
   assert.equal(rowAt([], 0), -1);
-  assert.equal(growLastRow(rows, 1, 7), true);
-  assert.equal(growLastRow(rows, 0, 7), false);
-  pushRow(rows, 2, 3);
-  assert.deepEqual(rows.at(-1), { seq: 2, start: 17, len: 3 });
 });
 
 test("migrations create the tables once, and old tables get the chunks column", () => {
   const fresh = fakeStorage();
-  migrate(fresh, vfsMigrations, addMissingColumns);
-  migrate(fresh, vfsMigrations, addMissingColumns);
+  migrate(fresh, vfsMigrations, vfsLegacy);
+  migrate(fresh, vfsMigrations, vfsLegacy);
   assert.deepEqual(columns(fresh, "vfs_node"), ["path", "is_dir", "size", "chunks"]);
   assert.deepEqual(columns(fresh, "vfs_trash"), ["key"]);
   assert.deepEqual(
@@ -68,8 +63,8 @@ test("migrations create the tables once, and old tables get the chunks column", 
 
   const old = fakeStorage();
   old.db.exec(oldNodes.up);
-  addMissingColumns(old.sql);
-  addMissingColumns(old.sql);
+  addMissingColumns(old.sql, vfsLegacy);
+  addMissingColumns(old.sql, vfsLegacy);
   assert.deepEqual(columns(old, "vfs_node"), ["path", "is_dir", "size", "chunks"]);
 });
 

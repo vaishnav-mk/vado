@@ -3,8 +3,7 @@ import { flavourOf, serverOf } from "../catalog/flavours";
 import { command, concat, error, simple, str } from "../protocol/resp";
 import type { CommandArg, Protocol } from "../protocol/types";
 import { keepSettings, reapply } from "../settings";
-import { droppedStats, isolate, SNAPSHOT_INFO, snapshotOf } from "../shard/stats";
-import { DATABASE_DROPPED } from "../shard/stats";
+import { DATABASE_DROPPED, droppedStats, isolate, SNAPSHOT_INFO, snapshotOf } from "../shard/stats";
 import type { DroppedStats, Shard, ShardSnapshot, ShardStats } from "../shard/types";
 import { closeWith, messageOf, withTimeout } from "../shared";
 import { BOOT_MS, MAXMEMORY } from "./config";
@@ -102,7 +101,6 @@ export class RedisBox extends DurableObject<Env> implements Shard {
     return this.#store.dropped() ? droppedStats(this.#instance) : this.#stats();
   }
 
-  // A wasm shard's shape, its wasm-only fields empty.
   #stats(): ShardStats {
     const gen = this.#store.current()?.gen ?? 0,
       compaction = this.#running?.lastCompaction ?? null;

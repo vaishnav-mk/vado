@@ -63,7 +63,8 @@ function restarts(all: Restart[], shardCount: number): EventInput[] {
   return out;
 }
 
-function rewrites(all: Rewrite[]): EventInput[] {
+// A wasm shard's error is its rewriter's, after which it compacts inline; a container's compaction failed outright.
+function rewrites(all: Rewrite[], native: boolean): EventInput[] {
   const out: EventInput[] = [];
   const done = all.filter((r) => !r.error);
 
@@ -72,7 +73,9 @@ function rewrites(all: Rewrite[]): EventInput[] {
       out.push({
         level: "warning",
         kind: "rewrite",
-        text: `Shard ${r.i} couldn't compact its log in a helper, so it did it itself`,
+        text: native
+          ? `Shard ${r.i} couldn't compact its log (${r.error})`
+          : `Shard ${r.i} couldn't compact its log in a helper, so it did it itself`,
         shard: r.i,
       });
 
@@ -96,6 +99,8 @@ function rewrites(all: Rewrite[]): EventInput[] {
 
 const replicaOf = (r: ReplicaChange) => `The replica of shard ${r.i} in ${regionName(r.region)}`;
 
+const ASLEEP = `went to sleep: no traffic for ${plural(REPL_IDLE_MS / 60_000, "minute")}`;
+
 const REPLICA_GROUPS: {
   pick: (r: ReplicaChange) => boolean;
   level: EventLevel;
@@ -105,8 +110,8 @@ const REPLICA_GROUPS: {
   {
     pick: (r) => r.to === "asleep",
     level: "info",
-    many: (n) => `${plural(n, "replica")} went to sleep: no traffic for ${plural(REPL_IDLE_MS / 60_000, "minute")}`,
-    one: (r) => `${replicaOf(r)} went to sleep: no traffic for ${plural(REPL_IDLE_MS / 60_000, "minute")}`,
+    many: (n) => `${plural(n, "replica")} ${ASLEEP}`,
+    one: (r) => `${replicaOf(r)} ${ASLEEP}`,
   },
   {
     pick: (r) => r.to === "copying" && r.from === "asleep",
@@ -145,8 +150,8 @@ function replicas(all: ReplicaChange[]): EventInput[] {
 }
 
 // A few events rather than one per shard: a new database's shards all compact at once, say.
-export const summarize = (changes: Changes, shardCount: number): EventInput[] => [
+export const summarize = (changes: Changes, shardCount: number, native: boolean): EventInput[] => [
   ...restarts(changes.restarts, shardCount),
-  ...rewrites(changes.rewrites),
+  ...rewrites(changes.rewrites, native),
   ...replicas(changes.replicas),
 ];

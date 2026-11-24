@@ -1,13 +1,11 @@
-import { elements, isError, str } from "../protocol/resp";
+import { bulkBytes, elements, isError, str } from "../protocol/resp";
 import type { CommandEntry } from "../protocol/types";
 import type { Conn } from "./conn";
 import { replicaFailed, replicaResting } from "./isolate";
 import { shardAt, shardOfKeys } from "./key-shards";
-import type { Slot } from "./replies";
 import { CROSSSLOT, LOST } from "./replies-text";
-import { bulkBytes } from "../protocol/resp";
 import { split } from "./split";
-import type { UpKey } from "./types";
+import type { Slot, UpKey } from "./types";
 
 // May go to a replica, and again to the primary if that fails.
 const retryable = (c: Conn, entry: CommandEntry) =>
@@ -22,7 +20,6 @@ export function forward(
   s: Slot = c.replies.slot(),
   blocking = false,
 ): void {
-  const copy = retry ? raw.slice() : null;
   let from: UpKey = shard;
 
   if (retry) from = readFrom(c, shard);
@@ -30,10 +27,11 @@ export function forward(
   c.pool.get(from, blocking).send(raw, (f) => {
     if (!retry) c.writes.done(shard);
 
-    if (f === LOST && copy) {
+    // Resending raw needs no copy: views of the client's buffer never change (append).
+    if (f === LOST && retry) {
       if (from !== shard) replicaFailed(c.db.name, shard);
 
-      return c.pool.get(shard).send(copy, (g) => c.replies.resolve(s, g));
+      return c.pool.get(shard).send(raw, (g) => c.replies.resolve(s, g));
     }
 
     c.replies.resolve(s, f);
@@ -41,9 +39,7 @@ export function forward(
 }
 
 function readFrom(c: Conn, shard: number): UpKey {
-  if (!c.db.replicas || c.tx.pinned) return shard;
-
-  if (c.writes.recent(shard, c.now) || replicaResting(c.db.name, shard, c.now)) return shard;
+  if (!c.db.replicas || c.writes.recent(shard, c.now) || replicaResting(c.db.name, shard, c.now)) return shard;
   const key: UpKey = `r${shard}`;
 
   return c.pool.has(key) || c.target.replica(shard) ? key : shard;
@@ -66,7 +62,6 @@ export function routeKeys(
 
 export function getkeys(c: Conn, entry: CommandEntry, argv: Uint8Array[], raw: Uint8Array): void {
   const s = c.replies.slot(),
-    copy = raw.slice(),
     target = c.target;
 
   // Later requests wait until this one is sent, so it runs before them on its shard.
@@ -81,7 +76,7 @@ export function getkeys(c: Conn, entry: CommandEntry, argv: Uint8Array[], raw: U
           shard = shardOfKeys(keys, target.db.shards);
 
         if (shard < 0) return c.replies.resolve(s, CROSSSLOT);
-        forward(c, shard, copy, retryable(c, entry), s, entry.flags.has("blocking"));
+        forward(c, shard, raw, retryable(c, entry), s, entry.flags.has("blocking"));
       }, c.replies.lost(s)),
   );
 }

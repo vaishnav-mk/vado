@@ -1,17 +1,8 @@
 import { useEffect, useState } from "react";
 import { DurabilitySocketClient } from "durability/client";
+import { EVENTS_KEPT, WATCH_HISTORY } from "@vado/server/admin/config.ts";
 import type { Watcher } from "@vado/server/admin/watcher/watcher.ts";
-import { EVENTS_KEPT, WATCH_HISTORY } from "./config";
-import type { LiveEvent, LiveSnapshot, LiveState, Point, Tick } from "./types";
-
-export type Connection = "connecting" | "open" | "retrying";
-
-export interface Live {
-  state: LiveState | null;
-  history: Point[];
-  events: LiveEvent[];
-  connection: Connection;
-}
+import type { Live, LiveEvent, LiveSnapshot, Tick } from "./types";
 
 const EMPTY: Live = { state: null, history: [], events: [], connection: "connecting" };
 
@@ -48,7 +39,7 @@ const liveUrl = (name: string) => {
 };
 
 // Reconnects on sign-in: the Watcher learns who watches when the socket opens, and times writes only for them.
-export function useLive(name: string, signedIn = false): Live {
+export function useLive(name: string, signedIn: boolean): Live {
   const [live, setLive] = useState<Live>(EMPTY);
 
   useEffect(() => {

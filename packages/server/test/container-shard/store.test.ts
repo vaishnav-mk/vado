@@ -24,7 +24,20 @@ describe("BoxStore", () => {
     while (store.prune(1 << 20));
     expect(store.bytes(1, BASE)).toBe(0);
     expect(store.bytes(2, BASE)).toBe(30);
-    expect(new BoxStore(storage).bytes(2, BASE)).toBe(30);
+    const reopened = new BoxStore(storage);
+
+    reopened.append(2, BASE, new Uint8Array(5)); // after the stored rows, not over them
+    expect(reopened.bytes(2, BASE)).toBe(35);
+  });
+
+  test("a drop is remembered, also by the next object", () => {
+    const storage = fakeStorage();
+    const store = new BoxStore(storage);
+
+    expect(store.dropped()).toBe(false);
+    store.drop();
+    expect(store.dropped()).toBe(true);
+    expect(new BoxStore(storage).dropped()).toBe(true);
   });
 
   test("a sync never reuses a failed one's number, and prune removes the rest a batch at a time", () => {

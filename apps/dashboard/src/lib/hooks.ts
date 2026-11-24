@@ -19,7 +19,7 @@ export const useDark = () => useSyncExternalStore(darkQuery.subscribe, darkQuery
 export const useReducedMotion = () => useSyncExternalStore(calmQuery.subscribe, calmQuery.get, () => false);
 
 // Ticks on its own so relative times move on when no data arrives.
-export function useNow(every = 10_000) {
+export function useNow(every: number) {
   const [now, setNow] = useState(() => Date.now());
   useEffect(() => {
     const t = setInterval(() => setNow(Date.now()), every);

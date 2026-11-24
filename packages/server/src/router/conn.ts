@@ -2,7 +2,7 @@ import type { DatabaseRecord } from "../catalog/types";
 import { command, HELLO3 } from "../protocol/resp";
 import { ROUTER_HIGH_WATER, ROUTER_LOW_WATER } from "./config";
 import { isolateFull } from "./isolate";
-import { isPrimary } from "./key-shards";
+import { isPrimary } from "./upstream";
 import { UpstreamPool } from "./pool";
 import { ReadYourWrites } from "./read-your-writes";
 import { ReplyQueue } from "./replies";
@@ -112,8 +112,7 @@ export class Conn implements UpstreamOwner, ReplyOwner {
     pass.passthrough = null;
     this.pass = null;
 
-    // Its subscriptions went with the shard: closed, as a Redis server going away would leave it, the client reconnects
-    // and subscribes again. An error frame here would reach a client expecting only pushes.
+    // Subscriptions went with the shard: close as Redis would; an error frame would reach a client expecting pushes.
     if (lost) this.close();
   }
 

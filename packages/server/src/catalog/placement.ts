@@ -66,12 +66,16 @@ const NEAR: Partial<Record<Hint, Hint[]>> = {
   oc: ["apac"],
 };
 
+const NONE: Hint[] = [];
+
 export function replicaRegion(db: Pick<DatabaseRecord, "replicas">, colo: string): Hint | null {
   const mine = db.replicas && REGION_OF.get(colo);
 
   if (!db.replicas || !mine) return null;
 
-  for (const r of [mine, ...(NEAR[mine] ?? [])]) if (db.replicas.includes(r)) return r;
+  if (db.replicas.includes(mine)) return mine;
+
+  for (const r of NEAR[mine] ?? NONE) if (db.replicas.includes(r)) return r;
 
   return null;
 }

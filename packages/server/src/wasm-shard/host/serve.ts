@@ -1,10 +1,9 @@
-import { CLIENT_HIGH_WATER, SHARD_HIGH_WATER } from "./config";
-import { type Gauge } from "./gauge";
-import { within } from "../../shared";
+import { CLIENT_HIGH_WATER, DRAIN_WAIT_MS, SHARD_HIGH_WATER } from "./config";
+import type { Gauge } from "./gauge";
 import type { Loop } from "./loop";
 import type { Sockets } from "./sockets";
 import type { DrainReport, HostSocket, InputSink } from "./types";
-import { encoder, noop } from "../../shared";
+import { encoder, noop, within } from "../../shared";
 import type { ByteSocket } from "../../protocol/types";
 
 // A quiet socket's leftover input is dropped at its end: old commands must not run after the next copy's FLUSHALL.
@@ -92,7 +91,7 @@ export async function drain(
   sockets.wakeAll();
 
   // A running batch could unblock a client's BLPOP while it closes, popping an element with no reply.
-  await within(batches.zero(), 5000);
+  await within(batches.zero(), DRAIN_WAIT_MS);
 
   // The host never refuses a write, so a pass that writes nothing leaves no reply unsent.
   for (let i = 0, writes = -1; i < 1000 && writes !== sockets.writes; i++) {
@@ -108,5 +107,5 @@ export async function drain(
   for (let i = 0; i < 4; i++) loop.step();
   const finished = Promise.all(clients.map((s) => s.finished.promise)).then(noop);
 
-  return { clients: clients.length, closed: await within(finished, 5000) };
+  return { clients: clients.length, closed: await within(finished, DRAIN_WAIT_MS) };
 }

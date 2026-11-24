@@ -10,15 +10,15 @@ import { noop } from "../shared";
 import type { Test } from "./types";
 import { allShards, dbName, open } from "./util";
 
-function hints(v: string): Hint[] {
-  const out = v === "world" ? WORLD : v.split(",");
+function hints(s: string): Hint[] {
+  const out = s === "world" ? WORLD : s.split(",");
 
   if (!out.every(isHint)) throw new Error(`regions and replicas must be lists of ${HINT_NAMES}`);
 
   return out;
 }
 
-const list = (v: string | null) => (v ? hints(v) : undefined);
+const list = (s: string | null) => (s ? hints(s) : undefined);
 
 // via=shard goes past the router, which refuses these.
 const RAW_REFUSED = new Set(["config", ...UNSUPPORTED]);
@@ -101,8 +101,8 @@ const abort: Test = async (env, q) => {
 
 // Replication only: reads stay where the record says.
 const replicate: Test = async (env, q) => {
-  const v = q.get("regions") ?? "";
-  const regions = v === "none" ? [] : hints(v);
+  const asked = q.get("regions") ?? "";
+  const regions = asked === "none" ? [] : hints(asked);
   await configureReplicas(env, { ...(await database(env, dbName(q))), replicas: regions });
 
   return { regions };

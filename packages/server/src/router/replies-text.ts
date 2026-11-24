@@ -1,4 +1,4 @@
-import { bulk, command, error, simple, str } from "../protocol/resp";
+import { bulk, command, error, integer, simple, str } from "../protocol/resp";
 import type { CommandEntry } from "../protocol/types";
 import { encoder, messageOf } from "../shared";
 import { DATABASE_DROPPED } from "../shard/stats";
@@ -10,6 +10,7 @@ export const RESET = simple("RESET");
 export const NULL_BULK = bulk(null);
 export const NULL_ARRAY = encoder.encode("*-1\r\n");
 export const NULL3 = encoder.encode("_\r\n");
+export const ZERO = integer(0);
 export const CROSSSLOT = error("CROSSSLOT Keys in request don't hash to the same slot");
 
 // Compared by identity: only this object means the shard never answered.
@@ -24,13 +25,14 @@ export const HELLO_NOAUTH = error(
   "NOAUTH HELLO must be called with the client already authenticated, otherwise the HELLO <proto> AUTH <user> <pass> option can be used to authenticate the client and select the RESP protocol version at the same time",
 );
 
+export const UNWATCH = command(["UNWATCH"]);
+
 // Compared by identity in Pending: they mark where a transaction runs on the shard.
 export const MULTI = command(["MULTI"]);
 export const EXEC = command(["EXEC"]);
-export const UNWATCH = command(["UNWATCH"]);
 
-export const lostOr = (cause: unknown, dropped: () => Uint8Array): Uint8Array =>
-  cause instanceof Error && cause.message.includes(DATABASE_DROPPED) ? dropped() : LOST;
+export const lostOr = (cause: Error, dropped: () => Uint8Array): Uint8Array =>
+  messageOf(cause).includes(DATABASE_DROPPED) ? dropped() : LOST;
 
 export const errorOf = (cause: unknown) => error(`ERR ${messageOf(cause)}`);
 export const unsupported = (name: string) => error(`ERR '${name}' is not supported by the sharded router`);

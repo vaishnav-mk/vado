@@ -26,7 +26,7 @@ export function login(c: Conn, user: string | null, pass: string, then: () => vo
     return then();
   }
 
-  c.replies.hold(signIn(c, name, pass, then).catch((cause: unknown) => c.replies.reply(errorOf(cause))));
+  c.replies.hold(signIn(c, name, pass, then).catch((e: Error) => c.replies.reply(errorOf(e))));
 }
 
 async function signIn(c: Conn, name: string, pass: string, then: () => void): Promise<void> {

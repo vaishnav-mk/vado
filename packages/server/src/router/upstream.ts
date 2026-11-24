@@ -40,3 +40,5 @@ export abstract class BaseUpstream {
     return true;
   }
 }
+
+export const isPrimary = (key: UpKey): key is number => Number.isInteger(key);

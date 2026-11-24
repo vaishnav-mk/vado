@@ -137,8 +137,7 @@ export function keyIndexes(table: CommandTable, name: string, argv: Uint8Array[]
 
 export const SUBSCRIBE = new Set(["subscribe", "psubscribe", "ssubscribe"]);
 
-// How data behaves only: durability, memory, networking and auth belong to the service, and shards share memory.
-// No keyspace events (SUBSCRIBE goes to the pub/sub shard) or time limits (the clock stands still during a pass).
+// Only how data behaves: no keyspace events (SUBSCRIBE goes to one shard) or time limits (the clock stops in a pass).
 export const CONFIG_SET = new Set([
   "maxmemory-policy",
   "maxmemory-samples",

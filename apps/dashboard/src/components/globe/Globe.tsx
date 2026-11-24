@@ -1,4 +1,3 @@
-// Frames read only refs, so React re-renders just for data (once a second) and the tooltip.
 import { useEffect, useMemo, useRef, useState } from "react";
 import { geoDistance, geoOrthographic, geoPath } from "d3-geo";
 import { LayerCard, Text } from "@cloudflare/kumo";
@@ -45,6 +44,7 @@ export function Globe({ state, last, dark }: { state: LiveState | null; last: La
     if (!drag.current) rot.current = [-data.center[0], -Math.max(-30, Math.min(30, data.center[1])) * 0.6];
   }
 
+  // Frames read only refs, so React re-renders just for data (once a second) and the tooltip.
   useEffect(() => {
     const c = canvas.current,
       ctx = c?.getContext("2d");
@@ -200,7 +200,7 @@ export function Globe({ state, last, dark }: { state: LiveState | null; last: La
         <div className="flex flex-wrap items-center justify-center gap-x-4 gap-y-1">
           <Legend color={traffic(dark)} label="Traffic entering Cloudflare" />
           <Legend color={SHARD} label="Shards" />
-          {state?.shards?.some((s) => s.replicas?.length) && <Legend color={REPLICA.ready} label="Replicas" />}
+          {!!state?.totals.replicas && <Legend color={REPLICA.ready} label="Replicas" />}
           {last && <Legend color={HIGHLIGHT} label="Your last command" />}
         </div>
         <Text variant="secondary" size="sm">

@@ -1,4 +1,3 @@
-// valibot bounds shape and size; Admin enforces the exact rules, and its messages reach the page as they are.
 import { createServerFn } from "@tanstack/react-start";
 import { env } from "cloudflare:workers";
 import * as v from "valibot";
@@ -7,20 +6,14 @@ import { DB_NAME, DB_NAME_RULE, SHARD_COUNTS } from "@vado/server/catalog/names.
 import type { CommandResult, Database, Options, TestView } from "../lib/types";
 import { requireUser } from "./access";
 import { TEST_LEVELS } from "@vado/server/admin/config.ts";
+import { SLOTS } from "@vado/server/protocol/slots.ts";
 
 const admin = () => new Admin(env);
 
+// valibot bounds shape and size; Admin enforces the exact rules, and its messages reach the page as they are.
 const name = v.pipe(v.string(), v.regex(DB_NAME, DB_NAME_RULE));
 
 export const listDatabases = createServerFn({ method: "GET" }).handler((): Promise<Database[]> => admin().databases());
-
-export const getDatabase = createServerFn({ method: "GET" })
-  .validator(v.object({ name }))
-  .handler(({ data }): Promise<Database | null> =>
-    admin()
-      .database(data.name)
-      .catch(() => null),
-  );
 
 export const listOptions = createServerFn({ method: "GET" }).handler((): Options => ({
   regions: admin().regions(),
@@ -44,7 +37,7 @@ export const createDatabase = createServerFn({ method: "POST" })
   });
 
 export const restartShard = createServerFn({ method: "POST" })
-  .validator(v.object({ name, shard: v.pipe(v.number(), v.integer(), v.minValue(0), v.maxValue(16383)) }))
+  .validator(v.object({ name, shard: v.pipe(v.number(), v.integer(), v.minValue(0), v.maxValue(SLOTS - 1)) }))
   .handler(async ({ data }) => {
     await requireUser();
     await admin().restart(data.name, data.shard);

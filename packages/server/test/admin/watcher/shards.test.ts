@@ -1,5 +1,5 @@
 import { expect, test } from "vite-plus/test";
-import type { ShardReading } from "../../../src/admin/types";
+import type { ShardReading } from "../../../src/admin/watcher/types";
 import { Shards } from "../../../src/admin/watcher/shards";
 
 const reading = (instance: string, version: string, reads: number, used = 10): ShardReading => ({

@@ -1,11 +1,8 @@
-// Placed in one region, so its connections, and the routers serving them, start there.
 import { DurableObject } from "cloudflare:workers";
 import { DurabilityAlarms } from "durability";
 import * as v from "valibot";
+import { TEST_RETRY_MS, TEST_ROUND } from "../admin/config";
 import { runTest } from "./bench";
-
-const ROUND = { n: "20000", batch: "500", conns: "4" };
-const RETRY_MS = 2_000; // after a failed round: a shard restarting, say
 
 const Loop = v.object({
   id: v.string(),
@@ -18,6 +15,7 @@ const Loop = v.object({
 
 type Loop = v.InferOutput<typeof Loop>;
 
+// Placed in one region, so its connections, and the routers serving them, start there.
 export class Sender extends DurableObject<Env> {
   readonly #alarms = new DurabilityAlarms({
     context: this.ctx,
@@ -61,13 +59,13 @@ export class Sender extends DurableObject<Env> {
     let next = Date.now();
 
     try {
-      const keys = String(Math.max(1, Math.ceil(loop.keys / Number(ROUND.conns))));
-      const q = new URLSearchParams({ ...ROUND, keys, db: loop.db, prefix: loop.prefix });
+      const keys = String(Math.max(1, Math.ceil(loop.keys / Number(TEST_ROUND.conns))));
+      const q = new URLSearchParams({ ...TEST_ROUND, keys, db: loop.db, prefix: loop.prefix });
 
       if (loop.round % 4) q.set("op", "get");
       await runTest("throughput", this.env, q);
     } catch {
-      next += RETRY_MS;
+      next += TEST_RETRY_MS;
     }
 
     if ((await this.#loop())?.id !== loop.id) return; // stop(), or a new loop(), ran meanwhile

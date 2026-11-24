@@ -1,4 +1,5 @@
 import type { DurableMigrations } from "@durability/storage";
+import type { Legacy } from "../../migrate";
 
 export const vfsMigrations = [
   {
@@ -9,3 +10,6 @@ CREATE TABLE IF NOT EXISTS vfs_trash (key TEXT PRIMARY KEY);`,
     down: "SELECT 1;",
   },
 ] satisfies DurableMigrations;
+
+// A vfs_node table from before vfs_0001_tables, made before files were chunked.
+export const vfsLegacy: Legacy = { table: "vfs_node", columns: [["chunks", "TEXT"]] };

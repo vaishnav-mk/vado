@@ -3,8 +3,8 @@ import { compact } from "@vado/server/format.ts";
 export { ago, bytes, bytesOf, clock, dateTime, duration, list, ms, num, plural, share } from "@vado/server/format.ts";
 
 // Steps of 1, 2 or 5 times a power of ten, so no two axis labels repeat.
-export function niceAxis(max: number, minStep = 1, steps = 4) {
-  const raw = (max > 0 ? max : 1) / steps;
+export function niceAxis(max: number, minStep: number) {
+  const raw = (max > 0 ? max : 1) / 4;
   const mag = 10 ** Math.floor(Math.log10(raw));
   const step = Math.max(minStep, [1, 2, 5, 10].map((m) => m * mag).find((s) => s >= raw) ?? 10 * mag);
 

@@ -4,25 +4,23 @@ import { command, concat } from "../protocol/resp";
 import { decodeAll } from "../protocol/decode";
 import type { Test } from "./types";
 import { messageOf, ok, percentile, sleep, text } from "../shared";
-import { dbName, liveStats, num, open } from "./util";
+import { dbName, liveStats, mb, num, open } from "./util";
 import { infoFields } from "../protocol/info";
 
-const shardZero = async (env: Env, q: URLSearchParams) => wasmShardStub(env, await database(env, dbName(q)), 0);
-
-const mb = (bytes: number) => +(bytes / 2 ** 20).toFixed(1);
+const wasmShardZero = async (env: Env, q: URLSearchParams) => wasmShardStub(env, await database(env, dbName(q)), 0);
 
 const commit: Test = async (env, q) => {
-  const stub = await shardZero(env, q);
+  const stub = await wasmShardZero(env, q);
   await stub.stats(); // learn its colo
   const r = await stub.commitProbe(num(q, "n", 20));
 
   return { colo: r.colo, p50: r.ms[r.ms.length >> 1], min: r.ms[0], max: r.ms.at(-1) };
 };
 
-const vfs: Test = async (env, q) => await (await shardZero(env, q)).vfsProbe(num(q, "mb", 32));
+const vfs: Test = async (env, q) => await (await wasmShardZero(env, q)).vfsProbe(num(q, "mb", 32));
 
 const rewrite: Test = async (env, q) => {
-  const stub = await shardZero(env, q),
+  const stub = await wasmShardZero(env, q),
     c = await open(env, q);
 
   const lat: number[] = [],
@@ -45,7 +43,6 @@ const rewrite: Test = async (env, q) => {
   await sleep(500);
   t0 = Date.now();
 
-  // runRaw: run's RPC result type is too deep for the checker, and it's the same reply.
   const [reply] = decodeAll(await stub.runRaw([["BGREWRITEAOF"]])),
     replyMs = Date.now() - t0;
 
@@ -106,7 +103,7 @@ const frag: Test = async (env, q) => {
 
   const del = (i: number) => (hash ? ["HDEL", `f:${Math.floor(i / 100)}`, String(i)] : ["DEL", `f:${i}`]);
 
-  const stub = await shardZero(env, q),
+  const stub = await wasmShardZero(env, q),
     c = await open(env, q);
 
   const mem = async (round: number | string) => {
@@ -164,7 +161,7 @@ const rpcbatch: Test = async (env, q) => {
 
   const body = concat(Array.from({ length: k }, (_, i) => command(["SET", `rb:${i}`, "v"])));
 
-  const stub = await shardZero(env, q),
+  const stub = await wasmShardZero(env, q),
     t0 = Date.now();
 
   const rs = await Promise.allSettled(Array.from({ length: par }, () => stub.execRaw(body, k, 2)));

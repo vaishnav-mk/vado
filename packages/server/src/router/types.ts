@@ -17,6 +17,13 @@ export interface Where {
 
 export type Callback = (frame: Uint8Array) => void;
 
+// Combines one reply per shard, in the order the shards were asked.
+export type Merge = (frames: Uint8Array[]) => Uint8Array;
+
+export interface Slot {
+  b: Uint8Array | null;
+}
+
 export type UpKey = number | "pubsub" | `r${number}`;
 
 export interface Upstream {
@@ -94,7 +101,6 @@ export interface LiveConn {
   db: string;
   via: Via;
   where: Where | null;
-  since: number;
   router: RouterView | null;
 }
 

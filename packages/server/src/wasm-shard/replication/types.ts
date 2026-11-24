@@ -48,15 +48,3 @@ export interface Mark {
   ready?: boolean;
   onAck?: () => void;
 }
-
-export interface AofEntry {
-  path: string;
-  type: string;
-  line: string;
-}
-
-export interface AofFiles {
-  base: string | undefined;
-  incrs: string[];
-  entries: AofEntry[];
-}

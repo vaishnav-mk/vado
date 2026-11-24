@@ -45,10 +45,6 @@ export class Sockets {
     return [...this.open.values()].filter((s) => !s.internal);
   }
 
-  hold(n: number): void {
-    this.total += n;
-  }
-
   release(n: number): void {
     this.total -= n;
     this.wake(null);

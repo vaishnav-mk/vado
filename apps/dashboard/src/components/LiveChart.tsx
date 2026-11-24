@@ -1,4 +1,3 @@
-// Not Kumo's TimeseriesChart: it animates every update (the lines flicker) and rounds ticks into repeated labels.
 import { useMemo } from "react";
 import * as echarts from "echarts/core";
 import { LineChart } from "echarts/charts";
@@ -20,13 +19,13 @@ export interface Series {
 
 const esc = (s: string) => s.replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`);
 
+// Not Kumo's TimeseriesChart: it animates every update (the lines flicker) and rounds ticks into repeated labels.
 export function LiveChart({
   series,
   dark,
   unit = "",
   minStep = 1,
   format,
-  height = CHART_HEIGHT,
   empty,
 }: {
   series: Series[];
@@ -34,7 +33,6 @@ export function LiveChart({
   dark: boolean;
   unit?: string;
   format: (v: number) => string;
-  height?: number;
   empty: string;
 }) {
   const hasData = series.some((s) => s.data.some(([, v]) => v !== null));
@@ -106,7 +104,7 @@ export function LiveChart({
 
   return (
     <div className="relative">
-      <Chart echarts={echarts} options={options} height={height} isDarkMode={dark} />
+      <Chart echarts={echarts} options={options} height={CHART_HEIGHT} isDarkMode={dark} />
       {!hasData && (
         <div className="pointer-events-none absolute inset-0 grid place-items-center">
           <Text variant="secondary" size="sm">

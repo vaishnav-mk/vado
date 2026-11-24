@@ -1,4 +1,4 @@
-import { command, concat, lineEnd, str } from "../protocol/resp";
+import { command, concat, elements, lineEnd, num, str, TYPE } from "../protocol/resp";
 import { noop } from "../shared";
 import { ACK_MS, FENCE_MS } from "./config";
 import { storeRdb } from "./rdb";
@@ -7,6 +7,17 @@ import type { BoxStore, Generation } from "./store";
 import type { Resume, Waiter } from "./types";
 
 export const CANT_CONTINUE = "the server can't continue the stored stream";
+
+export const ROLE = command(["ROLE"]);
+
+// ROLE's reply is ["master", offset, replicas]: the offset after every command before it ran.
+export function roleOffset(frame: Uint8Array): number {
+  const offset = elements(frame)[1];
+
+  if (offset?.[0] !== TYPE.integer) throw new Error("ROLE: the server isn't a primary");
+
+  return num(offset, 1, offset.length - 2);
+}
 
 // This object as a replica of the container's server, storing its replication stream.
 export class StreamLink {

@@ -5,7 +5,7 @@ import type { Row } from "./types";
 
 export function rows(state: LiveState | null): Row[] {
   const shards = state?.shards ?? [];
-  const present = new Set(shards.flatMap((s) => (s.replicas ?? []).map((r) => r.region)));
+  const present = new Set(shards.flatMap((s) => s.replicas.map((r) => r.region)));
 
   const order = [
     ...WORLD.filter((r) => present.has(r)),
@@ -13,7 +13,7 @@ export function rows(state: LiveState | null): Row[] {
   ];
 
   return order.map((region) => {
-    const cells = shards.map((s) => s.replicas?.find((r) => r.region === region));
+    const cells = shards.map((s) => s.replicas.find((r) => r.region === region));
     const here = cells.filter((r): r is Replica => !!r);
     const ready = here.filter((r) => r.state === "ready");
     const cities = new Map<string, number>();

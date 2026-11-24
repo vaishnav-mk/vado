@@ -3,12 +3,12 @@ import { Button, Input, LayerCard, Select, Text } from "@cloudflare/kumo";
 import { PlayIcon } from "@phosphor-icons/react";
 import { Guard } from "./Guard";
 import { runCommand } from "../server/admin";
-import { COMMANDS, OTHER, replicationLine, showArgv, showReply, toArgv, type Arg } from "../lib/command";
+import { COMMANDS, OTHER, replicationLine, showArgv, showReply, toArgv } from "../lib/command";
 import { ms } from "../lib/format";
 import { useAction } from "../lib/hooks";
 import { place } from "@vado/server/admin/views.ts";
 import { regionName } from "@vado/server/catalog/regions.ts";
-import type { LastCommand, Shard } from "../lib/types";
+import type { Arg, LastCommand, Shard } from "../lib/types";
 import { messageOf } from "@vado/server/shared.ts";
 
 const ITEMS = Object.fromEntries(Object.keys(COMMANDS).map((c) => [c, c === OTHER ? "Other command" : c]));
@@ -73,7 +73,7 @@ export function RunCommand({
 
     if (parseError || !argv.length) return;
     void run(async () => {
-      const before = shards.map((s) => s.replicas?.map((x) => x.state) ?? null);
+      const before = shards.map((s) => s.replicas.map((x) => x.state));
       const r = await runCommand({ data: { name: db, argv } });
       onResult({ ...r, argv, at: Date.now(), before: r.shard !== null ? (before[r.shard] ?? null) : null });
     });

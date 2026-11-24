@@ -1,7 +1,7 @@
 import type { Memory, Views } from "./types";
 
 // Rebuilt only when the memory grows, which replaces its buffer.
-export function viewOf<V extends Uint8Array | DataView>(memory: Memory, View: new (buffer: ArrayBuffer) => V): () => V {
+function viewOf<V extends Uint8Array | DataView>(memory: Memory, View: new (buffer: ArrayBuffer) => V): () => V {
   let view: V | null = null;
 
   return () => {

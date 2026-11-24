@@ -3,10 +3,9 @@ import { arrayOf, command, elements, integer, isError } from "../protocol/resp";
 import type { Conn } from "./conn";
 import { groupByShard } from "./key-shards";
 import { OK, wrongArity } from "./replies-text";
+import type { Merge } from "./types";
 
-type Merge = (frames: Uint8Array[], groups: number[][]) => Uint8Array;
-
-export const sumOf = (frames: Uint8Array[]): Uint8Array => {
+export const sumOf: Merge = (frames) => {
   let n = 0;
 
   for (const f of frames) n += Number(decode(f)[0]);
@@ -22,8 +21,7 @@ function scatter(
   merge: Merge,
 ): void {
   const s = c.replies.slot(),
-    idxs = [...groups.values()],
-    frames = Array.from<Uint8Array>({ length: idxs.length });
+    frames = Array.from<Uint8Array>({ length: groups.size });
 
   let left = groups.size,
     failed: Uint8Array | null = null,
@@ -39,7 +37,7 @@ function scatter(
       if (isError(f)) failed ??= f;
       else frames[at] = f;
 
-      if (--left === 0) c.replies.resolve(s, failed ?? merge(frames, idxs));
+      if (--left === 0) c.replies.resolve(s, failed ?? merge(frames));
     });
   }
 }
@@ -48,19 +46,22 @@ export function split(c: Conn, name: string, argv: Uint8Array[]): boolean {
   const args = argv.slice(1);
 
   switch (name) {
-    case "mget":
+    case "mget": {
+      const groups = groupByShard(args, c.db.shards);
+
       scatter(
         c,
-        groupByShard(args, c.db.shards),
+        groups,
         false,
         (idx) => command(["MGET", ...idx.map((i) => args[i])]),
-        (frames, idxs) => {
+        (frames) => {
           const out = Array.from<Uint8Array>({ length: args.length });
+          let k = 0;
 
-          for (let k = 0; k < frames.length; k++) {
-            const values = elements(frames[k]);
+          for (const idx of groups.values()) {
+            const values = elements(frames[k++]);
 
-            for (let j = 0; j < idxs[k].length; j++) out[idxs[k][j]] = values[j];
+            for (let j = 0; j < idx.length; j++) out[idx[j]] = values[j];
           }
 
           return arrayOf(out);
@@ -68,6 +69,8 @@ export function split(c: Conn, name: string, argv: Uint8Array[]): boolean {
       );
 
       return true;
+    }
+
     case "mset":
       if (args.length % 2) c.replies.reply(wrongArity("mset"));
       else

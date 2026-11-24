@@ -3,11 +3,10 @@ import { sameBytes } from "../protocol/bytes";
 import { GREETING_MS, PROBE_AFTER_MS, WRITE_FAILED_MS } from "./config";
 import { isolateAdd, socketClosed, socketOpened } from "./isolate";
 import { readFrames } from "../protocol/frames";
-import { isPrimary } from "./key-shards";
 import { Pending } from "./pending";
 import { LOST } from "./replies-text";
 import type { Callback, ShardStub, UpKey, Upstream, UpstreamOwner } from "./types";
-import { BaseUpstream } from "./upstream";
+import { BaseUpstream, isPrimary } from "./upstream";
 import { noop } from "../shared";
 
 export class SocketUpstream extends BaseUpstream implements Upstream {

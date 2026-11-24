@@ -1,6 +1,7 @@
 import { expect, test } from "vite-plus/test";
 import { shardOfSlot, slotOf } from "../../src/protocol/slots";
-import { groupByShard, isPrimary, shardAt, shardOfKeys } from "../../src/router/key-shards";
+import { groupByShard, shardAt, shardOfKeys } from "../../src/router/key-shards";
+import { isPrimary } from "../../src/router/upstream";
 
 const enc = new TextEncoder();
 const keys = (...names: string[]) => names.map((n) => enc.encode(n));

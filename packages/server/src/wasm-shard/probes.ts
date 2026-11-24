@@ -3,14 +3,7 @@ import type { DrizzleSqliteDODatabase } from "drizzle-orm/durable-sqlite";
 import type { WasmHost } from "./host/wasm-host";
 import { messageOf } from "../shared";
 import { commitProbe } from "./schema";
-
-export interface VfsProbe {
-  autoVacuum: { auto_vacuum: number }[] | string;
-  writeAMs?: number;
-  writeBMs?: number;
-  deleteMiddleMs?: number;
-  deleteEndMs?: number;
-}
+import type { VfsProbe } from "./types";
 
 // Date.now only advances across I/O, which sync() is.
 async function timed(storage: DurableObjectStorage, f: () => void): Promise<number> {

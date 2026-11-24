@@ -1,9 +1,9 @@
-// Memory only: a reset loses one report interval.
 import { DurableObject } from "cloudflare:workers";
 import { PULSE_STALE_MS } from "./config";
 import type { IsolateReport, PulseSnapshot } from "./types";
 
 export class Pulse extends DurableObject<Env> {
+  // Memory only: a reset loses one report interval.
   #isolates = new Map<string, IsolateReport & { at: number }>();
 
   report(r: IsolateReport): void {

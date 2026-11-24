@@ -1,5 +1,4 @@
 import type { ShardSnapshot } from "../shard/types";
-import type { Replica, ShardUp } from "./live-types";
 
 export interface ReportedConnection {
   db: string;
@@ -23,23 +22,9 @@ export interface Down {
   down: string;
 }
 
-export type ShardSeen = ShardReading | (Down & { i: number });
-
 export type ReplicaLook = { region: string } & (ShardSnapshot | Down);
 
 export type ShardLook = (ShardSnapshot | Down) & { replicaSnapshots: ReplicaLook[] };
-
-export interface Calls {
-  reads: number;
-  writes: number;
-}
-
-// Before the Watcher turns the running totals in `calls` into rates.
-export type ShardReading = Omit<ShardUp, "ok" | "reads" | "writes" | "restartedAt" | "replicas"> & {
-  instance: string;
-  calls: Calls;
-  replicas: (Replica & { instance: string | null })[];
-};
 
 export interface NewDatabase {
   name: string;

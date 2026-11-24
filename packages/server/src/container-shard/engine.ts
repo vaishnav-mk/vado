@@ -125,7 +125,12 @@ export class Engine {
       const spare = dial(this.#ctx);
 
       this.#spares.push(spare);
-      spare.opened.catch(() => this.#spares.splice(this.#spares.indexOf(spare), 1));
+      // socket() may have handed it out already.
+      spare.opened.catch(() => {
+        const i = this.#spares.indexOf(spare);
+
+        if (i >= 0) this.#spares.splice(i, 1);
+      });
     }
   }
 

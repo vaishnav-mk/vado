@@ -44,7 +44,7 @@ export function ShardDial({
 
   const toggle = (i: number) => onSelect(selected === i ? null : i);
   const busiest = shards.reduce<Shard | undefined>((b, s) => (ops(s) > ops(b) ? s : b), undefined);
-  const hasReplicas = shards.some((s) => s.replicas?.length);
+  const hasReplicas = shards.some((s) => s.replicas.length);
 
   return (
     <LayerCard className="h-full">
@@ -85,7 +85,7 @@ export function ShardDial({
         <Text variant="secondary" size="sm">
           {f
             ? f.ok
-              ? `Shard ${f.i}${f.city ? ` in ${f.city}` : ""}: ${num(ops(f))} commands/s, ${(f.keys ?? 0).toLocaleString("en")} keys, ${bytes(f.memory?.used)}`
+              ? `Shard ${f.i}${f.city ? ` in ${f.city}` : ""}: ${num(ops(f))} commands/s, ${f.keys.toLocaleString("en")} keys, ${bytes(f.memory.used)}`
               : `Shard ${f.i} isn't responding`
             : focus !== null
               ? `Shard ${focus}: waiting for its numbers`

@@ -6,8 +6,7 @@ import { LOG } from "./store";
 import type { BoxStore, Generation } from "./store";
 import type { Resume, Started } from "./types";
 
-// A reused server must continue the last stored byte (it may hold a cut-short restore); a restored one continues its
-// own history.
+// A reused server continues the last stored byte (it may hold a cut-short restore); a restored one, its own history.
 function resumeOf(store: BoxStore, from: Generation, started: Started): Resume | null {
   if (started.reused) {
     const end = (from.shift ?? from.offset) + store.bytes(from.gen, LOG);

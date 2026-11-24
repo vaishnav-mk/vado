@@ -29,7 +29,7 @@ const imported = (module: string) =>
 test("the host provides exactly the imports the wasm builds list", () => {
   const memory = new WebAssembly.Memory({ initial: 1 });
   const views = viewsOf(() => memory);
-  const wasi = wasiImports(views, new Vfs(fakeStorage(), () => memory), () => {});
+  const wasi = wasiImports(views, new Vfs(fakeStorage(), views), () => {});
   assert.deepEqual(Object.keys(wasi).sort(), imported("wasi_snapshot_preview1"));
   const host = [...Object.keys(new Sockets().imports(views, { schedule() {}, closed() {} })), "aof_rewrite"];
   assert.deepEqual(host.sort(), imported("host"));
@@ -38,7 +38,7 @@ test("the host provides exactly the imports the wasm builds list", () => {
 test("pooled replies are counted as they arrive in pieces", () => {
   const c: PooledClient = {
     alive: true,
-    socket: new Sockets().add({ write: async () => {}, close: async () => {} }, true),
+    socket: new Sockets().add({ write: async () => {} }, true),
     out: new Uint8Array(0),
     len: 0,
     pos: 0,

@@ -1,9 +1,9 @@
-// Cloudflare Access owns sign-in: it protects /signin (routes/signin.tsx), and /cdn-cgi/access/logout signs out.
 import { LinkButton, Tooltip } from "@cloudflare/kumo";
 import { SignInIcon, SignOutIcon } from "@phosphor-icons/react";
 import { useLocation } from "@tanstack/react-router";
 import { useViewer } from "./Guard";
 
+// Cloudflare Access owns sign-in: it protects /signin (routes/signin.tsx), and /cdn-cgi/access/logout signs out.
 export function SignIn() {
   const { user, signIn } = useViewer(),
     here = useLocation().pathname;

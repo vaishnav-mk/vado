@@ -2,8 +2,8 @@ import type { RespClient } from "../protocol/resp-client";
 import type { Reply } from "../protocol/types";
 import { connectLocal } from "../router/local";
 import { failure, messageOf, percentile } from "../shared";
-import type { Test } from "./types";
-import { dbName, num, open } from "./util";
+import type { IoredisResult, Test } from "./types";
+import { dbName, mb, num, open } from "./util";
 
 const throughput: Test = async (env, q) => {
   const n = num(q, "n", 100000),
@@ -25,12 +25,15 @@ const throughput: Test = async (env, q) => {
     firstError: Reply | null = null,
     hits = 0;
 
+  const per = Math.ceil(n / conns);
   const t0 = performance.now();
   await Promise.all(
     cs.map(async (c, ci) => {
-      for (let i = 0; i < n / conns; i += batch) {
+      for (let i = 0; i < per; i += batch) {
         const rs = await c.call(
-          ...Array.from({ length: batch }, (_, k) => (get ? ["GET", key(ci, i + k)] : ["SET", key(ci, i + k), v])),
+          ...Array.from({ length: Math.min(batch, per - i) }, (_, k) =>
+            get ? ["GET", key(ci, i + k)] : ["SET", key(ci, i + k), v],
+          ),
         );
 
         for (const r of rs)
@@ -103,7 +106,7 @@ const fill: Test = async (env, q) => {
     keysAttempted: keys,
     stoppedBy: stop,
     dbsize,
-    approxMB: Math.round((Number(dbsize) * size) / 1048576),
+    approxMB: mb(Number(dbsize) * size),
   };
 };
 
@@ -139,20 +142,6 @@ const churn: Test = async (env, q) => {
 
   return { n, ok, failed: n - ok, ms: Date.now() - t0, fails };
 };
-
-interface IoredisResult {
-  ping?: string;
-  set?: string | null;
-  get?: string | null;
-  mget?: (string | null)[];
-  multi?: [Error | null, unknown][] | null;
-  eval?: unknown;
-  blpop?: [string, string] | null;
-  pubsub?: string;
-  pipeline?: number;
-  pipelineMs?: number;
-  error?: string;
-}
 
 // Imported here so nothing else in the Worker loads ioredis.
 const ioredis: Test = async (env, q) => {

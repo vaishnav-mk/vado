@@ -1,6 +1,16 @@
 import type { Server } from "../catalog/types";
 import { decoder, messageOf, noop, sleep, withTimeout } from "../shared";
-import { CAPACITY_MS, CAPACITY_RETRY_MS, COPIES, LISTEN_MS, REUSE_MS, STALL_MS, STOP_MS } from "./config";
+import {
+  CAPACITY_MS,
+  CAPACITY_RETRY_MS,
+  COPIES,
+  LISTEN_MS,
+  REPL_BACKLOG,
+  REPLICA_BUFFER,
+  REUSE_MS,
+  STALL_MS,
+  STOP_MS,
+} from "./config";
 import { containerOf, dial, historyOf, ready, replay } from "./server";
 import { BASE, LOG } from "./store";
 import type { BoxStore } from "./store";
@@ -23,8 +33,8 @@ const serverArgs = (maxmemory: string) =>
     "--repl-diskless-sync yes",
     "--repl-diskless-sync-delay 0",
     "--repl-ping-replica-period 3600", // no keepalives: an idle stream stays empty, so a restore can continue it
-    "--repl-backlog-size 64mb",
-    '--client-output-buffer-limit "replica 512mb 0 0"', // writes during a long full copy mustn't drop the replica
+    `--repl-backlog-size ${REPL_BACKLOG}`,
+    `--client-output-buffer-limit "replica ${REPLICA_BUFFER} 0 0"`,
     "--dir /data",
     "--dbfilename dump.rdb",
   ].join(" ");

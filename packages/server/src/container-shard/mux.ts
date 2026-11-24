@@ -2,7 +2,7 @@ import { concat, HELLO3 } from "../protocol/resp";
 import type { Protocol } from "../protocol/types";
 import { readFrames } from "../protocol/frames";
 import { noop } from "../shared";
-import { ROLE, roleOffset } from "./proxy";
+import { ROLE, roleOffset } from "./link";
 import type { Fence, MuxBatch } from "./types";
 
 // Each batch carries its own ROLE fence, so a slow fence holds back only its caller.
@@ -45,11 +45,10 @@ export class Mux {
     const batch = this.#batches[0];
 
     if (!batch) return;
-    batch.frames.push(f);
 
-    if (batch.frames.length <= batch.count) return;
+    if (batch.frames.length < batch.count) return void batch.frames.push(f);
     this.#batches.shift();
-    const replies = concat(batch.frames.slice(0, -1));
+    const replies = concat(batch.frames);
 
     this.#fence(roleOffset(f)).then(() => batch.resolve(replies), batch.reject);
   }

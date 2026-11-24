@@ -1,11 +1,10 @@
 import { iovecs } from "../vfs/memory";
 import type { Views } from "../vfs/types";
 import type { Vfs } from "../vfs/vfs";
+import { E } from "../vfs/wasi-abi";
 import { decoder } from "../../shared";
 
-const EBADF = 8;
-const ENOSYS = 52;
-const enosys = () => ENOSYS;
+const enosys = () => E.NOSYS;
 
 export function wasiImports({ u8, dv }: Views, vfs: Vfs, log: (line: string) => void) {
   const partial = ["", "", ""]; // stdout and stderr: the line so far
@@ -49,7 +48,7 @@ export function wasiImports({ u8, dv }: Views, vfs: Vfs, log: (line: string) => 
       const rc = vfs.write(fd, chunks);
 
       if (rc === null) {
-        if (fd !== 1 && fd !== 2) return EBADF;
+        if (fd !== 1 && fd !== 2) return E.BADF;
         let text = partial[fd];
 
         for (const c of chunks) text += decoder.decode(c);

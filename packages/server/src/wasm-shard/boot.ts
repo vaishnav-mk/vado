@@ -1,8 +1,7 @@
 import type { DurabilityScheduler } from "durability";
 import type { DrizzleSqliteDODatabase } from "drizzle-orm/durable-sqlite";
-import type { Flavour } from "../catalog/types";
+import { replicaNamespace } from "../catalog/placement";
 import { isReplicaName } from "./replication/names";
-import type { ReplicaNamespace } from "./replication/types";
 import { WasmHost } from "./host/wasm-host";
 import { migrate } from "../migrate";
 import { replicationMigrations } from "./replication/migrations";
@@ -10,21 +9,13 @@ import { shardMigrations } from "./migrations";
 import { PrimaryRole } from "./primary";
 import { ReplicaRole } from "./replica";
 import { resetSoon } from "./reset";
-import type { ValkeyRewriter } from "./rewriter/rewriter";
+import type { LiveShard, RewriterStub } from "./types";
 import { flavourOf } from "../catalog/flavours";
 import { wasmOf } from "../shard/servers";
 import { Upgrader } from "./upgrade";
 import { reapply, settingsMigrations } from "../settings";
 import { valkeyArgs } from "./valkey-args";
 import { deployedAt } from "../shard/version";
-
-export interface LiveShard {
-  host: WasmHost;
-  flavour: Flavour;
-  upgrader: Upgrader;
-  primary: PrimaryRole | null;
-  replica: ReplicaRole | null;
-}
 
 const REWRITERS = [
   "REWRITER",
@@ -37,8 +28,9 @@ const REWRITERS = [
   "REWRITER7",
 ] as const satisfies (keyof Env)[];
 
-function rewriterOf(env: Env, shardClass: number, name: string): (() => DurableObjectStub<ValkeyRewriter>) | null {
-  if (shardClass >= REWRITERS.length) return null;
+// Placement keeps primaries in classes 0-7.
+function rewriterOf(env: Env, shardClass: number, name: string): RewriterStub {
+  if (shardClass >= REWRITERS.length) throw new Error(`no rewriter for shard class ${shardClass}`);
   const namespace = env[REWRITERS[shardClass]];
 
   // A fresh stub each time: one that saw its object reset stays broken.
@@ -51,7 +43,6 @@ export function bootShard(
   db: DrizzleSqliteDODatabase,
   scheduler: DurabilityScheduler,
   shardClass: number,
-  replicas: ReplicaNamespace,
 ): LiveShard {
   const name = ctx.id.name ?? "";
   const replica = isReplicaName(name);
@@ -79,6 +70,7 @@ export function bootShard(
 
   void reapply(ctx.storage.sql, (bytes) => host.execBatch(bytes, 1)); // ahead of any client command
   const rewriter = rewriterOf(env, shardClass, name);
+  const replicas = replicaNamespace(env, shardClass);
   const deployed = deployedAt(env);
   const retryAt = (at: number): Promise<void> => primary.alarms.upgrade(at);
   const primary: PrimaryRole = new PrimaryRole(ctx, host, scheduler, replicas, deployed, rewriter, () => upgrader);

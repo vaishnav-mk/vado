@@ -1,6 +1,6 @@
-// The same object under other class names (SHARD_CLASSES): a database keeps shard i in class i % classes.
 import { ValkeyShard } from "./shard";
 
+// One object under 16 class names: primaries use class i % classes (0-7), replicas of class k use 8 + k.
 export class ValkeyShard1 extends ValkeyShard {
   static override readonly shardClass = 1;
 }

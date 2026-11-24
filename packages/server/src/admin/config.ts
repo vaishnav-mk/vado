@@ -38,6 +38,12 @@ export const TEST_LEVELS = ["light", "medium", "heavy"] as const;
 
 export const TEST_SENDERS: Record<TestLevel, number> = { light: 1, medium: 3, heavy: 6 };
 
+// One throughput run per Sender alarm; a stopped test still sends the rest of the round it's in.
+export const TEST_ROUND = { n: "20000", batch: "500", conns: "4" };
+
+// After a failed round: a shard restarting, say.
+export const TEST_RETRY_MS = 2_000;
+
 export const WAIT_MS = 3_000;
 
 export const COMMAND_STALL_MS = 15_000;

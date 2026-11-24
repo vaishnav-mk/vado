@@ -4,6 +4,7 @@ export const REPL_BACKLOG = 8 << 20;
 // How often a primary restarts failed replicas and sends each live one a marker that measures its lag.
 export const REPL_TICK_MS = 2_000;
 
+// A dropped replica waits this long before its next copy, so a failing one doesn't copy in a loop.
 export const REPL_RETRY_MS = 5_000;
 
 // A marker unanswered this long means the replica is stuck: it is dropped and copied again.

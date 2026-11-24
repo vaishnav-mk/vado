@@ -3,9 +3,8 @@ import { DatabasePicker } from "./DatabasePicker";
 import { NewDatabase } from "./NewDatabase";
 import { SignIn } from "./SignIn";
 import { plural } from "../lib/format";
-import type { Connection } from "../lib/live";
 import { replicaCounts, replicaLine } from "../lib/replicas";
-import type { Database, LiveState, Options } from "../lib/types";
+import type { Connection, Database, LiveState, Options } from "../lib/types";
 
 function Health({ state, connection }: { state: LiveState | null; connection: Connection }) {
   if (connection === "retrying")

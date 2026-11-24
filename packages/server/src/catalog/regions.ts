@@ -2,7 +2,7 @@
 import type { Hint } from "./types";
 import colos from "./colos.json";
 
-const HINT_LIST = [
+export const HINT_LIST = [
   "wnam",
   "enam",
   "sam",
@@ -14,22 +14,19 @@ const HINT_LIST = [
   "oc",
   "afr",
   "me",
-] as const satisfies readonly Hint[];
+] as const;
 
-export const HINTS: ReadonlySet<string> = new Set(HINT_LIST);
+const HINTS: ReadonlySet<string> = new Set(HINT_LIST);
 
-// For messages that list the valid regions.
 export const HINT_NAMES = HINT_LIST.join(", ");
 
 export const isHint = (name: string): name is Hint => HINTS.has(name);
-
-export const WORLD: Hint[] = ["wnam", "enam", "sam", "weur", "eeur", "me", "afr", "apac", "oc"];
 
 // Accepted hints with no Durable Objects yet: https://developers.cloudflare.com/durable-objects/reference/data-location/
 export const HOSTED_ELSEWHERE: ReadonlySet<string> = new Set(["sam", "afr", "me"]);
 
 export interface RegionNames {
-  readonly [hint: string]: string;
+  readonly [region: string]: string;
 }
 
 export const REGION_NAMES: RegionNames = {
@@ -43,6 +40,9 @@ export const REGION_NAMES: RegionNames = {
   apac: "Asia Pacific",
   oc: "Oceania",
 };
+
+// The regions a new database spreads its shards over, in this order.
+export const WORLD: Hint[] = Object.keys(REGION_NAMES).filter(isHint);
 
 export const regionName = (region: string): string => REGION_NAMES[region] ?? region;
 

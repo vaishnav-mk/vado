@@ -29,19 +29,20 @@ const GenerationSchema = v.object({
 
 export type Generation = v.InferOutput<typeof GenerationSchema>;
 
-// A generation is a base RDB plus the stream after it. Every sync takes a fresh number (begin), so a retry never
-// appends to rows a failed one left.
+// Every sync takes a fresh generation (begin), so a retry never appends to rows a failed one left.
 export class BoxStore {
   readonly #sql: SqlStorage;
   readonly sync: () => Promise<void>;
   readonly #seq = new Map<string, number>();
   readonly #bytes = new Map<string, number>();
   #building: number | null = null;
+  #dropped: boolean;
 
   constructor(storage: Pick<DurableObjectStorage, "sql" | "transactionSync" | "sync">) {
     migrate(storage, [...boxMigrations, ...settingsMigrations]);
     this.#sql = storage.sql;
     this.sync = () => storage.sync();
+    this.#dropped = this.#sql.exec("SELECT 1 FROM box_meta WHERE k = 'dropped'").toArray().length > 0;
   }
 
   begin(): number {
@@ -60,7 +61,12 @@ export class BoxStore {
 
   append(gen: number, kind: Kind, data: Uint8Array): void {
     const key = `${gen}.${kind}`;
-    const seq = this.#seq.get(key) ?? this.#lastSeq(gen, kind) + 1;
+
+    const seq =
+      this.#seq.get(key) ??
+      this.#sql
+        .exec<{ s: number }>("SELECT ifnull(max(seq) + 1, 0) AS s FROM box_data WHERE gen = ? AND kind = ?", gen, kind)
+        .one().s;
 
     const before = this.bytes(gen, kind); // read before the insert, or the first count includes this row twice
 
@@ -118,24 +124,17 @@ export class BoxStore {
   }
 
   dropped(): boolean {
-    return this.#sql.exec("SELECT 1 FROM box_meta WHERE k = 'dropped'").toArray().length > 0;
+    return this.#dropped;
   }
 
   drop(): void {
     this.#sql.exec("DELETE FROM box_data");
     this.#sql.exec("INSERT OR REPLACE INTO box_meta (k, v) VALUES ('dropped', '1')");
+    this.#dropped = true;
   }
 
   #forgetAllBut(gens: number[]): void {
     for (const cache of [this.#seq, this.#bytes])
       for (const key of cache.keys()) if (!gens.includes(Number(key.split(".")[0]))) cache.delete(key);
-  }
-
-  #lastSeq(gen: number, kind: Kind): number {
-    return (
-      this.#sql
-        .exec<{ s: number | null }>("SELECT max(seq) AS s FROM box_data WHERE gen = ? AND kind = ?", gen, kind)
-        .one().s ?? -1
-    );
   }
 }

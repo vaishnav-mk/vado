@@ -10,9 +10,9 @@ export const AOF_REWRITE_CAP = 64 << 20;
 // How often a shard that is appending looks at its AOF size.
 export const AOF_CHECK_MS = 2_000;
 
-// A rewriter that takes longer fails; after a failure the shard rewrites inline for AOF_HELPER_RETRY_MS.
-export const AOF_HELPER_TIMEOUT_MS = 120_000;
-export const AOF_HELPER_RETRY_MS = 600_000;
+// A rewriter that takes longer fails; after a failure the shard rewrites inline for AOF_REWRITER_RETRY_MS.
+export const AOF_REWRITER_TIMEOUT_MS = 120_000;
+export const AOF_REWRITER_RETRY_MS = 600_000;
 
 // The runtime moves an object with open sockets to new code only by resetting it minutes later, so check this often.
 export const VERSION_CHECK_MS = 30_000;

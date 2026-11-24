@@ -1,4 +1,3 @@
-// A reader and a writer kept open between polls, so each sample is a request, and the reader reads where clients would.
 import type { RespClient } from "../../protocol/resp-client";
 import { openLocal } from "../../router/local";
 import { PROBE_KEY, PROBE_STALL_MS, WATCH_RATE_POLLS } from "../config";
@@ -15,6 +14,7 @@ async function timed(c: RespClient, argv: string[]): Promise<number> {
   return performance.now() - t;
 }
 
+// A reader and a writer kept open between polls, so each sample is a request, and the reader reads where clients would.
 export class Prober {
   readonly samples: ProbeSample[] = [];
   #reader: RespClient | null = null;

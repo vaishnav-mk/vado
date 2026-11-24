@@ -5,20 +5,14 @@ import { Gauge } from "./host/gauge";
 import { within } from "../shared";
 import type { WasmHost } from "./host/wasm-host";
 import { resetSoon } from "./reset";
-import type { ValkeyRewriter } from "./rewriter/rewriter";
 import { restarts } from "./schema";
 import type { LastUpgrade, UpgradeReport } from "../shard/types";
+import type { PrimaryUpgrades } from "./types";
 import { deployedAt, RESTARTING } from "../shard/version";
 
 // A gradual deploy may keep giving this object the old code, which must not make it restart forever.
 export function mayRestart(own: number, target: number, tries: number, lastAt: number | null, now: number): boolean {
   return own > 0 && target > own && tries < UPGRADE_TRIES && now - (lastAt ?? 0) >= VERSION_CHECK_MS;
-}
-
-// A rewriter runs the newest code whenever it starts.
-export interface PrimaryUpgrades {
-  rewriter: (() => DurableObjectStub<ValkeyRewriter>) | null;
-  retryAt: (at: number) => Promise<void>;
 }
 
 export class Upgrader {
@@ -45,6 +39,7 @@ export class Upgrader {
     this.#primary = primary;
   }
 
+  // A rewriter runs the newest code whenever it starts.
   checkVersion(): void {
     const rewriter = this.#primary?.rewriter;
     const now = Date.now();
@@ -77,9 +72,10 @@ export class Upgrader {
   }
 
   restartFor(t: number): number | null {
-    const now = Date.now();
+    const own = deployedAt(this.#env);
 
-    if (this.restarting) return null;
+    if (this.restarting || t <= own) return null;
+    const now = Date.now();
 
     const tries = this.#db
       .select({ n: count(), last: max(restarts.at) })
@@ -87,7 +83,7 @@ export class Upgrader {
       .where(gte(restarts.deployed, t))
       .get();
 
-    if (!mayRestart(deployedAt(this.#env), t, tries?.n ?? 0, tries?.last ?? null, now)) return null;
+    if (!mayRestart(own, t, tries?.n ?? 0, tries?.last ?? null, now)) return null;
     this.#db.insert(restarts).values({ deployed: t, at: now }).run();
     this.restarting = true;
 

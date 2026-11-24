@@ -1,14 +1,11 @@
 import { REPL_RETRY_MS } from "../wasm-shard/replication/config";
 import { ISOLATE_HIGH, ISOLATE_LOW, SOCKET_BUDGET } from "./config";
-
-interface Waiter {
-  wake(): void;
-}
+import type { UpstreamOwner } from "./types";
 
 let socketsOpen = 0;
 let socketBudget = SOCKET_BUDGET;
 let isolateBytes = 0;
-const waiting = new Set<Waiter>();
+const waiting = new Set<Pick<UpstreamOwner, "wake">>();
 
 const replicaDown = new Map<string, number>();
 
@@ -37,7 +34,7 @@ export function isolateAdd(n: number): void {
   }
 }
 
-export function isolateFull(waiter: Waiter): boolean {
+export function isolateFull(waiter: Pick<UpstreamOwner, "wake">): boolean {
   if (isolateBytes <= ISOLATE_HIGH) return false;
   waiting.add(waiter);
 

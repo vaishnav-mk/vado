@@ -1,26 +1,17 @@
 import { replicaRegion } from "../catalog/placement";
 import type { DatabaseRecord } from "../catalog/types";
-import { keyIndexes } from "../protocol/commands";
+import { keyIndexes, SUBSCRIBE } from "../protocol/commands";
 import { decodeTyped } from "../protocol/decode";
 import { shardOfSlot, slotOf } from "../protocol/slots";
 import { coloOf } from "../catalog/regions";
 import { commands } from "../router/command-table";
+import { replicaResting } from "../router/isolate";
 import { openLocal } from "../router/local";
 import { COMMAND_STALL_MS, WAIT_MS } from "./config";
 import type { CommandResult } from "./live-types";
 import { encoder } from "../shared";
 
-const NEEDS_A_CONNECTION = new Set([
-  "subscribe",
-  "psubscribe",
-  "ssubscribe",
-  "monitor",
-  "multi",
-  "watch",
-  "reset",
-  "quit",
-  "hello",
-]);
+const NEEDS_A_CONNECTION = new Set([...SUBSCRIBE, "monitor", "multi", "watch", "reset", "quit", "hello"]);
 
 const REFUSED = new Map([
   ["keys", "KEYS returns every key at once; use SCAN"],
@@ -39,14 +30,12 @@ export async function command(env: Env, db: DatabaseRecord, argv: string[]): Pro
   const table = await commands(env, db.flavour);
   const flags = table.get(cmd)?.flags;
 
-  const idx = keyIndexes(
-    table,
-    cmd,
-    argv.map((a) => encoder.encode(a)),
-  );
+  const raw = argv.map((a) => encoder.encode(a));
+  const first = keyIndexes(table, cmd, raw)?.[0];
 
-  const key = idx?.length ? argv[idx[0]] : null,
-    slot = key === null ? null : slotOf(encoder.encode(key));
+  const key = first === undefined ? null : argv[first],
+    slot = first === undefined ? null : slotOf(raw[first]),
+    shard = slot === null ? null : shardOfSlot(slot, db.shards);
 
   const write = !!flags?.has("write"),
     read = !!flags?.has("readonly");
@@ -78,9 +67,17 @@ export async function command(env: Env, db: DatabaseRecord, argv: string[]): Pro
       read,
       key,
       slot,
-      shard: slot === null ? null : shardOfSlot(slot, db.shards),
+      shard,
       colo,
-      replica: read && colo !== null ? replicaRegion(db, colo) : null,
+      // The router's rule (router/routing.ts): a keyed, non-blocking read, unless this isolate saw the replica fail.
+      replica:
+        read &&
+        shard !== null &&
+        colo !== null &&
+        !flags?.has("blocking") &&
+        !replicaResting(db.name, shard, Date.now())
+          ? replicaRegion(db, colo)
+          : null,
       replication,
     };
   } finally {

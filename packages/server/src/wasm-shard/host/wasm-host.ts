@@ -3,7 +3,7 @@ import { viewsOf } from "../vfs/memory";
 import type { FileEntry, VfsStorage } from "../vfs/types";
 import { Vfs } from "../vfs/vfs";
 import { aofRewrite } from "./aof-rewrite";
-import { Internal } from "./internal";
+import { InternalClients } from "./internal";
 import { Loop } from "./loop";
 import { drain, serve } from "./serve";
 import { Sockets } from "./sockets";
@@ -27,7 +27,7 @@ export class WasmHost {
   readonly #vfs: Vfs;
   readonly #sockets = new Sockets();
   readonly #loop: Loop;
-  readonly #internal: Internal;
+  readonly #internal: InternalClients;
   readonly #sync: (() => Promise<void>) | undefined;
   readonly #log: (line: string) => void;
   #sweeping = false;
@@ -36,9 +36,8 @@ export class WasmHost {
     const { args = [], log = (line: string) => console.log("[valkey]", line), sync, fatal } = options;
     this.#sync = sync;
     this.#log = log;
-    const memory = () => this.#vk.memory;
-    const views = viewsOf(memory);
-    this.#vfs = new Vfs(storage, memory);
+    const views = viewsOf(() => this.#vk.memory);
+    this.#vfs = new Vfs(storage, views);
     this.#vfs.onTrash = () => void this.#sweep();
     void this.#sweep(); // left from before a restart
 
@@ -75,12 +74,12 @@ export class WasmHost {
 
     if (rc !== 0) throw new Error(`valkey boot failed (${rc})`);
     this.#loop = new Loop(this.#vk, this.#sockets, this.#vfs.stats, sync, fatal, log);
-    this.#internal = new Internal(this.#sockets, this.#loop);
+    this.#internal = new InternalClients(this.#sockets, this.#loop);
   }
 
   // Replication bytes: client reading pauses on them too.
   hold(n: number): void {
-    this.#sockets.hold(n);
+    this.#sockets.total += n;
   }
 
   release(n: number): void {

@@ -1,7 +1,8 @@
 import type { Flavour } from "../catalog/types";
 import type { CommandArg, Protocol } from "../protocol/types";
 import type { ReplicaStatus } from "../wasm-shard/replication/types";
-import type { WasmHost } from "../wasm-shard/host/wasm-host";
+import type { HostStats } from "../wasm-shard/host/types";
+import type { FileEntry } from "../wasm-shard/vfs/types";
 
 export interface RewriteLog {
   at: number;
@@ -26,7 +27,7 @@ export interface UpgradeReport {
 
 export type LastUpgrade = UpgradeReport & { deployed: number; at: number };
 
-export interface ShardStats extends ReturnType<WasmHost["stats"]> {
+export interface ShardStats extends HostStats {
   flavour: Flavour;
   instance: string;
   version: string;
@@ -35,7 +36,7 @@ export interface ShardStats extends ReturnType<WasmHost["stats"]> {
   aliveSeconds: number;
   restarting: boolean;
   lastUpgrade: LastUpgrade | null;
-  files: ReturnType<WasmHost["files"]>;
+  files: FileEntry[];
   role: "primary" | "replica";
   replicas: ReplicaStatus[];
   lastRewrite: (RewriteLog & { doneMs: number | null }) | null;

@@ -49,7 +49,8 @@ export class RpcUpstream extends BaseUpstream implements Upstream {
       parts = this.#out.splice(0, take);
 
     this.#busy = true;
-    void this.stub.execRaw(concat(parts), cbs.length, this.owner.proto).then(
+    // Parts are private copies (send), so a lone one needs no other.
+    void this.stub.execRaw(take === 1 ? parts[0] : concat(parts), cbs.length, this.owner.proto).then(
       (reply) => {
         this.tries = 0;
         let i = 0;
@@ -59,14 +60,14 @@ export class RpcUpstream extends BaseUpstream implements Upstream {
 
           if (e < 0) cb(LOST);
           else {
-            cb(reply.slice(i, e));
+            cb(i === 0 && e === reply.length ? reply : reply.slice(i, e));
             i = e;
           }
         }
 
         this.#done(bytes);
       },
-      (cause: unknown) => this.#failed(cause, cbs, parts, bytes),
+      (e: Error) => this.#failed(e, cbs, parts, bytes),
     );
   }
 
@@ -78,7 +79,7 @@ export class RpcUpstream extends BaseUpstream implements Upstream {
     this.schedule();
   }
 
-  #failed(cause: unknown, cbs: Callback[], parts: Uint8Array[], bytes: number): void {
+  #failed(cause: Error, cbs: Callback[], parts: Uint8Array[], bytes: number): void {
     // Refused, unrun, by a shard restarting onto new code: again, in order, on its next instance.
     const again = () => {
       this.#busy = false;

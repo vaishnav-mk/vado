@@ -7,23 +7,25 @@ import { openLocal } from "../router/local";
 export const dbName = (q: URLSearchParams): string => q.get("db") ?? "default";
 
 // via=shard goes straight to one shard's connect() (shard=<i>), with no router.
-export async function open(env: Env, q: URLSearchParams, stallMs?: number): Promise<RespClient> {
-  if (q.get("via") !== "shard") return openLocal(env, dbName(q), stallMs);
+export async function open(env: Env, q: URLSearchParams): Promise<RespClient> {
+  if (q.get("via") !== "shard") return openLocal(env, dbName(q));
   const db = await database(env, dbName(q));
 
-  return new RespClient(shardStub(env, db, Number(q.get("shard") ?? 0)).connect("valkey:6379"), stallMs);
+  return new RespClient(shardStub(env, db, Number(q.get("shard") ?? 0)).connect("valkey:6379"));
 }
 
 export const num = (q: URLSearchParams, key: string, fallback: number): number => Number(q.get(key) ?? fallback);
 
+export const mb = (bytes: number): number => +(bytes / 2 ** 20).toFixed(1);
+
 export async function allShards<T>(
   env: Env,
   name: string,
-  fn: (stub: ReturnType<typeof shardStub>, i: number) => Promise<T>,
+  fn: (stub: ReturnType<typeof shardStub>) => Promise<T>,
 ): Promise<T[]> {
   const db = await database(env, name);
 
-  return Promise.all(Array.from({ length: db.shards }, (_, i) => fn(shardStub(env, db, i), i)));
+  return Promise.all(Array.from({ length: db.shards }, (_, i) => fn(shardStub(env, db, i))));
 }
 
 // Seconds up per shard (null if dropped): a restart shows as a smaller number.

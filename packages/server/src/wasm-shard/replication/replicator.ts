@@ -89,7 +89,7 @@ export class Replicator {
 
     for (const link of this.#links.values()) {
       if (link.phase === "idle" && now >= link.retryAt)
-        this.#copy(link).catch((e) => link.log(`copy: ${messageOf(e)}`));
+        this.#copy(link).catch((e: Error) => link.log(`copy: ${e.message}`));
       else if (link.phase === "copying" && now - link.since > REPL_COPY_MS) link.drop("the copy took too long");
       else if (link.phase === "live") {
         if (link.marks.length && now - link.marks[0].at > REPL_STUCK_MS) link.drop("stopped answering");

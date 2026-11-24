@@ -14,7 +14,7 @@ export const MAX_UNAUTHED = 64 << 10;
 export const SOCKET_BUDGET = 128;
 
 // Idle shard sockets close so idle shards stop being billed.
-export const IDLE_MS = 30_000;
+export const SOCKET_IDLE_MS = 30_000;
 
 // Shards one fan-out command talks to at once.
 export const FAN_OUT = 32;
@@ -41,6 +41,12 @@ export const DRAIN_MS = 60_000;
 // How often an isolate reports its open connections to Pulse.
 export const PULSE_MS = 2_000;
 
+// A closing connection reports at once unless a report went out this recently.
+export const CLOSED_REPORT_MS = 250;
+
+// In-memory router connections (connectLocal) buffer this much each way, as a TCP socket would.
+export const LOCAL_SOCKET_BUFFER = 64 << 10;
+
 // WebSockets can't push back, so a client that outruns its router by this much is disconnected.
 export const WS_MAX_QUEUED = 16 << 20;
 
@@ -49,9 +55,9 @@ export const WS_UNACKED = 8 << 20;
 
 // How long a failed sign-in blocks its address, and how many addresses one isolate remembers.
 export const BLOCK_MS = 60_000;
-
 export const MAX_BLOCKED = 10_000;
 
+// A failed colo lookup waits this long before the next connection tries again.
 export const COLO_RETRY_MS = 10_000;
 
 // A socket whose write failed is dead unless its read side ends by then (it may still hold a restart marker).

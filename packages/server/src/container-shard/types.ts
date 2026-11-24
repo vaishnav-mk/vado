@@ -24,14 +24,12 @@ export interface Waiter {
   reject: (e: Error) => void;
 }
 
-// A client batch in flight through the proxy.
 export interface ProxyBatch {
   count: number;
   fenced: boolean; // ROLE follows the batch
   raw: boolean; // a subscribe: from here on, replies pass through as they come
 }
 
-// An RPC batch waiting on the shared connection.
 export interface MuxBatch {
   count: number;
   frames: Uint8Array[];

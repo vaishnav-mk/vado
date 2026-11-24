@@ -1,20 +1,20 @@
 import { aofFiles, fileChunks } from "../aof-files";
 import type { WasmHost } from "../host/wasm-host";
-import { AOF_HELPER_TIMEOUT_MS } from "../config";
+import { AOF_REWRITER_TIMEOUT_MS } from "../config";
 import type { RewriteLog } from "../../shard/types";
 import { VFS_CHUNK } from "../vfs/config";
 import { FNV0, fnv, line, readExactly, readLine } from "./protocol";
 import type { RewriteHead, RewriteTail } from "./protocol";
-import { sleep } from "../../shared";
+import { noop, sleep } from "../../shared";
 
-export async function rewriteByHelper(
+export async function rewriteOnRewriter(
   host: WasmHost,
   stub: Pick<DurableObjectStub, "connect">,
   tmp: string,
   rdb: boolean,
   sync: () => Promise<void>,
   log: RewriteLog,
-): Promise<true> {
+): Promise<void> {
   const t0 = Date.now();
 
   const { entries } = aofFiles(host);
@@ -22,7 +22,7 @@ export async function rewriteByHelper(
   const before = entries.filter((e) => e.type === "b" || (e.type === "i" && e !== newIncr));
   const files = before.map((e): [string, number] => [e.path, host.fileSize(e.path) ?? 0]);
   const socket = stub.connect("rewrite:6379");
-  const timer = setTimeout(() => socket.close(), AOF_HELPER_TIMEOUT_MS);
+  const timer = setTimeout(() => void socket.close().catch(noop), AOF_REWRITER_TIMEOUT_MS);
 
   try {
     const writer = socket.writable.getWriter();
@@ -67,10 +67,8 @@ export async function rewriteByHelper(
     log.tailMs = Date.now() - t0;
 
     if (tail.sum !== sum) throw new Error("base checksum mismatch");
-
-    return true;
   } finally {
     clearTimeout(timer);
-    void socket.close();
+    void socket.close().catch(noop);
   }
 }

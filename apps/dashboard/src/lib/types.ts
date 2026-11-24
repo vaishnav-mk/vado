@@ -1,13 +1,11 @@
 import type { Flavour } from "@vado/server/catalog/types.ts";
-import type { CommandResult, ReplicaState } from "@vado/server/admin/live-types.ts";
+import type { CommandResult, LiveSnapshot, ReplicaState } from "@vado/server/admin/live-types.ts";
 
 export type {
   CommandResult,
   Database,
-  Entry,
   EventKind,
   EventLevel,
-  Health,
   LiveEvent,
   LiveSnapshot,
   LiveState,
@@ -16,8 +14,6 @@ export type {
   Replica,
   ReplicaState,
   Shard,
-  ShardDown,
-  ShardUp,
   TestView,
   Tick,
   TypedReply,
@@ -32,4 +28,16 @@ export interface LastCommand extends CommandResult {
   at: number;
   argv: string[];
   before: ReplicaState[] | null;
+}
+
+export type Connection = "connecting" | "open" | "retrying";
+
+export interface Live extends LiveSnapshot {
+  connection: Connection;
+}
+
+export interface Arg {
+  name: string;
+  placeholder: string;
+  many?: boolean;
 }

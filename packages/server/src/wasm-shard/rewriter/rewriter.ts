@@ -1,4 +1,3 @@
-// Inline, a rewrite blocks the shard (~1.5 s for a 35 MB base). Own classes, so never in a shard's isolate.
 import { DurableObject } from "cloudflare:workers";
 import { decodeAll } from "../../protocol/decode";
 import { command } from "../../protocol/resp";
@@ -29,6 +28,7 @@ async function receiveFiles(
   vfs.flush();
 }
 
+// Inline, a rewrite blocks the shard (~1.5 s for a 35 MB base). Own classes, so never in a shard's isolate.
 export class ValkeyRewriter extends DurableObject<Env> {
   #busy = false;
 

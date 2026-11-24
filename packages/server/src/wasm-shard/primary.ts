@@ -5,7 +5,7 @@ import type { ReplicaNamespace } from "./replication/types";
 import { AOF_CHECK_MS } from "./config";
 import type { WasmHost } from "./host/wasm-host";
 import { Rewrites } from "./rewrites";
-import type { ValkeyRewriter } from "./rewriter/rewriter";
+import type { RewriterStub } from "./types";
 import type { Upgrader } from "./upgrade";
 import { dialAddress } from "../shard/version";
 
@@ -27,7 +27,7 @@ export class PrimaryRole {
     scheduler: DurabilityScheduler,
     replicas: ReplicaNamespace,
     deployed: number,
-    rewriter: (() => DurableObjectStub<ValkeyRewriter>) | null,
+    rewriter: RewriterStub,
     upgrader: () => Upgrader,
   ) {
     this.#upgrader = upgrader;

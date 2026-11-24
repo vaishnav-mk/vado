@@ -1,9 +1,9 @@
-import { decode } from "../protocol/decode";
-import { arrayOf, bulk, concat, integer, lower, str, TYPE } from "../protocol/resp";
-import { PUBSUB, WHILE_SUBSCRIBED } from "./command-sets";
+import { sameBytes } from "../protocol/bytes";
 import { SUBSCRIBE } from "../protocol/commands";
+import { arrayOf, bulk, bulkText, concat, elements, EMPTY, lower } from "../protocol/resp";
+import { PUBSUB, WHILE_SUBSCRIBED } from "./command-sets";
 import type { Conn } from "./conn";
-import { notWhileSubscribed, OK } from "./replies-text";
+import { notWhileSubscribed, OK, RESET, ZERO } from "./replies-text";
 import type { Upstream } from "./types";
 
 export function pubsub(c: Conn, name: string, argv: Uint8Array[], raw: Uint8Array): void {
@@ -15,34 +15,35 @@ export function pubsub(c: Conn, name: string, argv: Uint8Array[], raw: Uint8Arra
     return c.pool.get("pubsub").send(raw, (f) => c.replies.resolve(s, f));
   }
 
-  const up = c.pool.get("pubsub");
-
   // Confirmations and messages arrive as pushes.
-  if (c.proto === 3) return up.raw(raw.slice());
+  if (c.proto === 3) return c.pool.get("pubsub").raw(raw);
 
   // Not subscribed: Valkey answers once per channel named, or once if none is.
   if (unsubscribe) {
     const channels = argv.length > 1 ? argv.slice(1) : [null];
 
-    return c.replies.reply(concat(channels.map((ch) => arrayOf([bulk(name), bulk(ch), integer(0)]))));
+    return c.replies.reply(concat(channels.map((ch) => arrayOf([bulk(name), bulk(ch), ZERO]))));
   }
 
+  const up = c.pool.get("pubsub");
   c.pass = up;
   up.passthrough = (f) => passed(c, f);
-  up.raw(raw.slice());
+  up.raw(raw);
 }
 
+// Passthrough ends at RESET, or at an unsubscribe confirmation that leaves no subscriptions.
 function passed(c: Conn, f: Uint8Array): void {
+  let last = sameBytes(f, RESET);
+
+  if (f[0] === 42) {
+    const [kind, , count = EMPTY] = elements(f);
+
+    last = sameBytes(count, ZERO) && bulkText(kind).endsWith("unsubscribe");
+  }
+
   c.push(f);
 
-  if (f[0] === TYPE.simple && str(f).startsWith("+RESET")) return c.endPassthrough(false);
-
-  if (f[0] !== 42) return;
-  const [v] = decode(f);
-
-  // Not only pushes: RESP3 subscribers run other commands too, whose replies can start with null or a number.
-  if (Array.isArray(v) && !(v[0] instanceof Object) && String(v[0]).endsWith("unsubscribe") && v[2] === 0)
-    c.endPassthrough(false);
+  if (last) c.endPassthrough(false);
 }
 
 export function passRequest(c: Conn, pass: Upstream, argv: Uint8Array[], raw: Uint8Array): void {
@@ -56,5 +57,5 @@ export function passRequest(c: Conn, pass: Upstream, argv: Uint8Array[], raw: Ui
     return c.close();
   }
 
-  pass.raw(raw.slice());
+  pass.raw(raw);
 }

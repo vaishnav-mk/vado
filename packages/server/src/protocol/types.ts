@@ -1,14 +1,12 @@
-export interface ReplyError {
-  err: string;
-}
-
-export type Reply = string | number | bigint | boolean | null | ReplyError | Reply[] | Map<Reply, Reply>;
+export type Reply = string | number | bigint | boolean | null | { err: string } | Reply[] | Map<Reply, Reply>;
 
 export type TypedReply =
   | { type: "status" | "error" | "bulk"; value: string }
   | { type: "integer"; value: number }
   | { type: "nil" }
   | { type: "array"; value: TypedReply[] };
+
+export type FrameParser<T> = (frame: Uint8Array) => [T, number];
 
 export interface FrameResume {
   k?: number;
@@ -47,5 +45,4 @@ export interface ByteSocket {
 
 export type CommandArg = string | number | Uint8Array;
 
-// RESP2 or RESP3 (HELLO 3).
 export type Protocol = 2 | 3;

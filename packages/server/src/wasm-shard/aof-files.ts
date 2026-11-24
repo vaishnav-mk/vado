@@ -1,10 +1,11 @@
 import { VFS_CHUNK } from "./vfs/config";
 import { decoder } from "../shared";
-import type { AofEntry, AofFiles, ReplicatorHost } from "./replication/types";
+import type { WasmHost } from "./host/wasm-host";
+import type { AofEntry, AofFiles } from "./types";
 
 export const MANIFEST = "aof/appendonly.aof.manifest";
 
-export function aofFiles(host: Pick<ReplicatorHost, "fileSize" | "readFile">): AofFiles {
+export function aofFiles(host: Pick<WasmHost, "fileSize" | "readFile">): AofFiles {
   const size = host.fileSize(MANIFEST);
   const bytes = size === null ? null : host.readFile(MANIFEST, 0, size);
 
@@ -25,7 +26,7 @@ export function aofFiles(host: Pick<ReplicatorHost, "fileSize" | "readFile">): A
 }
 
 // Never past `size`: bytes appended since then reach the reader another way, and would run twice.
-export function* fileChunks(host: Pick<ReplicatorHost, "readFile">, path: string, size: number): Generator<Uint8Array> {
+export function* fileChunks(host: Pick<WasmHost, "readFile">, path: string, size: number): Generator<Uint8Array> {
   for (let pos = 0; pos < size; pos += VFS_CHUNK) {
     const bytes = host.readFile(path, pos, Math.min(VFS_CHUNK, size - pos));
 

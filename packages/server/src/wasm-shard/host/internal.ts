@@ -1,4 +1,3 @@
-// Clients are pooled, so commands that leave connection state behind (WATCH, SUBSCRIBE) must never come here.
 import { command, EMPTY, frameEnd, HELLO3, TYPE } from "../../protocol/resp";
 import { POOL_MAX } from "./config";
 import { Gauge } from "./gauge";
@@ -36,7 +35,8 @@ function reset(c: PooledClient, want: number): void {
   c.resume.k = 0;
 }
 
-export class Internal {
+// Clients are pooled, so commands that leave connection state behind (WATCH, SUBSCRIBE) must never come here.
+export class InternalClients {
   readonly batches = new Gauge();
   readonly #pool: Record<Protocol, PooledClient[]> = { 2: [], 3: [] };
   readonly #sockets: Sockets;
@@ -72,7 +72,6 @@ export class Internal {
 
         return WRITTEN;
       },
-      close: () => WRITTEN,
     };
 
     const c: PooledClient = {

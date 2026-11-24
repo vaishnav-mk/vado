@@ -1,28 +1,27 @@
 import { DurableObject } from "cloudflare:workers";
 import { and, asc, eq, isNull, sql } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/durable-sqlite";
+import * as v from "valibot";
 import { SLOTS } from "../protocol/slots";
-import { HINT_NAMES, HINTS } from "./regions";
+import { HINT_LIST, HINT_NAMES } from "./regions";
 import { SHARD_CLASSES } from "../wasm-shard/config";
 import { epochAt, parseEpochs } from "./epochs";
 import { migrate } from "../migrate";
-import { addMissingColumns } from "./legacy";
-import { catalogMigrations } from "./migrations";
+import { catalogLegacy, catalogMigrations } from "./migrations";
 import { isFlavour, isNative } from "./flavours";
 import { DB_NAME, DB_NAME_RULE } from "./names";
 import { dbs } from "./schema";
-import type { DatabaseRecord, DatabaseSummary, Epoch, Flavour, Hint } from "./types";
+import type { DatabaseRecord, DatabaseSummary, Flavour, Hint } from "./types";
+
+const HintList = v.optional(v.pipe(v.array(v.picklist(HINT_LIST)), v.nonEmpty()));
 
 const record = <R extends { flavour: string | null }>(row: R): Omit<R, "flavour"> & { flavour: Flavour } => ({
   ...row,
   flavour: isFlavour(row.flavour) ? row.flavour : "valkey",
 });
 
-const hintList = (list: Hint[] | undefined) =>
-  list === undefined || (Array.isArray(list) && list.length > 0 && list.every((r) => HINTS.has(r)));
-
 export class Catalog extends DurableObject<Env> {
-  #epochs: Epoch[] = parseEpochs(this.env.SHARD_EPOCHS);
+  #epochs = parseEpochs(this.env.SHARD_EPOCHS);
   #db = drizzle(this.ctx.storage);
   // The hottest statement: the Watcher asks once a second per watched database.
   #find = this.#db
@@ -34,7 +33,7 @@ export class Catalog extends DurableObject<Env> {
 
   constructor(ctx: DurableObjectState, env: Env) {
     super(ctx, env);
-    migrate(ctx.storage, catalogMigrations, addMissingColumns);
+    migrate(ctx.storage, catalogMigrations, catalogLegacy);
   }
 
   // Every setting applies only to a new database.
@@ -56,9 +55,9 @@ export class Catalog extends DurableObject<Env> {
     const created = Date.now();
     const count = shards ?? epochAt(this.#epochs, created).shards;
 
-    if (!Number.isSafeInteger(count) || count < 1 || count > SLOTS) throw new Error("shards must be 1..16384");
+    if (!Number.isSafeInteger(count) || count < 1 || count > SLOTS) throw new Error(`shards must be 1..${SLOTS}`);
 
-    if (!hintList(regions) || !hintList(replicas))
+    if (!v.is(HintList, regions) || !v.is(HintList, replicas))
       throw new Error(`regions and replicas must be lists of ${HINT_NAMES}`);
 
     if (!Number.isSafeInteger(classes) || classes < 1 || classes > SHARD_CLASSES)

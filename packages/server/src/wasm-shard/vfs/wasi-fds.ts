@@ -1,12 +1,12 @@
 import { iovecs } from "./memory";
-import type { Store } from "./store";
+import type { VfsStore } from "./store";
 import type { Views } from "./types";
 import { E, FD_APPEND, FILETYPE, type FdTable, PREOPEN_FD, PREOPEN_NAME, writeFilestat } from "./wasi-abi";
 import { encoder } from "../../shared";
 
 const PREOPEN = encoder.encode(PREOPEN_NAME);
 
-export function fdImports(fds: FdTable, store: Store, { u8, dv }: Views) {
+export function fdImports(fds: FdTable, store: VfsStore, { u8, dv }: Views) {
   return {
     fd_prestat_get: (fd: number, ptr: number) => {
       if (fd !== PREOPEN_FD) return E.BADF;

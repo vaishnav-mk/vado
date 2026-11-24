@@ -1,10 +1,9 @@
 import type { ReactNode } from "react";
 import { Grid, LayerCard, Meter, Text } from "@cloudflare/kumo";
 import { bytes, ms, num, plural, share } from "../lib/format";
-import { replicaCounts, replicaLine } from "../lib/replicas";
+import { IDLE_MINUTES, replicaCounts, replicaLine } from "../lib/replicas";
 import { useViewer } from "./Guard";
 import type { LiveState } from "../lib/types";
-import { REPL_IDLE_MS } from "@vado/server/wasm-shard/replication/config.ts";
 
 // Titles must fit one line, or the six inner panels stop lining up.
 function Stat({
@@ -41,7 +40,7 @@ export function Stats({ state, reads }: { state: LiveState | null; reads: number
 
   const { signIn } = useViewer();
 
-  const shards = state?.db?.shards ?? state?.shards?.length ?? 0;
+  const shards = state?.db?.shards ?? state?.shards.length ?? 0;
 
   const probe = state?.probe,
     where = state?.watcher?.city;
@@ -79,7 +78,7 @@ export function Stats({ state, reads }: { state: LiveState | null; reads: number
       />
       <Stat
         title="Keys"
-        value={t ? (t.keys ?? 0).toLocaleString("en") : waiting}
+        value={t ? t.keys.toLocaleString("en") : waiting}
         hint={shards ? `Over ${plural(shards, "shard")}` : undefined}
       />
       <Stat title="Memory" value={t ? bytes(t.memory) : waiting}>
@@ -99,7 +98,7 @@ export function Stats({ state, reads }: { state: LiveState | null; reads: number
                   ? `The other ${reps.asleep.toLocaleString("en")} are asleep (no recent traffic)`
                   : `${replicaShare !== null ? `${Math.round(replicaShare)}% of reads, ` : ""}up to ${ms(t.replicaLagMs)} behind`
                 : reps.asleep === reps.total
-                  ? `Asleep: no traffic for ${plural(REPL_IDLE_MS / 60_000, "minute")}`
+                  ? `Asleep: no traffic for ${IDLE_MINUTES}`
                   : replicaLine(reps).text
         }
       />

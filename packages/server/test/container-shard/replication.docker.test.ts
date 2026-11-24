@@ -4,10 +4,10 @@ import { execSync } from "node:child_process";
 import { mkdirSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { afterAll, beforeAll, describe, expect, test } from "vitest";
-import { CANT_CONTINUE, StreamLink } from "../../src/container-shard/link";
+import { REPL_BACKLOG } from "../../src/container-shard/config";
+import { CANT_CONTINUE, roleOffset, StreamLink } from "../../src/container-shard/link";
 import { replay } from "../../src/container-shard/server";
 import { BASE, BoxStore, LOG } from "../../src/container-shard/store";
-import { roleOffset } from "../../src/container-shard/proxy";
 import { command, concat } from "../../src/protocol/resp";
 import { RespClient } from "../../src/protocol/resp-client";
 import { infoFields } from "../../src/protocol/info";
@@ -25,7 +25,7 @@ const DIR = `${homedir()}/.cache/vado-box-test`;
 // As container.ts runs it, plus DEBUG DIGEST.
 const ARGS = [
   "--protected-mode no --save '' --appendonly no --repl-diskless-sync yes --repl-diskless-sync-delay 0",
-  "--repl-ping-replica-period 3600 --repl-backlog-size 64mb --enable-debug-command yes",
+  `--repl-ping-replica-period 3600 --repl-backlog-size ${REPL_BACKLOG} --enable-debug-command yes`,
 ].join(" ");
 
 async function client(port: number): Promise<RespClient> {

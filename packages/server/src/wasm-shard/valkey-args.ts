@@ -1,3 +1,5 @@
+import { PREOPEN_NAME } from "./vfs/wasi-abi";
+
 // appendfsync always + the write-through Vfs: the output gate holds a reply until its AOF bytes are in SQLite.
 export const valkeyArgs = (
   env: Pick<Env, "VALKEY_LOGLEVEL" | "VALKEY_MAXMEMORY" | "VALKEY_MAXMEMORY_POLICY">,
@@ -18,7 +20,7 @@ export const valkeyArgs = (
   "--loglevel",
   env.VALKEY_LOGLEVEL || "warning",
   "--dir",
-  "/data",
+  PREOPEN_NAME,
   "--save",
   "",
   ...(replica ? ["--appendonly", "no"] : ["--appendonly", "yes", "--appendfsync", "always", "--appenddirname", "aof"]),

@@ -1,4 +1,3 @@
-// Only ready replicas are asked, so a sleeping database's retired replicas aren't woken to be looked at.
 import { replicaStub, shardStub } from "../catalog/placement";
 import type { DatabaseRecord } from "../catalog/types";
 import type { ShardSnapshot } from "../shard/types";
@@ -13,6 +12,7 @@ export const shardSnapshots = (env: Env, db: DatabaseRecord): Promise<ShardLook[
       const primary = await look(shardStub(env, db, i));
 
       if ("down" in primary) return { ...primary, replicaSnapshots: [] };
+      // Only ready replicas are asked, so a sleeping database's retired replicas aren't woken to be looked at.
       const ready = primary.replicas.flatMap((r) => (r.state === "ready" ? [r.region] : []));
       const copies = await Promise.all(ready.map((region) => look(replicaStub(env, db, i, region))));
 

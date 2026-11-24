@@ -5,7 +5,7 @@ import { restartShard } from "../server/admin";
 import { bytes, bytesOf, duration, ms, num, share } from "../lib/format";
 import { replicaReads } from "../lib/replicas";
 import { replicaWords } from "../lib/colors";
-import { RESTARTING_MS } from "../lib/config";
+import { RESTARTING_MS } from "@vado/server/admin/config.ts";
 import { useAction } from "../lib/hooks";
 import type { Replica, Shard } from "../lib/types";
 
@@ -28,7 +28,7 @@ function Status({ s, now }: { s: Shard; now: number }) {
       </Badge>
     );
 
-  if (s.log?.rewriting)
+  if (s.log.rewriting)
     return (
       <Badge variant="neutral" appearance="dot">
         Compacting its log
@@ -42,7 +42,7 @@ function Status({ s, now }: { s: Shard; now: number }) {
   );
 }
 
-function replicaLine(replicas: Replica[]) {
+function shardReplicas(replicas: Replica[]) {
   const n = replicas.length,
     ready = replicas.filter((r) => r.state === "ready");
 
@@ -99,7 +99,7 @@ export function ShardTable({
   useEffect(() => {
     if (selected !== null) rows.current[selected]?.scrollIntoView({ block: "nearest", behavior: "smooth" });
   }, [selected]);
-  const withReplicas = shards.some((s) => s.replicas?.length);
+  const withReplicas = shards.some((s) => s.replicas.length);
 
   return (
     <LayerCard>
@@ -153,26 +153,26 @@ export function ShardTable({
                   </Table.Cell>
                   <Table.Cell className="text-right tabular-nums">{s.ok ? num(s.writes) : "–"}</Table.Cell>
                   <Table.Cell className="text-right tabular-nums">
-                    {s.ok ? (s.keys ?? 0).toLocaleString("en") : "–"}
+                    {s.ok ? s.keys.toLocaleString("en") : "–"}
                   </Table.Cell>
                   <Table.Cell>
                     {s.ok && (
                       <Meter
-                        label={bytesOf(s.memory?.used, s.memory?.max)}
-                        value={share(s.memory?.used ?? 0, s.memory?.max) ?? 0}
+                        label={bytesOf(s.memory.used, s.memory.max)}
+                        value={share(s.memory.used, s.memory.max) ?? 0}
                         showValue={false}
                       />
                     )}
                   </Table.Cell>
                   <Table.Cell className="text-right tabular-nums whitespace-nowrap">
-                    {s.ok ? bytes(s.log?.size) : "–"}
+                    {s.ok ? bytes(s.log.size) : "–"}
                   </Table.Cell>
                   <Table.Cell className="text-right tabular-nums whitespace-nowrap">
-                    {s.ok ? duration(s.aliveSeconds ?? 0) : "–"}
+                    {s.ok ? duration(s.aliveSeconds) : "–"}
                   </Table.Cell>
                   {withReplicas && (
                     <Table.Cell>
-                      <Text size="sm">{s.replicas?.length ? replicaLine(s.replicas) : "–"}</Text>
+                      <Text size="sm">{s.replicas.length ? shardReplicas(s.replicas) : "–"}</Text>
                     </Table.Cell>
                   )}
                   <Table.Cell className="text-right">

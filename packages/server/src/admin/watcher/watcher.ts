@@ -1,9 +1,9 @@
-// Memory only but for the running test: an eviction just starts the history again.
 import { DurableObject } from "cloudflare:workers";
 import { DurabilityAlarms } from "durability";
 import { DurabilitySocket, event } from "durability/socket";
 import * as v from "valibot";
 import { existing } from "../../catalog/databases";
+import { isNative } from "../../catalog/flavours";
 import { replicaRegion } from "../../catalog/placement";
 import { shardOfSlot, slotOf } from "../../protocol/slots";
 import { coloOf } from "../../catalog/regions";
@@ -13,20 +13,17 @@ import { encoder, messageOf } from "../../shared";
 import { PROBE_KEY, WATCH_HISTORY, WATCH_MS, WATCH_REPLAY } from "../config";
 import type { EventKind, LiveSnapshot, LiveState, Point, TestLevel, TestView, Tick } from "../live-types";
 import { shardSnapshots } from "../snapshot";
-import { dbView, place, shardView } from "../views";
+import { dbView, place } from "../views";
 import { Entries } from "./entries";
 import { EventLog, summarize } from "./events";
 import { Prober } from "./probe";
+import { shardView } from "./readings";
 import { Shards } from "./shards";
 import { buildState, keep, point } from "./state";
 import type { Reading } from "./types";
 import { TestTraffic } from "./test-traffic";
 
 export const SIGNED_IN = "x-vado-signed-in";
-
-export interface LiveMetadata {
-  signedIn: boolean;
-}
 
 const Attachment = v.object({ metadata: v.object({ signedIn: v.boolean() }) });
 
@@ -36,6 +33,7 @@ const signedIn = (ws: WebSocket) => {
   return v.is(Attachment, attachment) && attachment.metadata.signedIn;
 };
 
+// Memory only but for the running test: an eviction just starts the history again.
 export class Watcher extends DurableObject<Env> {
   #name: string;
   #log = new EventLog();
@@ -64,7 +62,7 @@ export class Watcher extends DurableObject<Env> {
       },
     },
     outbound: { tick: event<Tick>() },
-    metadata: (req): LiveMetadata => ({ signedIn: req.headers.get(SIGNED_IN) === "1" }),
+    metadata: (req) => ({ signedIn: req.headers.get(SIGNED_IN) === "1" }),
   });
 
   constructor(ctx: DurableObjectState, env: Env) {
@@ -179,7 +177,8 @@ export class Watcher extends DurableObject<Env> {
         at,
       );
 
-      for (const e of [...seen.alerts, ...summarize(seen.changes, this.#shards.size)]) this.#log.add(e);
+      for (const e of [...seen.alerts, ...summarize(seen.changes, this.#shards.size, isNative(record.flavour))])
+        this.#log.add(e);
       reading.shards = seen.shards;
       reading.entries = this.#entries.see(pulse.isolates, this.#name);
     } catch (e) {

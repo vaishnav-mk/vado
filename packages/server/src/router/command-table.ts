@@ -10,7 +10,6 @@ import type { ShardStub } from "./types";
 const tables = new IsolateCache<Server, CommandTable>();
 
 async function ask(meta: ShardStub): Promise<CommandTable> {
-  // runRaw: run's RPC result type is too deep for the checker.
   const [reply] = decodeAll(await meta.runRaw([["COMMAND"]]));
 
   // An error reply would cache an empty table, making every command unknown.

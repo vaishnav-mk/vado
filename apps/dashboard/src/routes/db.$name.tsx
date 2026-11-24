@@ -3,7 +3,7 @@ import { Empty } from "@cloudflare/kumo";
 import { MagnifyingGlassIcon } from "@phosphor-icons/react";
 import { Dashboard } from "../components/Dashboard";
 import { Header } from "../components/Header";
-import { getDatabase, listDatabases, listOptions } from "../server/admin";
+import { listDatabases, listOptions } from "../server/admin";
 import { useDark } from "../lib/hooks";
 import { useLive } from "../lib/live";
 import { useViewer } from "../components/Guard";
@@ -11,13 +11,9 @@ import type { Database, Options } from "../lib/types";
 
 export const Route = createFileRoute("/db/$name")({
   loader: async ({ params }) => {
-    const [db, databases, options] = await Promise.all([
-      getDatabase({ data: { name: params.name } }).catch(() => null),
-      listDatabases(),
-      listOptions(),
-    ]);
+    const [databases, options] = await Promise.all([listDatabases(), listOptions()]);
 
-    return { db, databases, options };
+    return { db: databases.find((d) => d.name === params.name) ?? null, databases, options };
   },
   head: ({ params }) => ({ meta: [{ title: `${params.name} · vado` }] }),
   component: Page,

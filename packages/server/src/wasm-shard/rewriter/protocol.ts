@@ -1,7 +1,7 @@
-// Old shards speak this to new rewriters: request line, files; then size line, base, checksum line back.
 import { concat } from "../../protocol/resp";
 import { decoder, encoder } from "../../shared";
 
+// Old shards speak this to new rewriters: request line, files; then size line, base, checksum line back.
 export interface RewriteRequest {
   manifest: string;
   files: [path: string, size: number][];

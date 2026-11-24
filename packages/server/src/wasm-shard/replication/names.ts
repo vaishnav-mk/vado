@@ -1,7 +1,8 @@
-// Old and new code must agree on each of these across a deploy.
 import type { Hint } from "../../catalog/types";
+import { SHARD_CLASSES } from "../config";
 import type { Namespace } from "./types";
 
+// Old and new code must agree on these names and bindings across a deploy.
 export const SHARD_BINDINGS = [
   "SHARD",
   "SHARD1",
@@ -27,7 +28,7 @@ export const replicaName = (primary: string, region: string): string => `${prima
 
 export const isReplicaName = (name: string): boolean => /\.r\.[a-z-]+$/.test(name);
 
-export const replicaBinding = (k: number): ShardBinding => SHARD_BINDINGS[8 + k];
+export const replicaBinding = (k: number): ShardBinding => SHARD_BINDINGS[SHARD_CLASSES + k];
 
 export const replicaOf = <Stub>(namespace: Namespace<Stub>, primary: string, region: Hint): Stub =>
   namespace.getByName(replicaName(primary, region), { locationHint: region });

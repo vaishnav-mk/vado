@@ -29,8 +29,8 @@ function ChartCard({ title, ...chart }: ComponentProps<typeof LiveChart> & { tit
 export function Throughput({ history, dark }: { history: Point[]; dark: boolean }) {
   const series = useMemo<Series[]>(
     () => [
-      { id: "reads", name: "Reads", color: traffic(dark), data: history.map((h) => [h.t, h.reads ?? 0]) },
-      { id: "writes", name: "Writes", color: SHARD, data: history.map((h) => [h.t, h.writes ?? 0]) },
+      { id: "reads", name: "Reads", color: traffic(dark), data: history.map((h) => [h.t, h.reads]) },
+      { id: "writes", name: "Writes", color: SHARD, data: history.map((h) => [h.t, h.writes]) },
     ],
     [history, dark],
   );
@@ -58,8 +58,8 @@ export function ResponseTime({
 }) {
   const series = useMemo<Series[]>(
     () => [
-      { id: "read", name: "Read", color: traffic(dark), data: history.map((h) => [h.t, h.readMs ?? null]) },
-      { id: "write", name: "Write", color: SHARD, data: history.map((h) => [h.t, h.writeMs ?? null]) },
+      { id: "read", name: "Read", color: traffic(dark), data: history.map((h) => [h.t, h.readMs]) },
+      { id: "write", name: "Write", color: SHARD, data: history.map((h) => [h.t, h.writeMs]) },
     ],
     [history, dark],
   );

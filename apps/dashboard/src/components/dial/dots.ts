@@ -62,7 +62,7 @@ export function useTrafficDots(
         let a = (acc.get(s.i) ?? 0) + Math.min(50, 1.8 * Math.sqrt(o)) * dt;
 
         const [a0, a1] = arcSpan(s.i, cur.n),
-          share = (s.writes ?? 0) / o;
+          share = s.writes / o;
 
         for (; a >= 1; a--)
           dots.push({

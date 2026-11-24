@@ -18,7 +18,6 @@ export function containerOf(ctx: DurableObjectState): Container {
 export const dial = (ctx: DurableObjectState, port = SERVER_PORT): Socket =>
   containerOf(ctx).getTcpPort(port).connect(`10.0.0.1:${port}`);
 
-// One command on a connection of its own.
 async function ask(ctx: DurableObjectState, cmd: string[]): Promise<Reply> {
   const socket = dial(ctx);
 

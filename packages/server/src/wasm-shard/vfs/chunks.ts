@@ -27,17 +27,3 @@ export function indexRows(list: { seq: number; len: number }[]): ChunkRow[] {
     return row;
   });
 }
-
-export function pushRow(rows: ChunkRow[], seq: number, len: number): void {
-  const last = rows.at(-1);
-  rows.push({ seq, start: last ? last.start + last.len : 0, len });
-}
-
-export function growLastRow(rows: ChunkRow[], seq: number, len: number): boolean {
-  const last = rows.at(-1);
-
-  if (last?.seq !== seq) return false;
-  last.len = len;
-
-  return true;
-}

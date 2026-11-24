@@ -4,8 +4,7 @@ import type { CommandArg } from "./protocol/types";
 import { CONFIG_SET } from "./protocol/commands";
 import { messageOf } from "./shared";
 
-// Neither the AOF nor the replication stream carries CONFIG SET, so a shard stores what its server accepted and sets it
-// again at boot. A setting a later server refuses is logged, not fatal.
+// AOF and replication skip CONFIG SET, so a shard stores what its server accepted and sets it again at boot.
 export const settingsMigrations = [
   {
     name: "settings_0001_table",
@@ -20,9 +19,10 @@ const argText = (a: CommandArg | undefined) => (a instanceof Uint8Array ? str(a)
 export function keepSettings(sql: SqlStorage, cmds: CommandArg[][], reply: Uint8Array): void {
   const [c = []] = cmds;
 
-  if (cmds.length !== 1 || c.length < 4 || c.length % 2 || str(reply) !== "+OK\r\n") return;
+  if (cmds.length !== 1 || c.length < 4 || c.length % 2 || argText(c[0]).toLowerCase() !== "config") return;
 
-  if (argText(c[0]).toLowerCase() !== "config" || argText(c[1]).toLowerCase() !== "set") return;
+  // The reply last: SCAN and COMMAND GETKEYS pages come through here too.
+  if (argText(c[1]).toLowerCase() !== "set" || str(reply) !== "+OK\r\n") return;
 
   for (let i = 2; i < c.length; i += 2) {
     const k = argText(c[i]).toLowerCase();

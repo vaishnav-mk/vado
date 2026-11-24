@@ -1,6 +1,12 @@
 // The server's memory when BOX_MAXMEMORY is unset: half a standard-1 instance.
 export const MAXMEMORY = "2gb";
 
+// The stream the server keeps, so a link that breaks goes on from its last stored byte instead of a restore.
+export const REPL_BACKLOG = "64mb";
+
+// Writes during a long full copy mustn't drop the replica.
+export const REPLICA_BUFFER = "512mb";
+
 // A boot that takes longer fails, and the next request boots a new container.
 export const BOOT_MS = 600_000;
 
@@ -24,6 +30,7 @@ export const STOP_MS = 30_000;
 export const ASK_MS = 5_000;
 export const REPLAY_STALL_MS = 60_000;
 
+// A poll is one PING, cheap enough that a boot waits only this long past the server being ready.
 export const POLL_MS = 50;
 
 // A burst of new shards can outrun the instances ready; more arrive within a minute or two.
@@ -36,8 +43,7 @@ export const COPIES = 3;
 // How often the engine checks for idleness and compaction.
 export const TICK_MS = 10_000;
 
-// Idle this long, a shard folds its stream and stops its container; the platform does it FOLD_MS later if the object
-// was evicted first.
+// Idle this long, a shard folds its stream and stops its container; if evicted, the platform stops it FOLD_MS later.
 export const IDLE_MS = 10 * 60_000;
 export const FOLD_MS = 5 * 60_000;
 

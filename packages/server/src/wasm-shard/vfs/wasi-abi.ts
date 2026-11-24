@@ -3,7 +3,7 @@ import type { OpenFd } from "./types";
 export const PREOPEN_FD = 3;
 export const PREOPEN_NAME = "/data";
 
-export const E = { OK: 0, BADF: 8, EXIST: 20, INVAL: 28, ISDIR: 31, NOENT: 44, NOTDIR: 54 } as const;
+export const E = { OK: 0, BADF: 8, EXIST: 20, INVAL: 28, ISDIR: 31, NOENT: 44, NOSYS: 52, NOTDIR: 54 } as const;
 export const FILETYPE = { CHAR: 2, DIR: 3, FILE: 4 } as const;
 export const OFLAG = { CREAT: 1, DIRECTORY: 2, EXCL: 4, TRUNC: 8 } as const;
 export const FD_APPEND = 1;
@@ -21,10 +21,12 @@ export function writeFilestat(dv: DataView, ptr: number, filetype: number, size:
 
 export class FdTable {
   readonly #open = new Map<number, OpenFd>();
-  #next = PREOPEN_FD + 1;
 
+  // The lowest free fd, as POSIX does: file fds must stay below sock_shim's pipes (3072) and host sockets (4096).
   add(entry: OpenFd): number {
-    const fd = this.#next++;
+    let fd = PREOPEN_FD + 1;
+
+    while (this.#open.has(fd)) fd++;
     this.#open.set(fd, entry);
 
     return fd;

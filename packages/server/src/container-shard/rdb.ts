@@ -7,8 +7,7 @@ import { RDB_CHUNK } from "./config";
 
 const EOF_MARK = 40;
 
-// "$<len>", or diskless "$EOF:<mark>" ending in the mark. After a diskless copy the server sends nothing until this
-// replica's first ACK, so the mark ends a read. Returns the bytes read past the end.
+// After a diskless copy the server sends nothing until this replica's first ACK, so the mark ends a read.
 export async function storeRdb(
   store: BoxStore,
   gen: number,
@@ -43,7 +42,7 @@ export async function storeRdb(
     left -= take;
 
     if (mark) {
-      tail = concat([tail, part.subarray(0, take)]).subarray(-EOF_MARK);
+      tail = concat([tail, part.subarray(Math.max(0, take - EOF_MARK), take)]).subarray(-EOF_MARK);
 
       if (sameBytes(tail, mark)) {
         flush(EOF_MARK);

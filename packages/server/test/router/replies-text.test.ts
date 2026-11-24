@@ -1,11 +1,8 @@
 import { expect, test } from "vite-plus/test";
-import { bulk } from "../../src/protocol/resp";
 import type { CommandEntry } from "../../src/protocol/types";
 import { NOT_IN_MULTI, UNSUPPORTED } from "../../src/router/command-sets";
 import { CONFIG_SET } from "../../src/protocol/commands";
 import { arityError, unknownCommand } from "../../src/router/replies-text";
-import { bulkText } from "../../src/protocol/resp";
-import { bulkBytes } from "../../src/protocol/resp";
 
 const enc = new TextEncoder();
 const dec = new TextDecoder();
@@ -41,13 +38,6 @@ test("arity: exact when positive, a minimum when negative", () => {
   expect(arityError(entry(-2), "del", argv("DEL", "a", "b"))).toBe(null);
   expect(text(arityError(entry(-2), "del", argv("DEL")))).toBe("-ERR wrong number of arguments for 'del' command\r\n");
   expect(text(arityError(undefined, "x", argv("x")))).toMatch(/^-ERR unknown command 'x'/);
-});
-
-test("bulk frames read back as their bytes", () => {
-  expect(dec.decode(bulkBytes(bulk("hello")))).toBe("hello");
-  expect(bulkText(bulk("a\r\nb"))).toBe("a\r\nb");
-  expect(bulkText(bulk(null))).toBe("");
-  expect(bulkText(enc.encode("-ERR x\r\n")), "not a bulk string").toBe("");
 });
 
 test("clients can't change the service's settings", () => {

@@ -1,6 +1,7 @@
 import { HIGHLIGHT, replicaColor } from "../../lib/colors";
+import { summaryState } from "../../lib/replicas";
 import type { Shard } from "../../lib/types";
-import { annulus, arcSpan, pt, R_IN, R_OUT, summaryState } from "./geometry";
+import { annulus, arcSpan, pt, R_IN, R_OUT } from "./geometry";
 
 export function Segment({
   i,
