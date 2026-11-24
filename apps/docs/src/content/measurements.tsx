@@ -36,6 +36,11 @@ export const measurements: Doc = {
           headers={["Limit", "Value", "Why"]}
           rows={[
             ["Data per shard", "64 MB", "Valkey's data lives in wasm memory, inside a 128 MB memory limit"],
+            [
+              "Data per database",
+              "64 MB a shard: 4 GB at 64 shards, the most tested (2 GB a shard in containers)",
+              "Keys spread over shards by slot, so a database is full once its fullest shard is",
+            ],
             ["Request size", "About 8 MB; 64 KB before AUTH", "A shard holds the query, the value and its AOF entry"],
             ["CPU", "One thread per shard; about 30 s per command", "An object kept near 100% CPU is reset"],
             ["Writes per shard", "114-130k SET/s, deep pipelines", "A shard runs on one thread"],

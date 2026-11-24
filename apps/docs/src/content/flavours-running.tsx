@@ -55,14 +55,14 @@ export const RUNNING_SECTIONS: DocSection[] = [
           headers={["Test", "Valkey", "Redis"]}
           rows={[
             [
-              "64 shards, 10.7 GB of random values: every container and object destroyed at once, 2 runs",
-              "All back with identical data: median 3.0-3.2 s, slowest 4.3-4.4 s",
-              "Median 3.5-3.6 s, slowest 5.3-5.7 s",
+              "64 shards, 10.7 GB of random values: every container and object destroyed at once, 3 runs",
+              "All back with identical data: median 3.0-4.3 s, slowest 4.3-6.1 s",
+              "Median 3.5-5.5 s, slowest 5.3-9.8 s",
             ],
             [
-              "The same, containers destroyed while their objects kept running, 2 runs",
-              "Median 3.3-3.9 s, slowest 4.2-5.2 s",
-              "Median 3.8-4.1 s, slowest 5.0-6.1 s",
+              "The same, containers destroyed while their objects kept running, 3 runs",
+              "Median 3.3-4.2 s, slowest 4.2-6.3 s",
+              "Median 3.8-5.5 s, slowest 5.0-8.2 s",
             ],
             ["The same, only the objects restarted", "Median 1.0 s, slowest 1.3 s", "Median 1.1 s, slowest 1.5 s"],
             [
@@ -86,14 +86,19 @@ export const RUNNING_SECTIONS: DocSection[] = [
               "376k SET/s and 568k GET/s summed",
               "305k SET/s and 351k GET/s (64 wasm shards: 357k and 390k)",
             ],
-            ["GET from the router, one at a time", "", "p50 41-43 ms (a wasm shard: 40-41 ms)"],
-            ["Compaction of a shard holding 68 MB", "", "18.8 s, with writes running throughout"],
+            ["GET from the router, one at a time, 2 runs", "p50 43-44 ms", "p50 43 ms (a wasm shard: 41-42 ms)"],
+            [
+              "Compaction of a 170 MB base, 4 clients writing 64 KB values throughout",
+              "10.5 s, 8.5 s of it copying; slowest GET meanwhile 1.7 s, no failed writes",
+              "8.0 s, 5.9 s copying; slowest GET 1.2 s, no failed writes",
+            ],
           ]}
         />
         <p>
-          One run each unless noted, on one account, from a router in India; an empty cell wasn't measured. The restore
-          times run until a script has read every value on every shard back. The throughput rows are bound by each
-          generator's round trips, not by the shards, and were measured on different days.
+          One run each unless noted, on one account, from a router in India. The restore times run until a script has
+          read every value on every shard back; the third run of each came after 20,000 writes, so it replayed a stream.
+          The throughput rows are bound by each generator's round trips, not by the shards, and were measured on
+          different days.
         </p>
       </>
     ),

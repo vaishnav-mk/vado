@@ -63,7 +63,8 @@ export const CONTAINER_SECTIONS: DocSection[] = [
         <p>
           Once the stored stream outgrows its base (64 MB at least), a second replica link takes a fresh RDB while the
           first keeps storing. The new generation takes over only once it holds everything the old one does, so storage
-          stays near two bases and a restore replays at most one.
+          stays near two bases and a restore replays at most one. The old generation is then deleted 8 MB at a time,
+          with client traffic running in between: one delete of it all would hold every reply until it committed.
         </p>
         <p>
           A burst of new shards can outrun the instances the platform has ready; a boot waits up to 3 minutes for one.
