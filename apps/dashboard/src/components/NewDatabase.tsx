@@ -13,9 +13,9 @@ import type { Options } from "../lib/types";
 const SHARDS = { 1: "1 shard", 4: "4 shards", 16: "16 shards", 64: "64 shards" };
 
 const RUNS: Record<Flavour, string> = {
-  valkey: "Valkey 9.1 in a Durable Object",
+  valkey: "Valkey 9.1 in WebAssembly",
   "valkey-native": "Valkey 9.1 in a container",
-  redis: "Redis 8.12 in a Durable Object",
+  redis: "Redis 8.12 in WebAssembly",
   "redis-native": "Redis 8.12 in a container",
 };
 
@@ -110,9 +110,7 @@ export function NewDatabase({ options: { regions, flavours } }: { options: Optio
                   if (picked) setFlavour(picked);
                 }}
                 items={Object.fromEntries(flavours.map((f) => [f, RUNS[f]]))}
-                description={
-                  native ? "2 GB a shard; starts in seconds after idling" : "64 MB a shard; starts in under a second"
-                }
+                description={native ? "2 GB a shard; wakes in seconds" : "64 MB a shard; idles for free"}
               />
             )}
             <Select
