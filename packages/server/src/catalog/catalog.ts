@@ -8,7 +8,6 @@ import { epochAt, parseEpochs } from "./epochs";
 import { migrate } from "../migrate";
 import { addMissingColumns } from "./legacy";
 import { catalogMigrations } from "./migrations";
-import { parseFlavour } from "./databases";
 import { isFlavour, isNative } from "./flavours";
 import { DB_NAME, DB_NAME_RULE } from "./names";
 import { dbs } from "./schema";
@@ -65,9 +64,10 @@ export class Catalog extends DurableObject<Env> {
     if (!Number.isSafeInteger(classes) || classes < 1 || classes > SHARD_CLASSES)
       throw new Error(`classes must be 1..${SHARD_CLASSES}`);
 
-    const server = parseFlavour(this.env, flavour);
+    // The Worker checks the flavour against its build: after a deploy this object can run the old one for minutes.
+    if (!isFlavour(flavour)) throw new Error("unknown flavour");
 
-    if (replicas && isNative(server)) throw new Error("databases in containers have no read replicas yet");
+    if (replicas && isNative(flavour)) throw new Error("databases in containers have no read replicas yet");
 
     const fresh = {
       name,
@@ -77,7 +77,7 @@ export class Catalog extends DurableObject<Env> {
       replicas: replicas ?? null,
       classes,
       secret,
-      flavour: server === "valkey" ? null : server,
+      flavour: flavour === "valkey" ? null : flavour,
     };
 
     this.#db.insert(dbs).values(fresh).run();
