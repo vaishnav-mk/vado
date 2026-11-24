@@ -10,6 +10,7 @@ import { closeWith, encoder, messageOf, withTimeout } from "../shared";
 import { flavourOf, serverOf } from "../catalog/flavours";
 import { Engine } from "./engine";
 import { proxy } from "./proxy";
+import { keepSettings, reapply } from "../settings";
 import { replace } from "./container";
 import { containerOf } from "./server";
 import { boxStats } from "./stats";
@@ -42,7 +43,11 @@ export class RedisBox extends DurableObject<Env> {
       BOOT_MS,
       "boot",
     ).then(
-      (engine) => (this.#running = engine),
+      async (engine) => {
+        await reapply(this.ctx.storage.sql, (bytes) => engine.mux(2, false).exec(bytes, 1));
+
+        return (this.#running = engine);
+      },
       async (e: Error) => {
         console.log(`boot failed: ${e.message}`);
         // A half-booted container holds no acknowledged write this object lacks; the next boot starts clean.
@@ -86,7 +91,11 @@ export class RedisBox extends DurableObject<Env> {
   }
 
   async runRaw(cmds: CommandArg[][]): Promise<Uint8Array> {
-    return await this.execRaw(concat(cmds.map(command)), cmds.length);
+    const reply = await this.execRaw(concat(cmds.map(command)), cmds.length);
+
+    keepSettings(this.ctx.storage.sql, cmds, reply);
+
+    return reply;
   }
 
   instance(): string {

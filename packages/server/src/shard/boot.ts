@@ -14,6 +14,7 @@ import type { ValkeyRewriter } from "./rewriter/rewriter";
 import { flavourOf } from "../catalog/flavours";
 import { wasmOf } from "./servers";
 import { Upgrader } from "./upgrade";
+import { reapply, settingsMigrations } from "../settings";
 import { valkeyArgs } from "./valkey-args";
 import { deployedAt } from "./version";
 
@@ -56,7 +57,7 @@ export function bootShard(
   const replica = isReplicaName(name);
   const flavour = flavourOf(name);
 
-  migrate(ctx.storage, [...shardMigrations, ...replicationMigrations]);
+  migrate(ctx.storage, [...shardMigrations, ...replicationMigrations, ...settingsMigrations]);
 
   const host = new ValkeyHost(wasmOf(name), ctx.storage, {
     args: valkeyArgs(env, replica),
@@ -76,6 +77,7 @@ export function bootShard(
     };
   }
 
+  void reapply(ctx.storage.sql, (bytes) => host.execBatch(bytes, 1)); // ahead of any client command
   const rewriter = rewriterOf(env, shardClass, name);
   const deployed = deployedAt(env);
   const retryAt = (at: number): Promise<void> => primary.alarms.upgrade(at);

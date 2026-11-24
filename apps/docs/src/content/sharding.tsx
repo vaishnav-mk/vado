@@ -79,7 +79,7 @@ export const sharding: Doc = {
             ["SCRIPT LOAD, FUNCTION LOAD", "Every shard, so EVALSHA and FCALL work wherever their keys land"],
             ["SUBSCRIBE, PUBLISH", "The database's pub/sub shard"],
             ["AUTH, PING, ECHO, HELLO, SELECT, CLIENT, CLUSTER, WAIT, WAITAOF", "Answered by the router itself"],
-            ["CONFIG SET", "Every primary, if the setting is allowed"],
+            ["CONFIG SET", "Every primary, if the setting is allowed; kept across restarts"],
             ["CONFIG GET, keyless commands", "Shard 0"],
           ]}
         />
@@ -154,7 +154,8 @@ export const sharding: Doc = {
               <DocLink slug="security" hash="config">
                 the list
               </DocLink>
-              ).
+              ). Each shard keeps the settings its server accepted and sets them again whenever it restarts, since a
+              server forgets them.
             </p>
           </Note>
         </>
@@ -168,5 +169,6 @@ export const sharding: Doc = {
     server("router/split.ts"),
     server("router/fanout.ts"),
     server("router/command-sets.ts"),
+    server("settings.ts"),
   ],
 };

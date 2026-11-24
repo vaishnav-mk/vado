@@ -1,6 +1,7 @@
 import type { DurableMigrations } from "@durability/storage";
 import * as v from "valibot";
 import { migrate } from "../migrate";
+import { settingsMigrations } from "../settings";
 
 const boxMigrations = [
   {
@@ -41,7 +42,7 @@ export class BoxStore {
   #building: number | null = null;
 
   constructor(storage: Pick<DurableObjectStorage, "sql" | "transactionSync" | "sync">) {
-    migrate(storage, boxMigrations);
+    migrate(storage, [...boxMigrations, ...settingsMigrations]);
     this.#sql = storage.sql;
     this.sync = () => storage.sync();
   }

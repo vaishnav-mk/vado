@@ -7,6 +7,7 @@ import { decodeAll } from "../protocol/decode";
 import { command, concat, str } from "../protocol/resp";
 import type { CommandArg, Reply } from "../protocol/types";
 import { coloOf } from "../replication/regions";
+import { keepSettings } from "../settings";
 import { bootShard } from "./boot";
 import type { LiveShard } from "./boot";
 import type { PrimaryRole } from "./primary";
@@ -149,7 +150,11 @@ export class ValkeyShard extends DurableObject<Env> {
   }
 
   async runRaw(cmds: CommandArg[][]): Promise<Uint8Array> {
-    return await this.#rpc(({ host }) => host.execBatch(concat(cmds.map(command)), cmds.length));
+    const reply = await this.#rpc(({ host }) => host.execBatch(concat(cmds.map(command)), cmds.length));
+
+    keepSettings(this.ctx.storage.sql, cmds, reply);
+
+    return reply;
   }
 
   instance(): string {
