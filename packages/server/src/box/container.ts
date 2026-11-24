@@ -33,6 +33,8 @@ const serverArgs = (maxmemory: string) =>
     "--repl-diskless-sync-delay 0",
     "--repl-ping-replica-period 3600",
     "--repl-backlog-size 64mb",
+    // A full copy of a full shard takes a minute or more: the writes meanwhile mustn't drop the new replica.
+    '--client-output-buffer-limit "replica 512mb 0 0"',
     "--dir /data",
     "--dbfilename dump.rdb",
   ].join(" ");

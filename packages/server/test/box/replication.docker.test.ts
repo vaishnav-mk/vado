@@ -134,7 +134,11 @@ describe.skipIf(!IMAGE)(`${SERVER}: replication into storage, then restore`, () 
     await a.call(["DEL", "k5"], ["SET", "after", "switch"], ["WAIT", "1", "200"]);
     await next.reached(await role(a), 5_000);
     expect(current().gen).toBe(2);
-    expect(store.bytes(1, LOG)).toBe(0); // generation 1 is gone
+    expect(store.bytes(1, LOG)).toBeGreaterThan(0); // generation 1 stays until pruned
+
+    while (store.prune(1 << 20));
+    expect(store.bytes(1, LOG)).toBe(0);
+    expect(store.bytes(2, BASE)).toBeGreaterThan(0);
     next.close();
   });
 

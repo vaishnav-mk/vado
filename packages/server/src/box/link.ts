@@ -1,10 +1,9 @@
 import { command, concat, lineEnd, str } from "../protocol/resp";
-import { encoder, noop } from "../shared";
-import { BASE, LOG } from "./store";
+import { noop } from "../shared";
+import { storeRdb } from "./rdb";
+import { LOG } from "./store";
 import type { BoxStore, Generation } from "./store";
 
-const CHUNK = 1 << 20;
-const EOF_MARK = 40;
 const ACK_MS = 1_000;
 
 export const FENCE_MS = 15_000;
@@ -105,8 +104,7 @@ export class ReplicaLink {
 
   close(): void {
     this.#closed = true;
-
-    if (this.#ack) clearInterval(this.#ack);
+    clearInterval(this.#ack ?? undefined);
     this.#socket.close().catch(noop);
   }
 
@@ -137,55 +135,14 @@ export class ReplicaLink {
       this.continued = true;
     } else if (kind === "+FULLRESYNC") {
       if (resume?.only) throw new Error(CANT_CONTINUE);
-      await this.#rdb(gen, await this.#line());
+      this.#buf = await storeRdb(this.#store, gen, await this.#line(), this.#buf, () => this.#read());
       this.generation = { gen, replid, offset: Number(offset), master: replid, shift: Number(offset) };
       this.received = Number(offset);
     } else throw new Error(`expected FULLRESYNC or CONTINUE, got ${kind}`);
 
-    this.#ack = setInterval(() => void this.#sendAck(), ACK_MS);
-  }
+    const ack = () => this.#writer.write(command(["REPLCONF", "ACK", String(this.received)])).catch(noop);
 
-  // "$<len>" or, diskless, "$EOF:<40 bytes>" with the same 40 bytes after the payload.
-  async #rdb(gen: number, header: string): Promise<void> {
-    const mark = header.startsWith("$EOF:") ? encoder.encode(header.slice(5)) : null;
-    let left = mark ? Infinity : Number(header.slice(1));
-
-    let pending: Uint8Array[] = [],
-      size = 0,
-      tail: Uint8Array = new Uint8Array(0);
-
-    const flush = (keep: number) => {
-      const all = concat(pending);
-
-      for (let i = 0; i + keep < all.length; i += CHUNK)
-        this.#store.append(gen, BASE, all.slice(i, Math.min(i + CHUNK, all.length - keep)));
-      pending = keep ? [all.slice(all.length - keep)] : [];
-      size = keep ? Math.min(keep, all.length) : 0;
-    };
-
-    while (left > 0) {
-      const part = this.#buf.length ? this.#buf : await this.#read();
-      const take = mark ? part.length : Math.min(left, part.length);
-
-      pending.push(part.subarray(0, take));
-      size += take;
-      this.#buf = part.subarray(take);
-      left -= take;
-
-      if (mark) {
-        tail = concat([tail, part.subarray(0, take)]).subarray(-EOF_MARK);
-
-        if (tail.length === EOF_MARK && tail.every((b, i) => b === mark[i])) {
-          flush(EOF_MARK);
-
-          return;
-        }
-      }
-
-      if (size >= CHUNK + EOF_MARK) flush(mark ? EOF_MARK : 0);
-    }
-
-    flush(0);
+    this.#ack = setInterval(() => void ack(), ACK_MS);
   }
 
   async #stream(): Promise<void> {
@@ -204,10 +161,6 @@ export class ReplicaLink {
         this.#catchUp = null;
       }
     }
-  }
-
-  #sendAck(): Promise<void> {
-    return this.#writer.write(command(["REPLCONF", "ACK", String(this.received)])).catch(noop);
   }
 
   // Master keepalives during an RDB transfer are bare newlines.

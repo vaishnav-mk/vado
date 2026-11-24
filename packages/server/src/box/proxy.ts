@@ -97,7 +97,10 @@ export async function proxy(client: Socket, redis: Socket, fence: Fence, greetin
         batches.shift();
 
         if (batch.fenced) {
-          await fence(roleOffset(frame));
+          await fence(roleOffset(frame)).catch((e: Error) => {
+            console.log(`fence: ${e.message}`);
+            throw e;
+          });
           got = got.slice(0, -1);
         }
 

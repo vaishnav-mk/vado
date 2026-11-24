@@ -1,16 +1,15 @@
+import type { RewriteLog } from "../shard/types";
 import type { Server } from "../catalog/types";
-import { messageOf, noop, withTimeout } from "../shared";
+import { messageOf, noop, sleep, withTimeout } from "../shared";
+import { LINK_MS, linkFor, openLink } from "./attach";
 import { replace, startServer } from "./container";
 import { containerOf, dial } from "./server";
-import type { Started } from "./container";
-import { CANT_CONTINUE, FENCE_MS, ReplicaLink } from "./link";
-import type { Resume } from "./link";
+import { CANT_CONTINUE, FENCE_MS } from "./link";
+import type { ReplicaLink } from "./link";
 import { Mux } from "./mux";
 import type { Fence } from "./proxy";
 import { BASE, LOG } from "./store";
-import type { BoxStore, Generation } from "./store";
-
-const LINK_MS = 300_000;
+import type { BoxStore } from "./store";
 
 const TICK_MS = 10_000;
 
@@ -23,33 +22,20 @@ const FOLD_MS = 5 * 60_000;
 // A new generation once the stream is bigger than its base, so storage and restores stay about one base in size.
 const COMPACT_MIN = 64 << 20;
 
+// A delete runs on this object's one thread and holds every reply until it commits: 8 MB at a time, with a gap after.
+const PRUNE_BYTES = 8 << 20;
+
+const PRUNE_GAP_MS = 250;
+
 // Pre-dialed connections for dedicated clients (transactions, pub/sub, blocking).
 const SPARES = 4;
-
-// A server that kept running must go on from the last stored byte, or it may hold a restore cut short. A restored one
-// holds exactly what's stored, so it goes on from its own history. The server checks its history, so a wrong guess
-// costs a full copy, never a gap.
-function resumeOf(store: BoxStore, from: Generation, started: Started): Resume | null {
-  if (started.reused) {
-    const end = (from.shift ?? from.offset) + store.bytes(from.gen, LOG);
-
-    return { from, replid: from.master ?? from.replid, offset: end, only: true };
-  }
-
-  return started.history && { from, ...started.history, only: false };
-}
-
-const linkFor = (ctx: DurableObjectState, store: BoxStore, started: Started, onBroken: (why: string) => void) => {
-  const current = store.current();
-
-  return openLink(ctx, store, (current?.gen ?? 0) + 1, current && resumeOf(store, current, started), onBroken);
-};
 
 // A running container plus the replication link that stores it. Lost for good on shutdown(); the object boots another.
 export class Engine {
   link: ReplicaLink;
   closed = false;
   clients = 0;
+  lastCompaction: RewriteLog | null = null; // the box's stats report it as its last rewrite
   readonly #ctx: DurableObjectState;
   readonly #store: BoxStore;
   readonly #onLost: (why: string) => void;
@@ -59,6 +45,7 @@ export class Engine {
   #lastActive = Date.now();
   #foldedFor = 0; // the #lastActive an idle fold was tried for
   #compacting = false;
+  #pruning = false;
 
   private constructor(ctx: DurableObjectState, store: BoxStore, link: ReplicaLink, onLost: (why: string) => void) {
     this.#ctx = ctx;
@@ -95,6 +82,7 @@ export class Engine {
     const engine = new Engine(ctx, store, link, onLost);
 
     booted = engine;
+    void engine.#prune();
     void started.exited
       .catch((e: Error) => console.log(`container: ${e.message}`))
       .finally(() => engine.shutdown("stopped"));
@@ -180,7 +168,25 @@ export class Engine {
       return;
     }
 
-    if (!this.#compacting && logged > Math.max(COMPACT_MIN, this.#store.bytes(gen, BASE))) void this.#compact();
+    if (!this.#compacting && !this.#pruning && logged > Math.max(COMPACT_MIN, this.#store.bytes(gen, BASE)))
+      void this.#compact();
+  }
+
+  // Replaced and abandoned generations, a batch at a time, with client traffic running between.
+  async #prune(): Promise<void> {
+    if (this.#pruning) return;
+    this.#pruning = true;
+
+    try {
+      while (!this.closed && this.#store.prune(PRUNE_BYTES)) {
+        await this.#store.sync();
+        await sleep(PRUNE_GAP_MS);
+      }
+    } catch (e) {
+      console.log(`prune: ${messageOf(e)}`);
+    } finally {
+      this.#pruning = false;
+    }
   }
 
   // A second replica link takes a fresh RDB while the first keeps storing the stream. It becomes current only once
@@ -192,7 +198,8 @@ export class Engine {
       old = this.link;
 
     try {
-      const next = await openLink(this.#ctx, this.#store, old.generation.gen + 1, null, (why) => this.shutdown(why));
+      const next = await openLink(this.#ctx, this.#store, this.#store.begin(), null, (why) => this.shutdown(why));
+      const sentMs = Date.now() - t0; // the copy stored; then the stream since
 
       await withTimeout(next.caughtUp(old), LINK_MS, "compaction catch-up").catch((e: Error) => {
         next.close();
@@ -203,35 +210,19 @@ export class Engine {
       this.#store.switchTo(next.generation);
       this.link = next;
       old.handOver(next);
-      console.log(
-        JSON.stringify({ compacted: Date.now() - t0, baseMB: this.#store.bytes(next.generation.gen, BASE) / 1e6 }),
-      );
+      void this.#prune();
+      this.lastCompaction = {
+        at: t0,
+        rdb: true,
+        ms: Date.now() - t0,
+        sentMs,
+        baseBytes: this.#store.bytes(next.generation.gen, BASE),
+      };
     } catch (e) {
-      console.log(`compaction failed: ${messageOf(e)}`);
+      this.lastCompaction = { at: t0, rdb: true, ms: Date.now() - t0, error: messageOf(e) };
     } finally {
+      console.log(JSON.stringify({ compaction: this.lastCompaction }));
       this.#compacting = false;
     }
   }
-}
-
-// A sync that outlives its timeout must not keep writing next to the one that replaces it.
-async function openLink(
-  ctx: DurableObjectState,
-  store: BoxStore,
-  gen: number,
-  resume: Resume | null,
-  onBroken: (why: string) => void,
-): Promise<ReplicaLink> {
-  const socket = dial(ctx);
-
-  await socket.opened;
-
-  return await withTimeout(
-    ReplicaLink.open(socket, store, gen, resume, (e) => onBroken(`replication: ${e.message}`)),
-    LINK_MS,
-    `syncing generation ${gen}`,
-  ).catch((e: Error) => {
-    socket.close().catch(noop);
-    throw e;
-  });
 }

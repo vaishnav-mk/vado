@@ -1,6 +1,6 @@
 import type { Flavour } from "../catalog/types";
 import { isolate } from "../shard/stats";
-import type { ShardStats } from "../shard/types";
+import type { RewriteLog, ShardStats } from "../shard/types";
 
 interface BoxFacts {
   flavour: Flavour;
@@ -9,6 +9,7 @@ interface BoxFacts {
   bornAt: number;
   clients: number;
   stored: number; // bytes of the current base and log
+  compaction: RewriteLog | null;
 }
 
 // The dashboard's shard shape; the wasm-only fields stay at their empty values.
@@ -28,5 +29,5 @@ export const boxStats = (f: BoxFacts): Omit<ShardStats, "files"> => ({
   lastUpgrade: null,
   role: "primary",
   replicas: [],
-  lastRewrite: null,
+  lastRewrite: f.compaction && { ...f.compaction, doneMs: null },
 });

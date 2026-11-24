@@ -118,6 +118,7 @@ export class RedisBox extends DurableObject<Env> {
       bornAt: this.#bornAt,
       clients: this.#running?.clients ?? 0,
       stored: this.#store.bytes(gen, BASE) + this.#store.bytes(gen, LOG),
+      compaction: this.#running?.lastCompaction ?? null,
     });
   }
 

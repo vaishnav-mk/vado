@@ -52,7 +52,7 @@ class FakeCursor<T extends Row> implements SqlStorageCursor<T> {
   }
 }
 
-export function fakeStorage(): VfsStorage & { db: DatabaseSync } {
+export function fakeStorage(): VfsStorage & Pick<DurableObjectStorage, "sync"> & { db: DatabaseSync } {
   const db = new DatabaseSync(":memory:");
 
   const exec = <T extends Row>(query: string, ...bindings: Binding[]): SqlStorageCursor<T> => {
@@ -84,6 +84,7 @@ export function fakeStorage(): VfsStorage & { db: DatabaseSync } {
 
   return {
     db,
+    sync: () => Promise.resolve(), // every write is already in memory
     // SAFETY: the code under test only calls exec.
     sql: { exec } as SqlStorage,
     transactionSync: <T>(closure: () => T): T => {

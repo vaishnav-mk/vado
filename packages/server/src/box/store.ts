@@ -31,18 +31,27 @@ const GenerationSchema = v.object({
 export type Generation = v.InferOutput<typeof GenerationSchema>;
 
 // A generation is one base RDB plus the replication stream after it. Only a committed switch makes it current, so
-// a sync cut short leaves the previous generation whole.
+// a sync cut short leaves the previous generation whole. Every sync gets a number of its own (begin), so a retry
+// never appends to rows a failed one left; those and replaced generations go later, a batch at a time (prune).
 export class BoxStore {
   readonly #sql: SqlStorage;
+  readonly sync: () => Promise<void>; // resolves once every write so far is durable
   readonly #seq = new Map<string, number>();
   readonly #bytes = new Map<string, number>();
+  #building: number | null = null;
 
-  constructor(storage: Pick<DurableObjectStorage, "sql" | "transactionSync">) {
+  constructor(storage: Pick<DurableObjectStorage, "sql" | "transactionSync" | "sync">) {
     migrate(storage, boxMigrations);
     this.#sql = storage.sql;
-    const current = this.current()?.gen ?? 0;
+    this.sync = () => storage.sync();
+  }
 
-    this.#sql.exec("DELETE FROM box_data WHERE gen > ?", current);
+  begin(): number {
+    const top = this.#sql.exec<{ g: number | null }>("SELECT max(gen) AS g FROM box_data").one().g ?? 0;
+
+    this.#building = Math.max(top, this.current()?.gen ?? 0, this.#building ?? 0) + 1;
+
+    return this.#building;
   }
 
   current(): Generation | null {
@@ -90,10 +99,25 @@ export class BoxStore {
 
   switchTo(next: Generation): void {
     this.#sql.exec("INSERT OR REPLACE INTO box_meta (k, v) VALUES ('current', ?)", JSON.stringify(next));
-    this.#sql.exec("DELETE FROM box_data WHERE gen < ?", next.gen);
+    this.#building = null;
+    this.#forgetAllBut([next.gen]);
+  }
 
-    for (const cache of [this.#seq, this.#bytes])
-      for (const key of cache.keys()) if (Number(key.split(".")[0]) < next.gen) cache.delete(key);
+  // Deletes about `budget` bytes of generations neither current nor being built; true while any remain. A reply
+  // waits for every write before it, deletes too, so one big delete would hold them all.
+  prune(budget: number): boolean {
+    const keep = [this.current()?.gen ?? -1, this.#building ?? -1];
+
+    this.#sql.exec(
+      `DELETE FROM box_data WHERE (gen, kind, seq) IN (SELECT gen, kind, seq FROM (SELECT gen, kind, seq,
+        sum(length(data)) OVER (ORDER BY gen, kind, seq) - length(data) AS before FROM box_data WHERE gen NOT IN (?, ?))
+        WHERE before < ?)`,
+      ...keep,
+      budget,
+    );
+    this.#forgetAllBut(keep);
+
+    return this.#sql.exec("SELECT 1 FROM box_data WHERE gen NOT IN (?, ?) LIMIT 1", ...keep).toArray().length > 0;
   }
 
   dropped(): boolean {
@@ -103,6 +127,11 @@ export class BoxStore {
   drop(): void {
     this.#sql.exec("DELETE FROM box_data");
     this.#sql.exec("INSERT OR REPLACE INTO box_meta (k, v) VALUES ('dropped', '1')");
+  }
+
+  #forgetAllBut(gens: number[]): void {
+    for (const cache of [this.#seq, this.#bytes])
+      for (const key of cache.keys()) if (!gens.includes(Number(key.split(".")[0]))) cache.delete(key);
   }
 
   #lastSeq(gen: number, kind: Kind): number {
