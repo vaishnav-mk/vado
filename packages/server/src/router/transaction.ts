@@ -61,6 +61,13 @@ export function queue(
   c.replies.reply(QUEUED);
 }
 
+// The shard still watches what the router dropped, and a later EXEC on that socket would see it.
+function unwatchShard(c: Conn): void {
+  const up = c.tx.watchUp;
+
+  if (up && !up.dead) up.send(UNWATCH, noop);
+}
+
 export function exec(c: Conn): void {
   const m = c.tx.multi;
 
@@ -70,6 +77,7 @@ export function exec(c: Conn): void {
   const watchUp = c.tx.watchUp,
     broken = m.watched && (c.tx.watchBroken || !watchUp || watchUp.dead);
 
+  if (m.watched && (m.failed || broken)) unwatchShard(c);
   c.tx.clearWatch();
 
   if (m.failed) return c.replies.reply(EXECABORT);
@@ -101,7 +109,7 @@ export function discard(c: Conn): void {
   if (!c.tx.multi) return c.replies.reply(error("ERR DISCARD without MULTI"));
   c.tx.multi = null;
 
-  if (c.tx.watch !== null && !c.tx.watchBroken) c.pool.get(c.tx.watch).send(UNWATCH, noop);
+  unwatchShard(c);
   c.tx.clearWatch();
   c.replies.reply(OK);
 }
@@ -128,6 +136,7 @@ export function unwatch(c: Conn, raw: Uint8Array): void {
   const shard = c.tx.watch;
 
   if (shard === null || c.tx.watchBroken) {
+    unwatchShard(c);
     c.tx.clearWatch();
 
     return c.replies.reply(OK);

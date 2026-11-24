@@ -1,4 +1,4 @@
-import { bulkBytes, elements, isError, str } from "../protocol/resp";
+import { bulkBytes, elements, isError } from "../protocol/resp";
 import type { CommandEntry } from "../protocol/types";
 import type { Conn } from "./conn";
 import { replicaFailed, replicaResting } from "./isolate";
@@ -68,7 +68,7 @@ export function getkeys(c: Conn, entry: CommandEntry, argv: Uint8Array[], raw: U
   c.replies.hold(
     target
       .shard(0)
-      .runRaw([["COMMAND", "GETKEYS", ...argv.map(str)]])
+      .runRaw([["COMMAND", "GETKEYS", ...argv]])
       .then((f) => {
         if (isError(f)) return c.replies.resolve(s, f);
 

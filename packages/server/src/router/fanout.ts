@@ -3,7 +3,7 @@ import { CONFIG_SET } from "../protocol/commands";
 import { decode } from "../protocol/decode";
 import { infoFields, subField } from "../protocol/info";
 import { arrayOf, bulk, bulkText, elements, EMPTY, error, integer, isError, lower, str } from "../protocol/resp";
-import type { CommandEntry } from "../protocol/types";
+import type { CommandArg, CommandEntry } from "../protocol/types";
 import { FUNCTION_EVERYWHERE, SCRIPT_EVERYWHERE } from "./command-sets";
 import { FAN_OUT } from "./config";
 import type { Conn } from "./conn";
@@ -11,7 +11,7 @@ import { NOT_INTEGER, NULL_BULK, OK, unsupported, wrongArity, ZERO } from "./rep
 import { forward } from "./routing";
 import type { Merge } from "./types";
 
-async function everyShard(c: Conn, cmds: string[][]): Promise<Uint8Array[]> {
+async function everyShard(c: Conn, cmds: CommandArg[][]): Promise<Uint8Array[]> {
   const target = c.target,
     n = target.db.shards,
     out = Array.from<Uint8Array>({ length: n });
@@ -29,7 +29,7 @@ async function everyShard(c: Conn, cmds: string[][]): Promise<Uint8Array[]> {
 
 export function fanout(c: Conn, entry: CommandEntry | undefined, argv: Uint8Array[], merge: Merge): void {
   c.replies.viaRpc(async () => {
-    const frames = await everyShard(c, [argv.map(str)]);
+    const frames = await everyShard(c, [argv]);
 
     if (!entry?.flags.has("readonly")) c.writes.all(c.db.shards);
 
@@ -121,7 +121,7 @@ export function scan(c: Conn, argv: Uint8Array[]): void {
     inner = cursor / shards;
 
   c.replies.viaRpc(async () => {
-    const f = await target.shard(shard).runRaw([["SCAN", inner.toString(), ...argv.slice(2).map(str)]]);
+    const f = await target.shard(shard).runRaw([["SCAN", inner.toString(), ...argv.slice(2)]]);
 
     if (isError(f)) return f;
 

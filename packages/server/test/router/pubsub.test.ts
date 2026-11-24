@@ -81,3 +81,33 @@ test("UNSUBSCRIBE while not subscribed is answered without reaching the shard", 
   expect(shard.connects()).toBe(0);
   await c.close();
 });
+
+test("RESET while subscribed resets the router's side too: the connection name is gone", async () => {
+  const shard = fakeShard(([name = ""]) =>
+    name === "SUBSCRIBE"
+      ? "*3\r\n$9\r\nsubscribe\r\n$2\r\nch\r\n:1\r\n"
+      : name === "RESET"
+        ? "+RESET\r\n"
+        : name === "GET"
+          ? "$-1\r\n"
+          : "+OK\r\n",
+  );
+
+  const c = client([shard.stub], shard.stub);
+
+  // Each reply first, as a client does: RESET ends the subscription only once the shard answers it.
+  for (const [cmd, reply] of [
+    [["CLIENT", "SETNAME", "foo"], "+OK\r\n"],
+    [["SUBSCRIBE", "ch"], confirm("subscribe", "ch", 1)],
+    [["RESET"], "+RESET\r\n"],
+    [["GET", "k"], "$-1\r\n"],
+  ] as const) {
+    await c.call(...cmd);
+    expect(await c.read(reply.length)).toBe(reply);
+  }
+
+  await c.close();
+
+  const after = shard.got.slice(shard.got.findIndex(([n]) => n === "RESET") + 1);
+  expect(after).toEqual([["GET", "k"]]);
+});

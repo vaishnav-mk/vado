@@ -160,11 +160,16 @@ export class Router extends Conn {
         fanout(this, entry, argv, () => OK);
         break;
       case "scan":
-        scan(this, argv);
+      case "randomkey": {
+        const bad = arityError(entry, name, argv);
+
+        if (bad) this.replies.reply(bad);
+        else if (name === "scan") scan(this, argv);
+        else randomkey(this);
+
         break;
-      case "randomkey":
-        randomkey(this);
-        break;
+      }
+
       case "info":
         info(this, argv);
         break;

@@ -5,6 +5,7 @@ import { PUBSUB, WHILE_SUBSCRIBED } from "./command-sets";
 import type { Conn } from "./conn";
 import { notWhileSubscribed, OK, RESET, ZERO } from "./replies-text";
 import type { Upstream } from "./types";
+import { resetState } from "./session";
 
 export function pubsub(c: Conn, name: string, argv: Uint8Array[], raw: Uint8Array): void {
   const unsubscribe = name.endsWith("unsubscribe");
@@ -33,17 +34,15 @@ export function pubsub(c: Conn, name: string, argv: Uint8Array[], raw: Uint8Arra
 
 // Passthrough ends at RESET, or at an unsubscribe confirmation that leaves no subscriptions.
 function passed(c: Conn, f: Uint8Array): void {
-  let last = sameBytes(f, RESET);
-
-  if (f[0] === 42) {
-    const [kind, , count = EMPTY] = elements(f);
-
-    last = sameBytes(count, ZERO) && bulkText(kind).endsWith("unsubscribe");
-  }
-
   c.push(f);
 
-  if (last) c.endPassthrough(false);
+  // A RESET that went to the subscribed connection resets the rest of the session too.
+  if (sameBytes(f, RESET)) return resetState(c);
+
+  if (f[0] !== 42) return;
+  const [kind, , count = EMPTY] = elements(f);
+
+  if (sameBytes(count, ZERO) && bulkText(kind).endsWith("unsubscribe")) c.endPassthrough(false);
 }
 
 export function passRequest(c: Conn, pass: Upstream, argv: Uint8Array[], raw: Uint8Array): void {

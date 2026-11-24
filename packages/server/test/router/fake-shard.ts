@@ -55,7 +55,19 @@ export function fakeShard(answer: (argv: string[]) => string) {
   };
 }
 
-const table = commandTable([["mget", -2, ["readonly"], 1, -1, 1, [], [], [], []]]);
+const table = commandTable([
+  ["mget", -2, ["readonly"], 1, -1, 1, [], [], [], []],
+  ["set", -3, ["write"], 1, 1, 1, [], [], [], []],
+  ["watch", -2, [], 1, -1, 1, [], [], [], []],
+  ["multi", 1, [], 0, 0, 0, [], [], [], []],
+  ["exec", 1, [], 0, 0, 0, [], [], [], []],
+  ["discard", 1, [], 0, 0, 0, [], [], [], []],
+  ["unwatch", 1, [], 0, 0, 0, [], [], [], []],
+  ["keys", 2, ["readonly"], 0, 0, 0, [], [], [], []],
+  ["get", 2, ["readonly"], 1, 1, 1, [], [], [], []],
+  ["scan", -2, ["readonly"], 0, 0, 0, [], [], [], []],
+  ["randomkey", 1, ["readonly"], 0, 0, 0, [], [], [], []],
+]);
 
 // A RESP2 client on a router over these shards, no password.
 export function client(shards: ShardStub[], pubsub: ShardStub) {
@@ -95,6 +107,7 @@ export function client(shards: ShardStub[], pubsub: ShardStub) {
 
   return {
     call: (...args: string[]) => writer.write(command(args)),
+    send: (bytes: Uint8Array) => writer.write(bytes),
     // The next `n` characters the router writes.
     async read(n: number): Promise<string> {
       while (text.length < n) {

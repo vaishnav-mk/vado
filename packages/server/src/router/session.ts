@@ -75,14 +75,19 @@ export function client(c: Conn, argv: Uint8Array[]): void {
 }
 
 // After every earlier reply: closing upstreams first would lose them.
+// What RESET clears on the router's side; closing the upstreams drops their WATCHes and names.
+export function resetState(c: Conn): void {
+  c.tx.multi = null;
+  c.tx.clearWatch();
+  c.name = null;
+  c.proto = 2;
+  c.endPassthrough(false);
+  c.pool.closeAll();
+}
+
 export function reset(c: Conn): void {
   c.replies.viaRpc(() => {
-    c.tx.multi = null;
-    c.tx.clearWatch();
-    c.name = null;
-    c.proto = 2;
-    c.endPassthrough(false);
-    c.pool.closeAll();
+    resetState(c);
 
     return RESET;
   });
