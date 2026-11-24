@@ -173,4 +173,7 @@ const [[sa], [sb]] = await Promise.all([call(dbA, [["DBSIZE"]]), call(dbB, [["DB
 
 console.log(JSON.stringify({ seed, rounds, shards, checked, crossSlotRejections, dbsizeA: sa, dbsizeB: sb }));
 
+// Kept when an assert throws above, so a failure can be looked at.
+await Promise.all([dbA, dbB].map((db) => api(`/drop?db=${db}`)));
+
 console.log("differential test passed");
