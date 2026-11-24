@@ -1,61 +1,42 @@
 import type { Server } from "../catalog/types";
 import { decoder, messageOf, noop, sleep, withTimeout } from "../shared";
+import { CAPACITY_MS, CAPACITY_RETRY_MS, COPIES, LISTEN_MS, REUSE_MS, STALL_MS, STOP_MS } from "./config";
 import { containerOf, dial, historyOf, ready, replay } from "./server";
 import { BASE, LOG } from "./store";
 import type { BoxStore } from "./store";
+import type { Started } from "./types";
 
+// A restore sends the stored RDB here before the server starts; /proc/net/tcp shows the port in hex.
 const COPY_PORT = 7000;
-const STALL_MS = 15_000;
-
-// A running server answers at once; one that doesn't (an object died mid-restore) is replaced.
-const REUSE_MS = 10_000;
-
-// A burst of new shards can outrun the instances the platform has ready; it provisions more within a minute or two.
-const CAPACITY_MS = 180_000;
-
-// Some fresh containers drop or stall the copy, or exit on a cut one; another container takes it.
-const COPIES = 3;
+const COPY_LISTENING = `:${COPY_PORT.toString(16).toUpperCase().padStart(4, "0")} 00000000:0000 0A`;
 
 const COPY_FAILED = "copying the stored RDB in";
-
 const EXITED = "the container exited while starting";
 
-// No persistence of its own: the shard's object is its only durable copy, through replication. No keepalive PINGs in
-// the stream (the link's ACKs show it is alive), so an idle server's stream stays empty and a restore can continue it.
 const serverArgs = (maxmemory: string) =>
   [
     "--protected-mode no",
-    '--save ""',
+    '--save ""', // the object's storage is the only copy
     "--appendonly no",
     `--maxmemory ${maxmemory}`,
     "--maxmemory-policy noeviction",
     "--repl-diskless-sync yes",
     "--repl-diskless-sync-delay 0",
-    "--repl-ping-replica-period 3600",
+    "--repl-ping-replica-period 3600", // no keepalives: an idle stream stays empty, so a restore can continue it
     "--repl-backlog-size 64mb",
-    // A full copy of a full shard takes a minute or more: the writes meanwhile mustn't drop the new replica.
-    '--client-output-buffer-limit "replica 512mb 0 0"',
+    '--client-output-buffer-limit "replica 512mb 0 0"', // writes during a long full copy mustn't drop the replica
     "--dir /data",
     "--dbfilename dump.rdb",
   ].join(" ");
 
-// With a stored copy, the container takes it on COPY_PORT before the server starts and loads it.
 const entrypoint = (server: Server, maxmemory: string, copy: boolean) => [
   "sh",
   "-c",
   `${copy ? `nc -d -l ${COPY_PORT} > /data/dump.rdb && ` : ""}exec ${server}-server ${serverArgs(maxmemory)}`,
 ];
 
-export interface Started {
-  exited: Promise<void>; // settles when the container stops
-  reused: boolean; // it was already running: the same server, with its memory
-  history: { replid: string; offset: number } | null; // a restored server's own, after the stored copy
-  restored: { baseMB: number; logMB: number; copyMs: number; loadMs: number; replayMs: number } | null;
-}
-
 const mb = (bytes: number) => Math.round(bytes / 1e5) / 10;
 
-// A container that fails to start, or exits on the way, fails the boot at once instead of at READY_MS.
 export async function startServer(
   ctx: DurableObjectState,
   store: BoxStore,
@@ -64,15 +45,13 @@ export async function startServer(
 ): Promise<Started> {
   const container = containerOf(ctx);
 
-  // Trusted only if its server continues the stored stream (engine.ts): a restore cut short can't.
   if (container.running) {
-    if (
-      await ready(ctx, REUSE_MS).then(
-        () => true,
-        () => false,
-      )
-    )
-      return { exited: container.monitor(), reused: true, history: null, restored: null };
+    const answers = await ready(ctx, REUSE_MS).then(
+      () => true,
+      () => false,
+    );
+
+    if (answers) return { exited: container.monitor(), reused: true, history: null, restored: null };
     await replace(ctx, "not answering");
   }
 
@@ -90,7 +69,7 @@ export async function startServer(
       entrypoint: entrypoint(server, maxmemory, copy),
     });
     const exited = container.monitor();
-    const failed = exited.then(() => Promise.reject(new Error(EXITED)));
+    const failed = exited.then(() => Promise.reject(new Error(EXITED))); // fails the boot at once, not at READY_MS
 
     failed.catch(noop);
 
@@ -105,7 +84,7 @@ export async function startServer(
       console.log(`starting again: ${why}`);
 
       if (again) await replace(ctx, "copy failed");
-      else await sleep(2_000);
+      else await sleep(CAPACITY_RETRY_MS);
     }
   }
 }
@@ -155,25 +134,22 @@ export async function replace(ctx: DurableObjectState, why: string): Promise<voi
   const exited = container.monitor();
 
   await container.destroy(why).catch(noop);
-  await withTimeout(exited, 30_000, "the container to stop").catch(noop);
+  await withTimeout(exited, STOP_MS, "the container to stop").catch(noop);
 }
 
-async function run(container: Container, cmd: string[], ms = 30_000): Promise<void> {
+// TCP, not exec() stdin; a cut copy fails the RDB checksum and the container exits.
+async function copyIn(ctx: DurableObjectState, container: Container, chunks: Iterable<Uint8Array>): Promise<void> {
+  // A copy sent before the port listens never arrives.
+  const wait = ["sh", "-c", `until grep -q '${COPY_LISTENING}' /proc/net/tcp; do sleep 0.01; done`];
+
   const { exitCode, stderr } = await withTimeout(
-    container.exec(cmd, { stdout: "ignore" }).then((p) => p.output()),
-    ms,
-    cmd.join(" "),
+    container.exec(wait, { stdout: "ignore" }).then((p) => p.output()),
+    LISTEN_MS,
+    "the copy port to listen",
   );
 
-  if (exitCode !== 0) throw new Error(`${cmd.join(" ")}: exit ${exitCode}: ${decoder.decode(stderr)}`);
-}
-
-// Over TCP, several times faster than exec() stdin. A cut copy fails the server's RDB checksum, and the container
-// exits.
-async function copyIn(ctx: DurableObjectState, container: Container, chunks: Iterable<Uint8Array>): Promise<void> {
-  // COPY_PORT (0x1B58) in LISTEN state (0A) first: a copy sent before that measured as never arriving.
-  await run(container, ["sh", "-c", "until grep -q ':1B58 00000000:0000 0A' /proc/net/tcp; do sleep 0.01; done"]);
-  const socket = containerOf(ctx).getTcpPort(COPY_PORT).connect(`10.0.0.1:${COPY_PORT}`);
+  if (exitCode !== 0) throw new Error(`waiting for the copy port: exit ${exitCode}: ${decoder.decode(stderr)}`);
+  const socket = dial(ctx, COPY_PORT);
 
   try {
     await withTimeout(socket.opened, STALL_MS, "connecting");

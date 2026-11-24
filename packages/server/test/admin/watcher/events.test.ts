@@ -1,5 +1,6 @@
 import { expect, test } from "vite-plus/test";
-import { EventLog, summarize, type Changes } from "../../../src/admin/watcher/events";
+import { EventLog, summarize } from "../../../src/admin/watcher/events";
+import type { Changes } from "../../../src/admin/watcher/types";
 
 const none: Changes = { restarts: [], replicas: [], rewrites: [] };
 const texts = (changes: Partial<Changes>, shards = 4) => summarize({ ...none, ...changes }, shards).map((e) => e.text);

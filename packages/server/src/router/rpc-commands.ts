@@ -1,5 +1,5 @@
-import { arrayOf, bulk, elements, EMPTY, error, integer, str } from "../protocol/resp";
-import { sameBytes } from "./buffer";
+import { arrayOf, bulk, elements, EMPTY, error, integer, isError, str } from "../protocol/resp";
+import { sameBytes } from "../protocol/bytes";
 import type { Conn } from "./conn";
 import { bulkText, NOT_INTEGER, NULL_BULK, wrongArity } from "./replies-text";
 
@@ -24,7 +24,7 @@ export function scan(c: Conn, argv: Uint8Array[]): void {
   c.replies.viaRpc(async () => {
     const f = await target.shard(shard).runRaw([["SCAN", inner.toString(), ...argv.slice(2).map(str)]]);
 
-    if (f[0] === 45) return f;
+    if (isError(f)) return f;
 
     const [next, keys] = elements(f),
       innerNext = BigInt(bulkText(next)),

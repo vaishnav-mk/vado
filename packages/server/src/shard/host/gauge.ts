@@ -1,3 +1,5 @@
+import { withTimeout } from "../../shared";
+
 export class Gauge {
   count = 0;
   #waiters: (() => void)[] = [];
@@ -17,13 +19,9 @@ export class Gauge {
   }
 }
 
-export async function within(work: Promise<void>, ms: number): Promise<boolean> {
-  let timer: ReturnType<typeof setTimeout> | undefined;
-  const timeout = new Promise<boolean>((resolve) => (timer = setTimeout(() => resolve(false), ms)));
-
-  try {
-    return await Promise.race([work.then(() => true), timeout]);
-  } finally {
-    clearTimeout(timer);
-  }
-}
+// Whether `work` settled within `ms`.
+export const within = (work: Promise<void>, ms: number): Promise<boolean> =>
+  withTimeout(work, ms, "work").then(
+    () => true,
+    () => false,
+  );

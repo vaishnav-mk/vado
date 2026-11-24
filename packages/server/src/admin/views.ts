@@ -1,10 +1,11 @@
 // Browser-safe: the dashboard imports `place`.
 import colos from "../replication/colos.json";
-import { REGION_NAMES } from "../replication/regions";
+import { regionName } from "../replication/regions";
 import type { DatabaseRecord, DatabaseSummary } from "../catalog/types";
 import type { CommandTable } from "../protocol/types";
 import type { Database, Place, ReplicaState } from "./live-types";
-import type { Calls, ShardLook, ShardReading } from "./types";
+import type { Calls, ShardLook, ShardSeen } from "./types";
+import { subField } from "../shard/info";
 
 const COLOS = new Map(
   Object.entries(colos).map(([colo, [city, lat, lon]]) => [
@@ -37,7 +38,7 @@ export function calls(info: Record<string, string>, table: CommandTable): Calls 
     if (!k.startsWith("cmdstat_")) continue;
 
     const flags = table.get(k.slice(8).split("|")[0])?.flags,
-      n = Number(/calls=(\d+)/.exec(v)?.[1] ?? 0);
+      n = subField(v, "calls");
 
     if (flags?.has("write")) writes += n;
     else if (flags?.has("readonly")) reads += n;
@@ -50,7 +51,7 @@ export function calls(info: Record<string, string>, table: CommandTable): Calls 
 const shown = (state: ReplicaState, error: string | null): ReplicaState =>
   state === "idle" && !error ? "copying" : state;
 
-export function shardView(s: ShardLook, i: number, table: CommandTable): ShardReading | { i: number; down: string } {
+export function shardView(s: ShardLook, i: number, table: CommandTable): ShardSeen {
   if ("down" in s) return { i, down: s.down };
 
   const info = s.info,
@@ -65,7 +66,7 @@ export function shardView(s: ShardLook, i: number, table: CommandTable): ShardRe
     isolate: s.isolate,
     ...place(s.colo),
     aliveSeconds: s.aliveSeconds,
-    keys: Number(/keys=(\d+)/.exec(info.db0 ?? "")?.[1] ?? 0),
+    keys: subField(info.db0, "keys"),
     memory: { used: n("used_memory"), max: n("maxmemory"), wasm: s.wasmMemoryBytes },
     calls: calls(info, table),
     clients: n("connected_clients"),
@@ -80,7 +81,7 @@ export function shardView(s: ShardLook, i: number, table: CommandTable): ShardRe
 
       return {
         region: r.region,
-        regionName: REGION_NAMES[r.region] ?? r.region,
+        regionName: regionName(r.region),
         state: shown(r.state, r.error),
         lagMs: r.lagMs,
         behindBytes: r.behindBytes,

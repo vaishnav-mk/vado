@@ -1,36 +1,26 @@
 import { request } from "../protocol/request";
-import { command, concat, elements, frameEnd, lower, num } from "../protocol/resp";
-import { append } from "../router/buffer";
+import { command, concat, elements, frameEnd, lower, num, TYPE } from "../protocol/resp";
+import { append } from "../protocol/bytes";
+import { SUBSCRIBE } from "../router/command-sets";
 import { noop } from "../shared";
+import type { Fence, ProxyBatch } from "./types";
 
 export const ROLE = command(["ROLE"]);
-
-// Resolves once the replication stream up to an offset is stored, whichever link is current by then.
-export type Fence = (offset: number) => Promise<void>;
-
-const SUBSCRIBE = new Set(["subscribe", "psubscribe", "ssubscribe"]);
-
-interface Batch {
-  count: number;
-  fenced: boolean; // ROLE follows the batch
-  raw: boolean; // a subscribe: from here on, replies pass through as they come
-}
 
 // ROLE's reply is ["master", offset, replicas]: the offset after every command before it ran.
 export function roleOffset(frame: Uint8Array): number {
   const offset = elements(frame)[1];
 
-  if (offset?.[0] !== 58) throw new Error("ROLE: the server isn't a primary");
+  if (offset?.[0] !== TYPE.integer) throw new Error("ROLE: the server isn't a primary");
 
   return num(offset, 1, offset.length - 2);
 }
 
-// Replies leave only once the replication stream up to ROLE's offset is stored: a write is acknowledged once it's
-// durable, and no read sees a write that isn't. Inside MULTI nothing has run yet, so EXEC's batch carries the fence.
-export async function proxy(client: Socket, redis: Socket, fence: Fence, greeting: Uint8Array): Promise<void> {
+// Inside MULTI nothing has run yet, so EXEC's batch carries the fence.
+export async function proxy(client: Socket, server: Socket, fence: Fence, greeting: Uint8Array): Promise<void> {
   const toClient = client.writable.getWriter(),
-    toRedis = redis.writable.getWriter(),
-    batches: Batch[] = [];
+    toServer = server.writable.getWriter(),
+    batches: ProxyBatch[] = [];
 
   let inMulti = false,
     raw = false;
@@ -64,13 +54,13 @@ export async function proxy(client: Socket, redis: Socket, fence: Fence, greetin
       const fenced = !raw && !inMulti;
 
       batches.push({ count, fenced, raw });
-      await toRedis.write(fenced ? concat([buf.subarray(0, i), ROLE]) : buf.slice(0, i));
+      await toServer.write(fenced ? concat([buf.subarray(0, i), ROLE]) : buf.slice(0, i));
       buf = buf.slice(i);
     }
   };
 
   const replies = async () => {
-    const reader = redis.readable.getReader();
+    const reader = server.readable.getReader();
 
     let buf: Uint8Array = new Uint8Array(0),
       got: Uint8Array[] = [];
@@ -119,6 +109,6 @@ export async function proxy(client: Socket, redis: Socket, fence: Fence, greetin
     // closing both tells the router the pending commands are lost
   } finally {
     client.close().catch(noop);
-    redis.close().catch(noop);
+    server.close().catch(noop);
   }
 }

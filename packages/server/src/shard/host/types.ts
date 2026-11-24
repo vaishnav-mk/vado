@@ -1,4 +1,5 @@
 import type { VfsStats } from "../vfs/types";
+import type { FrameResume } from "../../protocol/types";
 
 export type TagConstructor = new (type: { parameters: string[] }) => WebAssembly.ImportValue;
 
@@ -24,14 +25,10 @@ export type RewriteJob = () => Promise<boolean>;
 
 export type RewriteHook = (tmp: string, rdb: boolean) => RewriteJob | null;
 
-export type Protocol = 2 | 3;
-
 export interface SocketWriter {
   write(bytes: Uint8Array): Promise<void>;
   close(): Promise<void>;
 }
-
-export type ByteSocket = Pick<Socket, "readable" | "writable">;
 
 export interface HostSocket {
   fd: number;
@@ -54,7 +51,7 @@ export interface PooledClient {
   pos: number; // end of the last complete reply
   frames: number;
   want: number;
-  resume: { k: number; rel: number }; // frameEnd's progress through an aggregate that arrives in pieces
+  resume: Required<FrameResume>; // frameEnd's progress through an aggregate that arrives in pieces
 }
 
 export interface DrainReport {

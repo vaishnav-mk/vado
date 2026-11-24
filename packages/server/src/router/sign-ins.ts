@@ -2,10 +2,9 @@
 // and decided by the AUTH_LIMIT rate limiter, which every failure calls.
 import type { SignIns, Where } from "./types";
 import { noop } from "../shared";
+import { BLOCK_MS, MAX_BLOCKED } from "./config";
 
 const blockedUntil = new Map<string, number>();
-const BLOCK_MS = 60_000;
-const MAX_BLOCKED = 10_000;
 
 export function ipOf(addr: string | null | undefined): string | null {
   if (!addr) return null;

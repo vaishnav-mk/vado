@@ -2,7 +2,7 @@ import { DurableObject } from "cloudflare:workers";
 import { and, asc, eq, isNull, sql } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/durable-sqlite";
 import { SLOTS } from "../protocol/slots";
-import { HINTS } from "../replication/regions";
+import { HINT_NAMES, HINTS } from "../replication/regions";
 import { SHARD_CLASSES } from "../shard/host/config";
 import { epochAt, parseEpochs } from "./epochs";
 import { migrate } from "../migrate";
@@ -59,7 +59,7 @@ export class Catalog extends DurableObject<Env> {
     if (!Number.isSafeInteger(count) || count < 1 || count > SLOTS) throw new Error("shards must be 1..16384");
 
     if (!hintList(regions) || !hintList(replicas))
-      throw new Error(`regions and replicas must be lists of ${[...HINTS].join(", ")}`);
+      throw new Error(`regions and replicas must be lists of ${HINT_NAMES}`);
 
     if (!Number.isSafeInteger(classes) || classes < 1 || classes > SHARD_CLASSES)
       throw new Error(`classes must be 1..${SHARD_CLASSES}`);

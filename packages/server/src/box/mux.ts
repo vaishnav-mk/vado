@@ -1,25 +1,19 @@
 import { concat, HELLO3 } from "../protocol/resp";
+import type { Protocol } from "../protocol/types";
 import { readFrames } from "../router/frames";
+import { noop } from "../shared";
 import { ROLE, roleOffset } from "./proxy";
-import type { Fence } from "./proxy";
+import type { Fence, MuxBatch } from "./types";
 
-interface Batch {
-  count: number;
-  frames: Uint8Array[];
-  resolve: (replies: Uint8Array) => void;
-  reject: (e: Error) => void;
-}
-
-// One server connection shared by every RPC batch of a protocol. Batches pipeline: they're written in call order and
-// answered in that order. Each carries its own ROLE fence, so a slow fence holds back only its own caller.
+// Each batch carries its own ROLE fence, so a slow fence holds back only its caller.
 export class Mux {
   broken: Error | null = null;
   readonly #writer: WritableStreamDefaultWriter<Uint8Array>;
   readonly #fence: Fence;
-  #batches: Batch[] = [];
+  #batches: MuxBatch[] = [];
   #skip: number; // HELLO's reply
 
-  constructor(socket: Socket, fence: Fence, proto: 2 | 3) {
+  constructor(socket: Socket, fence: Fence, proto: Protocol) {
     this.#writer = socket.writable.getWriter();
     this.#fence = fence;
     this.#skip = proto === 3 ? 1 : 0;
@@ -62,7 +56,7 @@ export class Mux {
 
   close(): void {
     this.#fail(new Error("closed"));
-    this.#writer.close().catch(() => null);
+    this.#writer.close().catch(noop);
   }
 
   #fail(e: Error): void {

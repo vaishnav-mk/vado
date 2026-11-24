@@ -2,21 +2,24 @@ import { useState, type FormEvent } from "react";
 import { Button, Dialog, Input, Select, Text } from "@cloudflare/kumo";
 import { PlusIcon } from "@phosphor-icons/react";
 import { useNavigate, useRouter } from "@tanstack/react-router";
-import { isNative } from "@vado/server/catalog/flavours.ts";
-import { DB_NAME_RULE } from "@vado/server/catalog/names.ts";
-import type { Flavour } from "@vado/server/catalog/types.ts";
+import { isNative, VERSIONS } from "@vado/server/catalog/flavours.ts";
+import { DB_NAME_RULE, SHARD_COUNTS } from "@vado/server/catalog/names.ts";
+import type { Flavour, Server } from "@vado/server/catalog/types.ts";
 import { Guard } from "./Guard";
 import { createDatabase } from "../server/admin";
 import { useAction } from "../lib/hooks";
 import type { Options } from "../lib/types";
+import { plural } from "../lib/format";
 
-const SHARDS = { 1: "1 shard", 4: "4 shards", 16: "16 shards", 64: "64 shards" };
+const SHARDS = Object.fromEntries(SHARD_COUNTS.map((n) => [n, plural(n, "shard")]));
+
+const minor = (s: Server) => VERSIONS[s].split(".").slice(0, 2).join(".");
 
 const RUNS: Record<Flavour, string> = {
-  valkey: "Valkey 9.1 in WebAssembly",
-  "valkey-native": "Valkey 9.1 in a container",
-  redis: "Redis 8.12 in WebAssembly",
-  "redis-native": "Redis 8.12 in a container",
+  valkey: `Valkey ${minor("valkey")} in WebAssembly`,
+  "valkey-native": `Valkey ${minor("valkey")} in a container`,
+  redis: `Redis ${minor("redis")} in WebAssembly`,
+  "redis-native": `Redis ${minor("redis")} in a container`,
 };
 
 // One field alone fills the row; two share it equally.
@@ -25,7 +28,7 @@ const ROW = "grid gap-5 sm:auto-cols-fr sm:grid-flow-col sm:gap-4";
 export function NewDatabase({ options: { regions, flavours } }: { options: Options }) {
   const [open, setOpen] = useState(false),
     [name, setName] = useState(""),
-    [shards, setShards] = useState("4"),
+    [shards, setShards] = useState<(typeof SHARD_COUNTS)[number]>(4),
     [flavour, setFlavour] = useState<Flavour>("valkey");
 
   const [place, setPlace] = useState(() => (regions.weur ? "weur" : (Object.keys(regions)[0] ?? "world"))),
@@ -46,7 +49,7 @@ export function NewDatabase({ options: { regions, flavours } }: { options: Optio
     e.preventDefault();
     void run(async () => {
       const db = await createDatabase({
-        data: { name: n, shards: Number(shards), place, replicas: !native && copies === "yes", flavour },
+        data: { name: n, shards, place, replicas: !native && copies === "yes", flavour },
       });
 
       setOpen(false);
@@ -116,8 +119,12 @@ export function NewDatabase({ options: { regions, flavours } }: { options: Optio
             <Select
               label="Shards"
               className="w-full"
-              value={shards}
-              onValueChange={(v) => v && setShards(v)}
+              value={String(shards)}
+              onValueChange={(v) => {
+                const picked = SHARD_COUNTS.find((c) => String(c) === v);
+
+                if (picked) setShards(picked);
+              }}
               items={SHARDS}
               description="Slots spread evenly over them"
             />

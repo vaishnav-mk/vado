@@ -1,7 +1,7 @@
 import { decode } from "./decode";
 import { command, concat, frameEnd } from "./resp";
-import type { CommandArg, Reply, RespSocket } from "./types";
-import { noop } from "../shared";
+import type { CommandArg, Reply, ByteSocket } from "./types";
+import { noop, withTimeout } from "../shared";
 
 type Parse<T> = (frame: Uint8Array) => [T, number];
 
@@ -11,7 +11,7 @@ export class RespClient {
   #buf: Uint8Array = new Uint8Array(0);
   #stallMs: number;
 
-  constructor(socket: RespSocket, stallMs = 30_000) {
+  constructor(socket: ByteSocket, stallMs = 30_000) {
     this.#writer = socket.writable.getWriter();
     this.#reader = socket.readable.getReader();
     this.#stallMs = stallMs;
@@ -63,20 +63,7 @@ export class RespClient {
     this.#writer.close().catch(noop);
   }
 
-  async #next(waitingFor: string): Promise<ReadableStreamReadResult<Uint8Array>> {
-    let timer: ReturnType<typeof setTimeout> | undefined;
-
-    const stall = new Promise<never>((_, reject) => {
-      timer = setTimeout(
-        () => reject(new Error(`stalled ${this.#stallMs / 1000}s waiting for ${waitingFor}`)),
-        this.#stallMs,
-      );
-    });
-
-    try {
-      return await Promise.race([this.#reader.read(), stall]);
-    } finally {
-      clearTimeout(timer);
-    }
+  #next(waitingFor: string): Promise<ReadableStreamReadResult<Uint8Array>> {
+    return withTimeout(this.#reader.read(), this.#stallMs, `waiting for ${waitingFor}`);
   }
 }

@@ -1,13 +1,8 @@
 import type { DatabaseRecord } from "../catalog/types";
-import type { CommandTable } from "../protocol/types";
-import type { ValkeyShard } from "../shard/shard";
+import type { CommandTable, Protocol } from "../protocol/types";
+import type { Shard } from "../shard/types";
 
-export type ShardStub = DurableObjectStub<ValkeyShard>;
-
-export interface ClientSocket {
-  readable: ReadableStream<Uint8Array>;
-  writable: WritableStream<Uint8Array>;
-}
+export type ShardStub = DurableObjectStub<Shard>;
 
 export type Via = "tcp" | "ws" | "binding";
 
@@ -39,7 +34,7 @@ export interface Upstream {
 export interface UpstreamOwner {
   readonly now: number;
   readonly dial: string;
-  readonly proto: 2 | 3;
+  readonly proto: Protocol;
   stubOf(key: UpKey): ShardStub;
   setup(): Uint8Array[];
   wake(): void;
@@ -92,4 +87,21 @@ export interface Multi {
 export interface RouterView {
   readonly commands: number;
   readonly db: DatabaseRecord;
+}
+
+export interface LiveConn {
+  id: string;
+  db: string;
+  via: Via;
+  where: Where | null;
+  since: number;
+  router: RouterView | null;
+}
+
+export interface Live {
+  colo: string | null;
+  coloTried: number;
+  conns: Map<string, LiveConn>;
+  flushed: number;
+  done: Record<string, number>;
 }

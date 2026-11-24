@@ -1,5 +1,6 @@
 // Old and new code must agree on each of these across a deploy.
 import type { Hint } from "../catalog/types";
+import type { Namespace } from "./types";
 
 export const SHARD_BINDINGS = [
   "SHARD",
@@ -27,12 +28,6 @@ export const replicaName = (primary: string, region: string): string => `${prima
 export const isReplicaName = (name: string): boolean => /\.r\.[a-z-]+$/.test(name);
 
 export const replicaBinding = (k: number): ShardBinding => SHARD_BINDINGS[8 + k];
-
-export const replicaDial = (deployedAt: number): string => `repl-${deployedAt}:6379`;
-
-interface Namespace<Stub> {
-  getByName(name: string, options: { locationHint: Hint }): Stub;
-}
 
 export const replicaOf = <Stub>(namespace: Namespace<Stub>, primary: string, region: Hint): Stub =>
   namespace.getByName(replicaName(primary, region), { locationHint: region });

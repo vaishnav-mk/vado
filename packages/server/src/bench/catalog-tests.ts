@@ -2,7 +2,7 @@ import * as v from "valibot";
 import { catalogStub, database, forget, lookup, parseFlavour } from "../catalog/databases";
 import { configureReplicas, replicaStub, shardStub } from "../catalog/placement";
 import { shardSnapshots } from "../admin/snapshot";
-import { HINTS, isHint, WORLD } from "../replication/regions";
+import { HINT_NAMES, isHint, WORLD } from "../replication/regions";
 import { UNSUPPORTED } from "../router/command-sets";
 import { hashSecret } from "../router/secrets";
 import type { Hint } from "../catalog/types";
@@ -13,7 +13,7 @@ import { allShards, dbName, open } from "./util";
 function hints(v: string): Hint[] {
   const out = v === "world" ? WORLD : v.split(",");
 
-  if (!out.every(isHint)) throw new Error(`regions and replicas must be lists of ${[...HINTS].join(", ")}`);
+  if (!out.every(isHint)) throw new Error(`regions and replicas must be lists of ${HINT_NAMES}`);
 
   return out;
 }
@@ -86,7 +86,7 @@ const abort: Test = async (env, q) => {
   const idx = which === "all" ? Array.from({ length: db.shards }, (_, i) => i) : [Number(which)];
   const replica = q.get("replica");
 
-  if (replica !== null && !isHint(replica)) throw new Error(`replica must be one of ${[...HINTS].join(", ")}`);
+  if (replica !== null && !isHint(replica)) throw new Error(`replica must be one of ${HINT_NAMES}`);
   await Promise.all(
     // On a native Redis shard, reason=kill also destroys the container and reason=container only that.
     idx.map((i) =>
@@ -103,7 +103,7 @@ const abort: Test = async (env, q) => {
 const replicate: Test = async (env, q) => {
   const v = q.get("regions") ?? "";
   const regions = v === "none" ? [] : hints(v);
-  await allShards(env, dbName(q), (s) => s.replicate(regions));
+  await configureReplicas(env, { ...(await database(env, dbName(q))), replicas: regions });
 
   return { regions };
 };
@@ -125,7 +125,7 @@ const stats: Test = async (env, q) => ({
 const send: Test = async (env, q) => {
   const hint = q.get("region") ?? "";
 
-  if (!isHint(hint)) throw new Error(`region must be one of ${[...HINTS].join(", ")}`);
+  if (!isHint(hint)) throw new Error(`region must be one of ${HINT_NAMES}`);
   const params = Object.fromEntries(q);
   delete params.region;
   delete params.sender;

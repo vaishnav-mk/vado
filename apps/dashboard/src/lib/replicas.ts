@@ -1,5 +1,6 @@
 import { plural } from "./format";
 import type { Replica, Shard } from "./types";
+import { REPL_IDLE_MS } from "@vado/server/replication/config.ts";
 
 export interface ReplicaCounts {
   total: number;
@@ -46,5 +47,4 @@ export function replicaLine(c: ReplicaCounts) {
 
 export const replicaReads = (replicas: Replica[]) => replicas.reduce((a, r) => a + (r.reads ?? 0), 0);
 
-export const SLEEP_NOTE =
-  "A shard's replicas sleep after 10 minutes without traffic to that shard, and its next read or write wakes them in a few seconds.";
+export const SLEEP_NOTE = `A shard's replicas sleep after ${plural(REPL_IDLE_MS / 60_000, "minute")} without traffic to that shard, and its next read or write wakes them in a few seconds.`;

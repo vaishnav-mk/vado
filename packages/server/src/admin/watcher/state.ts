@@ -1,23 +1,7 @@
 import { RESTARTING_MS } from "../config";
-import type { Database, Entry, Health, LiveState, Place, Point, Shard, TestView } from "../live-types";
-
-export type ProbeSample = { readMs: number; writeMs: number | null } | { failed: true };
-
-export interface Reading {
-  at: number;
-  error: string | null;
-  db: Database | null;
-  watcher: Place | null;
-  shards: Shard[];
-  entries: Entry[];
-  probes: ProbeSample[];
-  probeAt: { shard: number; replica: string | null } | null;
-  writes: boolean;
-  test: TestView | null;
-}
-
-export const median = (xs: number[]): number | null =>
-  xs.length ? [...xs].sort((a, b) => a - b)[xs.length >> 1] : null;
+import type { Health, LiveState, Point } from "../live-types";
+import { percentile } from "../../shared";
+import type { Reading } from "./types";
 
 export function keep<T>(xs: T[], x: T, n: number): T[] {
   xs.push(x);
@@ -77,8 +61,14 @@ export function buildState(r: Reading): LiveState {
       replicaLagMs: Math.max(0, ...ready.map((x) => x.lagMs ?? 0)),
     },
     probe: {
-      readMs: median(measured.map((p) => p.readMs)),
-      writeMs: median(measured.flatMap((p) => (p.writeMs === null ? [] : [p.writeMs]))),
+      readMs: percentile(
+        measured.map((p) => p.readMs),
+        0.5,
+      ),
+      writeMs: percentile(
+        measured.flatMap((p) => (p.writeMs === null ? [] : [p.writeMs])),
+        0.5,
+      ),
       writes: r.writes,
       failed: r.probes.length - measured.length,
       shard: at?.shard ?? null,

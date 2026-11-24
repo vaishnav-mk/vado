@@ -1,6 +1,5 @@
 import { DurabilityAlarms } from "durability";
 import type { DurabilityScheduler } from "durability";
-import { replicaDial } from "../replication/names";
 import { Replicator } from "../replication/replicator";
 import type { ReplicaNamespace } from "../replication/types";
 import { AOF_CHECK_MS } from "./config";
@@ -8,6 +7,7 @@ import type { ValkeyHost } from "./host/valkey-host";
 import { Rewrites } from "./rewrites";
 import type { ValkeyRewriter } from "./rewriter/rewriter";
 import type { Upgrader } from "./upgrade";
+import { dialAddress } from "./version";
 
 type ShardAlarms = DurabilityAlarms<"rewriteCheck" | "replicaTick" | "upgrade">;
 
@@ -43,7 +43,7 @@ export class PrimaryRole {
     this.repl = new Replicator(ctx.storage, host, {
       name: ctx.id.name ?? "",
       replicas,
-      dial: replicaDial(deployed),
+      dial: dialAddress("repl", deployed),
       // Not inside the wasm call that appended: the schedule is a storage transaction.
       schedule: (at: number) =>
         queueMicrotask(() => {

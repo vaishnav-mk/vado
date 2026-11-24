@@ -1,9 +1,9 @@
 import type { RespClient } from "../protocol/resp-client";
 import type { Reply } from "../protocol/types";
 import { connectLocal } from "../router/local";
-import { failure, messageOf } from "../shared";
+import { failure, messageOf, percentile } from "../shared";
 import type { Test } from "./types";
-import { dbName, num, open, pct } from "./util";
+import { dbName, num, open } from "./util";
 
 const throughput: Test = async (env, q) => {
   const n = num(q, "n", 100000),
@@ -67,7 +67,7 @@ const latency: Test = async (env, q) => {
 
   c.close();
 
-  return { firstMs: first, n, p50: pct(xs, 0.5), p99: pct(xs, 0.99), max: Math.max(...xs) };
+  return { firstMs: first, n, p50: percentile(xs, 0.5), p99: percentile(xs, 0.99), max: Math.max(...xs) };
 };
 
 const fill: Test = async (env, q) => {

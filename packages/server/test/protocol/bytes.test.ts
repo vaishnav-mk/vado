@@ -1,5 +1,5 @@
 import { expect, test } from "vite-plus/test";
-import { append, sameBytes } from "../../src/router/buffer";
+import { append, sameBytes } from "../../src/protocol/bytes";
 
 const enc = new TextEncoder();
 

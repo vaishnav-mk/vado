@@ -2,8 +2,9 @@ import { CLIENT_HIGH_WATER, SHARD_HIGH_WATER } from "./config";
 import { type Gauge, within } from "./gauge";
 import type { Loop } from "./loop";
 import type { Sockets } from "./sockets";
-import type { ByteSocket, DrainReport, HostSocket, InputSink } from "./types";
+import type { DrainReport, HostSocket, InputSink } from "./types";
 import { encoder, noop } from "../../shared";
+import type { ByteSocket } from "../../protocol/types";
 
 // A quiet socket's leftover input is dropped at its end: old commands must not run after the next copy's FLUSHALL.
 export async function serve(

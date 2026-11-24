@@ -2,7 +2,7 @@ import { useEffect, useRef } from "react";
 import { Badge, LayerCard, Meter, RefreshButton, Table, Text, Tooltip } from "@cloudflare/kumo";
 import { Guard } from "./Guard";
 import { restartShard } from "../server/admin";
-import { bytes, bytesOf, duration, ms, num } from "../lib/format";
+import { bytes, bytesOf, duration, ms, num, share } from "../lib/format";
 import { replicaReads } from "../lib/replicas";
 import { replicaWords } from "../lib/colors";
 import { RESTARTING_MS } from "../lib/config";
@@ -159,7 +159,7 @@ export function ShardTable({
                     {s.ok && (
                       <Meter
                         label={bytesOf(s.memory?.used, s.memory?.max)}
-                        value={s.memory?.max ? Math.min(100, (100 * s.memory.used) / s.memory.max) : 0}
+                        value={share(s.memory?.used ?? 0, s.memory?.max) ?? 0}
                         showValue={false}
                       />
                     )}

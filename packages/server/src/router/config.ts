@@ -46,3 +46,13 @@ export const WS_MAX_QUEUED = 16 << 20;
 
 // With "vado-acks", the router stops sending while this much is unacknowledged.
 export const WS_UNACKED = 8 << 20;
+
+// How long a failed sign-in blocks its address, and how many addresses one isolate remembers.
+export const BLOCK_MS = 60_000;
+
+export const MAX_BLOCKED = 10_000;
+
+export const COLO_RETRY_MS = 10_000;
+
+// A socket whose write failed is dead unless its read side ends by then (it may still hold a restart marker).
+export const WRITE_FAILED_MS = 2_000;

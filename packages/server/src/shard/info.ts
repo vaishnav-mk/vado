@@ -9,3 +9,10 @@ export function infoFields(text: string) {
 
   return fields;
 }
+
+// One number from a value like "keys=3,expires=0" or "calls=12,usec=40".
+export function subField(value: string | undefined, name: string): number {
+  const pair = value?.split(",").find((p) => p.startsWith(`${name}=`));
+
+  return Number(pair?.slice(name.length + 1) ?? 0);
+}

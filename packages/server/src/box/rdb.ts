@@ -1,15 +1,14 @@
 import { concat } from "../protocol/resp";
+import { sameBytes } from "../protocol/bytes";
 import { encoder } from "../shared";
 import { BASE } from "./store";
 import type { BoxStore } from "./store";
-
-const CHUNK = 1 << 20;
+import { RDB_CHUNK } from "./config";
 
 const EOF_MARK = 40;
 
-// Stores an RDB transfer as generation `gen`'s base: "$<len>" or, diskless, "$EOF:<40 bytes>" with the same 40 bytes
-// after the payload. `buf` holds bytes already read; returns those read past the end. After a diskless copy the server
-// sends nothing until this replica's first ACK, so its mark ends a read.
+// "$<len>", or diskless "$EOF:<mark>" ending in the mark. After a diskless copy the server sends nothing until this
+// replica's first ACK, so the mark ends a read. Returns the bytes read past the end.
 export async function storeRdb(
   store: BoxStore,
   gen: number,
@@ -28,8 +27,8 @@ export async function storeRdb(
   const flush = (keep: number) => {
     const all = concat(pending);
 
-    for (let i = 0; i + keep < all.length; i += CHUNK)
-      store.append(gen, BASE, all.slice(i, Math.min(i + CHUNK, all.length - keep)));
+    for (let i = 0; i + keep < all.length; i += RDB_CHUNK)
+      store.append(gen, BASE, all.slice(i, Math.min(i + RDB_CHUNK, all.length - keep)));
     pending = keep ? [all.slice(all.length - keep)] : [];
     size = keep ? Math.min(keep, all.length) : 0;
   };
@@ -46,7 +45,7 @@ export async function storeRdb(
     if (mark) {
       tail = concat([tail, part.subarray(0, take)]).subarray(-EOF_MARK);
 
-      if (tail.length === EOF_MARK && tail.every((b, i) => b === mark[i])) {
+      if (sameBytes(tail, mark)) {
         flush(EOF_MARK);
         await committed;
 
@@ -54,10 +53,9 @@ export async function storeRdb(
       }
     }
 
-    if (size >= CHUNK + EOF_MARK) {
+    if (size >= RDB_CHUNK + EOF_MARK) {
       flush(mark ? EOF_MARK : 0);
-      // Uncommitted writes are held in this object's memory, and replies wait behind them: read on only once the
-      // window before is durable, so at most two windows are ever pending.
+      // Read on only once the window before is durable: at most two sit unstored.
       await committed;
       committed = store.sync();
     }

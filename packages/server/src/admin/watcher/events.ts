@@ -1,41 +1,9 @@
-import { REGION_NAMES } from "../../replication/regions";
+import { regionName } from "../../replication/regions";
 import { EVENT_REPEAT_MS, EVENTS_KEPT } from "../config";
-import type { EventKind, EventLevel, LiveEvent } from "../live-types";
-
-export interface EventInput {
-  level: EventLevel;
-  kind: EventKind;
-  text: string;
-  shard?: number;
-  region?: string;
-}
-
-export interface Restart {
-  i: number;
-  deploy: boolean;
-  backMs: number | null;
-}
-
-export interface ReplicaChange {
-  i: number;
-  region: string;
-  from: string;
-  to: string;
-  error: string | null;
-}
-
-export interface Rewrite {
-  i: number;
-  ms: number;
-  bytes: number | null;
-  error: string | null;
-}
-
-export interface Changes {
-  restarts: Restart[];
-  replicas: ReplicaChange[];
-  rewrites: Rewrite[];
-}
+import type { EventLevel, LiveEvent } from "../live-types";
+import { bytes, ms, plural } from "../../format";
+import { REPL_IDLE_MS } from "../../replication/config";
+import type { EventInput, Restart, ReplicaChange, Rewrite, Changes } from "./types";
 
 export class EventLog {
   readonly events: LiveEvent[] = [];
@@ -69,13 +37,6 @@ export class EventLog {
   }
 }
 
-const plural = (n: number, word: string) => `${n.toLocaleString()} ${word}${n === 1 ? "" : "s"}`;
-
-const size = (b: number) =>
-  b < 2 ** 20 ? `${Math.max(1, Math.round(b / 1024))} KB` : `${(b / 2 ** 20).toFixed(1)} MB`;
-
-const seconds = (ms: number) => `${(ms / 1000).toFixed(1)} s`;
-
 function restarts(all: Restart[], shardCount: number): EventInput[] {
   const deploys = all.filter((r) => r.deploy);
   const out: EventInput[] = [];
@@ -95,8 +56,7 @@ function restarts(all: Restart[], shardCount: number): EventInput[] {
       out.push({
         level: "warning",
         kind: "restart",
-        text:
-          r.backMs === null ? `Shard ${r.i} restarted` : `Shard ${r.i} restarted and was back in ${seconds(r.backMs)}`,
+        text: r.backMs === null ? `Shard ${r.i} restarted` : `Shard ${r.i} restarted and was back in ${ms(r.backMs)}`,
         shard: r.i,
       });
 
@@ -121,20 +81,20 @@ function rewrites(all: Rewrite[]): EventInput[] {
     out.push({
       level: "success",
       kind: "rewrite",
-      text: `Shard ${r.i} compacted its log in ${seconds(r.ms)}${r.bytes ? `, to ${size(r.bytes)}` : ""}`,
+      text: `Shard ${r.i} compacted its log in ${ms(r.ms)}${r.bytes ? `, to ${bytes(r.bytes)}` : ""}`,
       shard: r.i,
     });
   } else if (done.length)
     out.push({
       level: "success",
       kind: "rewrite",
-      text: `${plural(done.length, "shard")} compacted their logs, the slowest in ${seconds(Math.max(...done.map((r) => r.ms)))}`,
+      text: `${plural(done.length, "shard")} compacted their logs, the slowest in ${ms(Math.max(...done.map((r) => r.ms)))}`,
     });
 
   return out;
 }
 
-const replicaOf = (r: ReplicaChange) => `The replica of shard ${r.i} in ${REGION_NAMES[r.region] ?? r.region}`;
+const replicaOf = (r: ReplicaChange) => `The replica of shard ${r.i} in ${regionName(r.region)}`;
 
 const REPLICA_GROUPS: {
   pick: (r: ReplicaChange) => boolean;
@@ -145,8 +105,8 @@ const REPLICA_GROUPS: {
   {
     pick: (r) => r.to === "asleep",
     level: "info",
-    many: (n) => `${plural(n, "replica")} went to sleep: no traffic for 10 minutes`,
-    one: (r) => `${replicaOf(r)} went to sleep: no traffic for 10 minutes`,
+    many: (n) => `${plural(n, "replica")} went to sleep: no traffic for ${plural(REPL_IDLE_MS / 60_000, "minute")}`,
+    one: (r) => `${replicaOf(r)} went to sleep: no traffic for ${plural(REPL_IDLE_MS / 60_000, "minute")}`,
   },
   {
     pick: (r) => r.to === "copying" && r.from === "asleep",

@@ -1,4 +1,4 @@
-import { isHint, REGION_NAMES, WORLD } from "@vado/server/replication/regions.ts";
+import { isHint, regionName, WORLD } from "@vado/server/replication/regions.ts";
 import { replicaReads } from "../../lib/replicas";
 import type { LiveState, Replica } from "../../lib/types";
 import type { Row } from "./types";
@@ -31,7 +31,7 @@ export function rows(state: LiveState | null): Row[] {
 
     return {
       region,
-      name: here[0]?.regionName || REGION_NAMES[region] || region,
+      name: here[0]?.regionName || regionName(region),
       city,
       cells,
       lag: ready.length ? Math.max(...ready.map((r) => r.lagMs ?? 0)) : null,

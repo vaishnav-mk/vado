@@ -167,4 +167,9 @@ const latin1: (thisArg: null, codes: Uint8Array) => string = Function.prototype.
 export const lower = (b: Uint8Array): string => (b.length <= 64 ? latin1(null, b) : decoder.decode(b)).toLowerCase();
 
 export const EMPTY = new Uint8Array(0);
+
+// The first byte of a frame.
+export const TYPE = { simple: 43, error: 45, integer: 58, bulk: 36, push: 62 } as const;
+
+export const isError = (frame: Uint8Array): boolean => frame[0] === TYPE.error;
 export const HELLO3 = command(["HELLO", "3"]);

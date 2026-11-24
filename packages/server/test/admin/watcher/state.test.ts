@@ -1,15 +1,21 @@
 import { expect, test } from "vite-plus/test";
 import type { Replica, ShardUp } from "../../../src/admin/live-types";
-import { buildState, keep, median, point, rate, type Reading } from "../../../src/admin/watcher/state";
+import { buildState, keep, point, rate } from "../../../src/admin/watcher/state";
+import type { Reading } from "../../../src/admin/watcher/types";
+import { percentile } from "../../../src/shared";
 
 test("keep holds the last n", () => {
   const xs = [1, 2, 3];
   expect(keep(xs, 4, 3)).toEqual([2, 3, 4]);
 });
 
-test("median of nothing is null", () => {
-  expect(median([])).toBe(null);
-  expect(median([5, 1, 3])).toBe(3);
+test("a percentile of nothing is null, and the input stays unsorted", () => {
+  const xs = [5, 1, 3];
+
+  expect(percentile([], 0.5)).toBe(null);
+  expect(percentile(xs, 0.5)).toBe(3);
+  expect(percentile(xs, 0.99)).toBe(5);
+  expect(xs).toEqual([5, 1, 3]);
 });
 
 test("rate is per second between the oldest and newest point, never negative", () => {

@@ -4,6 +4,7 @@ import type { ShardBinding } from "../replication/names";
 import { isHint, REGION_OF } from "../replication/regions";
 import type { ReplicaNamespace } from "../replication/types";
 import type { ValkeyShard } from "../shard/shard";
+import type { Shard } from "../shard/types";
 import type { DatabaseRecord, Hint, ShardIndex } from "./types";
 
 type Placed = Pick<DatabaseRecord, "name" | "created" | "flavour" | "classes" | "regions">;
@@ -28,19 +29,22 @@ const shardObject = (
   options: DurableObjectNamespaceGetDurableObjectOptions,
 ): DurableObjectStub<ValkeyShard> => env[binding].getByName(name, options);
 
-const boxObject = (env: Env, name: string, options: DurableObjectNamespaceGetDurableObjectOptions) =>
-  // SAFETY: RedisBox (either native server) has ValkeyShard's public methods, wasm-only ones throwing, except run();
-  // callers use runRaw.
-  (env.REDIS_BOX as DurableObjectNamespace<ValkeyShard>).getByName(name, options);
-
 const hintOf = (env: Env, db: Placed, i: ShardIndex) =>
   objectOptions(env, i !== "pubsub" && db.regions ? db.regions[i % db.regions.length] : env.LOCATION_HINT);
 
 // A native database's pub/sub runs on shard 0's server: a container of its own would idle at full price.
-export const shardStub = (env: Env, db: Placed, i: ShardIndex) =>
-  isNative(db.flavour)
-    ? boxObject(env, shardName(db, i === "pubsub" ? 0 : i), hintOf(env, db, i === "pubsub" ? 0 : i))
-    : shardObject(env, SHARD_BINDINGS[classOf(db, i)], shardName(db, i), hintOf(env, db, i));
+export function shardStub(env: Env, db: Placed, i: ShardIndex): DurableObjectStub<Shard> {
+  if (!isNative(db.flavour)) return wasmShardStub(env, db, i);
+  const at = i === "pubsub" ? 0 : i;
+
+  return env.REDIS_BOX.getByName(shardName(db, at), hintOf(env, db, at));
+}
+
+export function wasmShardStub(env: Env, db: Placed, i: ShardIndex): DurableObjectStub<ValkeyShard> {
+  if (isNative(db.flavour)) throw new Error("databases in containers have no read replicas or wasm probes yet");
+
+  return shardObject(env, SHARD_BINDINGS[classOf(db, i)], shardName(db, i), hintOf(env, db, i));
+}
 
 export const replicaStub = (env: Env, db: Placed, i: ShardIndex, region: Hint) =>
   shardObject(env, replicaBinding(classOf(db, i)), replicaName(shardName(db, i), region), { locationHint: region });
@@ -73,4 +77,4 @@ export function replicaRegion(db: Pick<DatabaseRecord, "replicas">, colo: string
 }
 
 export const configureReplicas = (env: Env, db: Placed & Pick<DatabaseRecord, "shards" | "replicas">) =>
-  Promise.all(Array.from({ length: db.shards }, (_, i) => shardStub(env, db, i).replicate(db.replicas ?? [])));
+  Promise.all(Array.from({ length: db.shards }, (_, i) => wasmShardStub(env, db, i).replicate(db.replicas ?? [])));

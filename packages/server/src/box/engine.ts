@@ -1,53 +1,36 @@
-import type { RewriteLog } from "../shard/types";
 import type { Server } from "../catalog/types";
+import type { Protocol } from "../protocol/types";
+import type { RewriteLog } from "../shard/types";
 import { messageOf, noop, sleep, withTimeout } from "../shared";
-import { LINK_MS, linkFor, openLink } from "./attach";
+import { linkFor, openLink } from "./attach";
+import { COMPACT_MIN, FENCE_MS, FOLD_MS, IDLE_MS, LINK_MS, PRUNE_BYTES, PRUNE_GAP_MS, SPARES, TICK_MS } from "./config";
 import { replace, startServer } from "./container";
-import { containerOf, dial } from "./server";
-import { CANT_CONTINUE, FENCE_MS } from "./link";
-import type { ReplicaLink } from "./link";
+import { CANT_CONTINUE } from "./link";
+import type { StreamLink } from "./link";
 import { Mux } from "./mux";
-import type { Fence } from "./proxy";
+import { containerOf, dial } from "./server";
 import { BASE, LOG } from "./store";
 import type { BoxStore } from "./store";
+import type { Fence } from "./types";
 
-const TICK_MS = 10_000;
-
-// With no client this long, the shard folds its stream into a fresh base and stops the container, which costs money
-// while it runs. The platform stops it too, a little later, if the object was evicted first.
-const IDLE_MS = 10 * 60_000;
-
-const FOLD_MS = 5 * 60_000;
-
-// A new generation once the stream is bigger than its base, so storage and restores stay about one base in size.
-const COMPACT_MIN = 64 << 20;
-
-// A delete runs on this object's one thread and holds every reply until it commits: 8 MB at a time, with a gap after.
-const PRUNE_BYTES = 8 << 20;
-
-const PRUNE_GAP_MS = 250;
-
-// Pre-dialed connections for dedicated clients (transactions, pub/sub, blocking).
-const SPARES = 4;
-
-// A running container plus the replication link that stores it. Lost for good on shutdown(); the object boots another.
+// Lost for good on shutdown(); the object boots another.
 export class Engine {
-  link: ReplicaLink;
+  link: StreamLink;
   closed = false;
   clients = 0;
-  lastCompaction: RewriteLog | null = null; // the box's stats report it as its last rewrite
+  lastCompaction: RewriteLog | null = null;
   readonly #ctx: DurableObjectState;
   readonly #store: BoxStore;
   readonly #onLost: (why: string) => void;
   readonly #spares: Socket[] = [];
-  readonly #muxes = new Map<2 | 3, Mux>();
+  readonly #muxes = new Map<Protocol, Mux>();
   readonly #tick: ReturnType<typeof setInterval>;
   #lastActive = Date.now();
   #foldedFor = 0; // the #lastActive an idle fold was tried for
   #compacting = false;
   #pruning = false;
 
-  private constructor(ctx: DurableObjectState, store: BoxStore, link: ReplicaLink, onLost: (why: string) => void) {
+  private constructor(ctx: DurableObjectState, store: BoxStore, link: StreamLink, onLost: (why: string) => void) {
     this.#ctx = ctx;
     this.#store = store;
     this.link = link;
@@ -102,7 +85,6 @@ export class Engine {
 
   readonly fence: Fence = (offset) => this.link.reached(offset, FENCE_MS);
 
-  // A connection of its own, for a client that needs one.
   socket(): Socket {
     this.#lastActive = Date.now();
     const socket = this.#spares.pop() ?? dial(this.#ctx);
@@ -112,8 +94,8 @@ export class Engine {
     return socket;
   }
 
-  // The shared, pipelined connection for stateless batches. The dashboard's polls aren't client activity.
-  mux(proto: 2 | 3, active = true): Mux {
+  // RPC batches share one pipelined connection; the dashboard's polls pass active=false.
+  mux(proto: Protocol, active = true): Mux {
     if (active) this.#lastActive = Date.now();
     let mux = this.#muxes.get(proto);
 
@@ -152,7 +134,7 @@ export class Engine {
     const logged = this.#store.bytes(gen, LOG);
 
     if (this.clients === 0 && Date.now() - this.#lastActive > IDLE_MS) {
-      // A shard wakes fastest from a bare base: no replay, and its server continues the stream. One try per idle spell.
+      // Fold first: a bare base wakes fastest, with no replay.
       if (logged > 0 && this.#foldedFor !== this.#lastActive) {
         this.#foldedFor = this.#lastActive;
 
@@ -172,7 +154,6 @@ export class Engine {
       void this.#compact();
   }
 
-  // Replaced and abandoned generations, a batch at a time, with client traffic running between.
   async #prune(): Promise<void> {
     if (this.#pruning) return;
     this.#pruning = true;
@@ -189,8 +170,7 @@ export class Engine {
     }
   }
 
-  // A second replica link takes a fresh RDB while the first keeps storing the stream. It becomes current only once
-  // it has stored everything the first has, so no acknowledged write lives only in the generation being dropped.
+  // The new generation becomes current only once it holds everything the old one does.
   async #compact(): Promise<void> {
     this.#compacting = true;
 
@@ -199,7 +179,7 @@ export class Engine {
 
     try {
       const next = await openLink(this.#ctx, this.#store, this.#store.begin(), null, (why) => this.shutdown(why));
-      const sentMs = Date.now() - t0; // the copy stored; then the stream since
+      const sentMs = Date.now() - t0; // until the RDB is stored
 
       await withTimeout(next.caughtUp(old), LINK_MS, "compaction catch-up").catch((e: Error) => {
         next.close();

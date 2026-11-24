@@ -6,7 +6,7 @@ import { login } from "./auth";
 import { BEFORE_AUTH, PUBSUB, TX_CONTROL, UNSUPPORTED } from "./command-sets";
 import { DRAIN_MS, MAX_REQUEST, MAX_UNAUTHED, WATCHDOG_MS } from "./config";
 import { Conn } from "./conn";
-import { append } from "./buffer";
+import { append } from "../protocol/bytes";
 import { config, fanout, info, scriptOrFunction } from "./fanout";
 import { passRequest, pubsub } from "./pubsub";
 import { arityError, errorOf, NOAUTH, OK, PONG, unknownCommand, unsupported, wrongArity } from "./replies-text";

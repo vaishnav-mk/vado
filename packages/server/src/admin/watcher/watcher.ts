@@ -18,7 +18,8 @@ import { Entries } from "./entries";
 import { EventLog, summarize } from "./events";
 import { Prober } from "./probe";
 import { Shards } from "./shards";
-import { buildState, keep, point, type Reading } from "./state";
+import { buildState, keep, point } from "./state";
+import type { Reading } from "./types";
 import { TestTraffic } from "./test-traffic";
 
 export const SIGNED_IN = "x-vado-signed-in";

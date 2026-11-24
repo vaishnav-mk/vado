@@ -2,17 +2,16 @@ import { serverOf } from "../catalog/flavours";
 import { database, forget, lookup } from "../catalog/databases";
 import { replicaRegion, replicaStub, shardStub } from "../catalog/placement";
 import type { DatabaseRecord } from "../catalog/types";
-import type { CommandTable } from "../protocol/types";
-import { deployedAt } from "../shard/version";
+import type { ByteSocket, CommandTable } from "../protocol/types";
+import { deployedAt, dialAddress } from "../shard/version";
 import { commands } from "./command-table";
 import { IDLE_MS, PULSE_MS } from "./config";
 import { setSocketBudget } from "./isolate";
 import { learnColo, live, report } from "./pulse-report";
-import type { LiveConn } from "./pulse-report";
 import { errorOf } from "./replies-text";
 import { Router } from "./router";
 import { signIns } from "./sign-ins";
-import type { ClientSocket, DatabaseHandles, Via, Where } from "./types";
+import type { DatabaseHandles, LiveConn, Via, Where } from "./types";
 import { noop } from "../shared";
 
 export { live } from "./pulse-report";
@@ -36,7 +35,7 @@ async function open(env: Env, name: string): Promise<DatabaseHandles> {
 }
 
 export async function serve(
-  socket: ClientSocket,
+  socket: ByteSocket,
   env: Env,
   name: string,
   via: Via = "tcp",
@@ -58,7 +57,7 @@ export async function serve(
   }
 }
 
-async function serveRouter(socket: ClientSocket, env: Env, name: string, conn: LiveConn): Promise<void> {
+async function serveRouter(socket: ByteSocket, env: Env, name: string, conn: LiveConn): Promise<void> {
   let target: DatabaseHandles;
 
   try {
@@ -86,7 +85,7 @@ async function serveRouter(socket: ClientSocket, env: Env, name: string, conn: L
     onDropped: forget,
     signIns: binding ? null : signIns(env, conn.where),
     idleMs: Number(env.ROUTER_IDLE_MS || IDLE_MS),
-    dial: `router-${deployedAt(env)}:6379`,
+    dial: dialAddress("router", deployedAt(env)),
   });
 
   conn.router = router;

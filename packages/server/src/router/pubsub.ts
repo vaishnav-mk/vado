@@ -1,5 +1,5 @@
 import { decode } from "../protocol/decode";
-import { arrayOf, bulk, concat, integer, lower, str } from "../protocol/resp";
+import { arrayOf, bulk, concat, integer, lower, str, TYPE } from "../protocol/resp";
 import { PUBSUB, SUBSCRIBE, WHILE_SUBSCRIBED } from "./command-sets";
 import type { Conn } from "./conn";
 import { notWhileSubscribed, OK } from "./replies-text";
@@ -34,7 +34,7 @@ export function pubsub(c: Conn, name: string, argv: Uint8Array[], raw: Uint8Arra
 function passed(c: Conn, f: Uint8Array): void {
   c.push(f);
 
-  if (f[0] === 43 && str(f).startsWith("+RESET")) return c.endPassthrough(false);
+  if (f[0] === TYPE.simple && str(f).startsWith("+RESET")) return c.endPassthrough(false);
 
   if (f[0] !== 42) return;
   const [v] = decode(f);

@@ -1,6 +1,8 @@
 // Types only, so the browser can import it.
 import type { Flavour } from "../catalog/types";
 import type { TypedReply } from "../protocol/types";
+import type { TEST_LEVELS } from "./config";
+import type { ReplicaState } from "../replication/types";
 
 export type { TypedReply };
 
@@ -47,7 +49,7 @@ export interface LiveEvent {
   count: number;
 }
 
-export type ReplicaState = "ready" | "copying" | "catching up" | "idle" | "asleep";
+export type { ReplicaState };
 
 export interface Replica extends Place {
   region: string;
@@ -97,7 +99,7 @@ export interface Entry extends Place {
   conns: number;
 }
 
-export type TestLevel = "light" | "medium" | "heavy";
+export type TestLevel = (typeof TEST_LEVELS)[number];
 
 export interface TestView {
   level: TestLevel;

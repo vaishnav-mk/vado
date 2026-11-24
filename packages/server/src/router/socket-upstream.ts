@@ -1,6 +1,6 @@
-import { concat, str } from "../protocol/resp";
-import { sameBytes } from "./buffer";
-import { GREETING_MS, PROBE_AFTER_MS } from "./config";
+import { concat, isError, str, TYPE } from "../protocol/resp";
+import { sameBytes } from "../protocol/bytes";
+import { GREETING_MS, PROBE_AFTER_MS, WRITE_FAILED_MS } from "./config";
 import { isolateAdd, socketClosed, socketOpened } from "./isolate";
 import { readFrames } from "./frames";
 import { isPrimary } from "./key-shards";
@@ -9,9 +9,6 @@ import { LOST } from "./replies-text";
 import type { Callback, ShardStub, UpKey, Upstream, UpstreamOwner } from "./types";
 import { BaseUpstream } from "./upstream";
 import { noop } from "../shared";
-
-// A socket whose write failed is dead unless its read side ends by then (it may still hold a restart marker).
-const WRITE_FAILED_MS = 2_000;
 
 export class SocketUpstream extends BaseUpstream implements Upstream {
   #socket: Socket;
@@ -157,7 +154,7 @@ export class SocketUpstream extends BaseUpstream implements Upstream {
     this.#lastUsed = this.owner.now;
 
     if (this.#instanceId === null) {
-      if (f[0] === 45) this.#refused = true;
+      if (isError(f)) this.#refused = true;
       else {
         this.#instanceId = str(f.subarray(1, f.length - 2));
         this.#greeting = f;
@@ -173,7 +170,7 @@ export class SocketUpstream extends BaseUpstream implements Upstream {
     // Replies owed to commands sent before the subscribe (CLIENT SETNAME, PUBLISH) come first, in order.
     if (this.passthrough && !this.#pending.length) return this.passthrough(f);
 
-    if (f[0] === 62) return this.owner.push(f); // ">": a RESP3 push
+    if (f[0] === TYPE.push) return this.owner.push(f);
     const cb = this.#pending.next();
     this.#probes = 0;
 

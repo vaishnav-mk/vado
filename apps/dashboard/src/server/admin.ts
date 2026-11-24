@@ -3,9 +3,10 @@ import { createServerFn } from "@tanstack/react-start";
 import { env } from "cloudflare:workers";
 import * as v from "valibot";
 import { Admin, flavoursOf } from "@vado/server";
-import { DB_NAME, DB_NAME_RULE } from "@vado/server/catalog/names.ts";
+import { DB_NAME, DB_NAME_RULE, SHARD_COUNTS } from "@vado/server/catalog/names.ts";
 import type { CommandResult, Database, Options, TestView } from "../lib/types";
 import { requireUser } from "./access";
+import { TEST_LEVELS } from "@vado/server/admin/config.ts";
 
 const admin = () => new Admin(env);
 
@@ -30,7 +31,7 @@ export const createDatabase = createServerFn({ method: "POST" })
   .validator(
     v.object({
       name,
-      shards: v.pipe(v.number(), v.integer(), v.minValue(1), v.maxValue(64)),
+      shards: v.picklist(SHARD_COUNTS),
       place: v.pipe(v.string(), v.minLength(1), v.maxLength(16)),
       replicas: v.boolean(),
       flavour: v.pipe(v.string(), v.maxLength(16)),
@@ -55,7 +56,7 @@ export const startTest = createServerFn({ method: "POST" })
   .validator(
     v.object({
       name,
-      level: v.picklist(["light", "medium", "heavy"]),
+      level: v.picklist(TEST_LEVELS),
       from: v.pipe(v.string(), v.minLength(1), v.maxLength(16)),
     }),
   )

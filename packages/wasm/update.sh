@@ -23,6 +23,10 @@ BOX="$HERE/../../box/Dockerfile"
 sed -e "s/^ARG ${VAR}_VERSION=.*/ARG ${VAR}_VERSION=$VERSION/" -e "s/^ARG ${VAR}_SHA256=.*/ARG ${VAR}_SHA256=$SUM/" "$BOX" >"$BOX.tmp"
 cat "$BOX.tmp" >"$BOX" && rm "$BOX.tmp"
 echo "box/Dockerfile: $NAME $VERSION"
+FLAVOURS="$HERE/../../server/src/catalog/flavours.ts"
+sed -e "/^export const VERSIONS/,/^};/ s/^  $SERVER: .*/  $SERVER: \"$VERSION\",/" "$FLAVOURS" >"$FLAVOURS.tmp"
+cat "$FLAVOURS.tmp" >"$FLAVOURS" && rm "$FLAVOURS.tmp"
+echo "server/src/catalog/flavours.ts: $NAME $VERSION"
 
 # Each patch applies on top of the ones before it; skip failures so one run lists them all.
 TREE=$(mktemp -d)

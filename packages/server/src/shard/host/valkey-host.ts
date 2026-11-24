@@ -7,17 +7,9 @@ import { Internal } from "./internal";
 import { Loop } from "./loop";
 import { drain, serve } from "./serve";
 import { Sockets } from "./sockets";
-import type {
-  ByteSocket,
-  DrainReport,
-  HostOptions,
-  HostStats,
-  Protocol,
-  RewriteHook,
-  TagConstructor,
-  ValkeyExports,
-} from "./types";
+import type { DrainReport, HostOptions, HostStats, RewriteHook, TagConstructor, ValkeyExports } from "./types";
 import { wasiImports } from "./wasi";
+import type { ByteSocket, Protocol } from "../../protocol/types";
 import { decoder, encoder, messageOf, sleep } from "../../shared";
 
 const wasm: { Memory: unknown; Tag?: unknown } = WebAssembly;

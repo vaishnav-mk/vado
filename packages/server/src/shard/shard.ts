@@ -4,8 +4,8 @@ import { drizzle } from "drizzle-orm/durable-sqlite";
 import { replicaNamespace } from "../catalog/placement";
 import type { Hint } from "../catalog/types";
 import { decodeAll } from "../protocol/decode";
-import { command, concat, str } from "../protocol/resp";
-import type { CommandArg, Reply } from "../protocol/types";
+import { command, concat, error, str } from "../protocol/resp";
+import type { CommandArg, Protocol, Reply } from "../protocol/types";
 import { coloOf } from "../replication/regions";
 import { keepSettings } from "../settings";
 import { bootShard } from "./boot";
@@ -15,12 +15,12 @@ import { commitTimes, vfsTimes } from "./probes";
 import type { VfsProbe } from "./probes";
 import { resetSoon } from "./reset";
 import { droppedStats, isolate, SNAPSHOT_INFO, snapshotOf } from "./stats";
-import { bury, isDropped } from "./tombstone";
-import type { DroppedStats, ShardSnapshot, ShardStats } from "./types";
+import { bury, DATABASE_DROPPED, isDropped } from "./tombstone";
+import type { DroppedStats, Shard, ShardSnapshot, ShardStats } from "./types";
 import { dialedFrom, RESTARTING } from "./version";
 import { closeWith, encoder, noop } from "../shared";
 
-export class ValkeyShard extends DurableObject<Env> {
+export class ValkeyShard extends DurableObject<Env> implements Shard {
   static readonly shardClass: number = 0;
   #scheduler = new DurabilityScheduler({ context: this.ctx });
   #db = drizzle(this.ctx.storage);
@@ -43,7 +43,7 @@ export class ValkeyShard extends DurableObject<Env> {
   }
 
   #live(): LiveShard {
-    if (!this.#shard) throw new Error("ERR database dropped");
+    if (!this.#shard) throw new Error(DATABASE_DROPPED);
 
     return this.#shard;
   }
@@ -116,7 +116,7 @@ export class ValkeyShard extends DurableObject<Env> {
     const address = (await socket.opened).localAddress ?? "";
     const shard = this.#shard;
 
-    if (!shard) return await closeWith(socket, encoder.encode("-ERR database dropped\r\n"));
+    if (!shard) return await closeWith(socket, error(DATABASE_DROPPED));
 
     if (shard.replica) {
       if (address.startsWith("repl")) return await shard.replica.stream(socket, address);
@@ -141,7 +141,7 @@ export class ValkeyShard extends DurableObject<Env> {
     return decodeAll(await this.runRaw(cmds));
   }
 
-  async execRaw(bytes: Uint8Array, count: number, proto: 2 | 3 = 2): Promise<Uint8Array> {
+  async execRaw(bytes: Uint8Array, count: number, proto: Protocol = 2): Promise<Uint8Array> {
     const { replica } = this.#live();
 
     if (replica && !replica.ready) throw new Error("replica not ready");

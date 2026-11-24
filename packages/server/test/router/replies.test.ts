@@ -2,6 +2,7 @@ import { expect, test } from "vite-plus/test";
 import { error, simple } from "../../src/protocol/resp";
 import { ReplyQueue } from "../../src/router/replies";
 import { LOST } from "../../src/router/replies-text";
+import { DATABASE_DROPPED } from "../../src/shard/tombstone";
 
 const dec = new TextDecoder();
 const settle = () => new Promise((r) => setTimeout(r, 0));
@@ -63,7 +64,7 @@ test("an RPC that rejects gets LOST, or the dropped error", async () => {
   const { replies, writes } = queue();
 
   replies.viaRpc(() => Promise.reject(new Error("network")));
-  replies.viaRpc(() => Promise.reject(new Error("database dropped")));
+  replies.viaRpc(() => Promise.reject(new Error(DATABASE_DROPPED)));
   await settle();
   await settle();
   expect(writes.join("")).toBe(dec.decode(LOST) + "-ERR database x was dropped\r\n");

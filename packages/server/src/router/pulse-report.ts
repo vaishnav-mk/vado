@@ -1,29 +1,10 @@
 import { coloOf } from "../replication/regions";
-import { PULSE_MS } from "./config";
-import type { RouterView, Via, Where } from "./types";
+import { COLO_RETRY_MS, PULSE_MS } from "./config";
+import type { Live } from "./types";
 import { isolate } from "../shard/stats";
 import { noop } from "../shared";
 
-export interface LiveConn {
-  id: string;
-  db: string;
-  via: Via;
-  where: Where | null;
-  since: number;
-  router: RouterView | null;
-}
-
-export interface Live {
-  colo: string | null;
-  coloTried: number;
-  conns: Map<string, LiveConn>;
-  flushed: number;
-  done: Record<string, number>;
-}
-
 export const live: Live = { colo: null, coloTried: 0, conns: new Map(), flushed: 0, done: {} };
-
-const COLO_RETRY_MS = 10_000;
 
 export function learnColo(): void {
   const now = Date.now();

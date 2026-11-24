@@ -1,13 +1,13 @@
 import { database } from "../catalog/databases";
-import { shardStub } from "../catalog/placement";
+import { wasmShardStub } from "../catalog/placement";
 import { command, concat } from "../protocol/resp";
 import { decodeAll } from "../protocol/decode";
 import type { Test } from "./types";
-import { failure, messageOf, sleep } from "../shared";
-import { text } from "../shared";
-import { dbName, liveStats, num, open, pct } from "./util";
+import { messageOf, ok, percentile, sleep, text } from "../shared";
+import { dbName, liveStats, num, open } from "./util";
+import { infoFields } from "../shard/info";
 
-const shardZero = async (env: Env, q: URLSearchParams) => shardStub(env, await database(env, dbName(q)), 0);
+const shardZero = async (env: Env, q: URLSearchParams) => wasmShardStub(env, await database(env, dbName(q)), 0);
 
 const mb = (bytes: number) => +(bytes / 2 ** 20).toFixed(1);
 
@@ -49,7 +49,7 @@ const rewrite: Test = async (env, q) => {
   const [reply] = decodeAll(await stub.runRaw([["BGREWRITEAOF"]])),
     replyMs = Date.now() - t0;
 
-  while (text(decodeAll(await stub.runRaw([["INFO", "persistence"]]))[0]).includes("aof_rewrite_in_progress:1"))
+  while (infoFields(text(decodeAll(await stub.runRaw([["INFO", "persistence"]]))[0])).aof_rewrite_in_progress === "1")
     await sleep(50);
   const totalMs = Date.now() - t0;
   await sleep(500);
@@ -66,8 +66,8 @@ const rewrite: Test = async (env, q) => {
     replyMs,
     totalMs,
     pings: lat.length,
-    p50: pct(lat, 0.5),
-    p99: pct(lat, 0.99),
+    p50: percentile(lat, 0.5),
+    p99: percentile(lat, 0.99),
     max: lat.at(-1),
     slow,
     base: base && { path: base.path, MB: mb(base.size) },
@@ -110,26 +110,23 @@ const frag: Test = async (env, q) => {
     c = await open(env, q);
 
   const mem = async (round: number | string) => {
-    const info = text((await c.call(["INFO", "memory"]))[0]);
-    const field = (k: string) => Number(new RegExp(`${k}:(\\d+)`).exec(info)?.[1] ?? NaN);
+    const info = infoFields(text((await c.call(["INFO", "memory"]))[0]));
 
     const wasm = (await liveStats(stub)).wasmMemoryBytes,
-      used = field("used_memory");
+      used = Number(info.used_memory);
 
     return {
       round,
       usedMB: mb(used),
       wasmMB: mb(wasm),
       wasmPerUsed: +(wasm / used).toFixed(2),
-      allocator: /mem_allocator:(\S+)/.exec(info)?.[1],
+      allocator: info.mem_allocator,
     };
   };
 
   const batch = async (cmds: string[][]) => {
     for (let i = 0; i < cmds.length; i += 1000) {
-      const err = (await c.call(...cmds.slice(i, i + 1000))).map(failure).find((e) => e !== null);
-
-      if (err) throw new Error(err);
+      for (const r of await c.call(...cmds.slice(i, i + 1000))) ok(r);
     }
   };
 

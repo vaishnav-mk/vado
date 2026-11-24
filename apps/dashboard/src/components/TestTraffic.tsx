@@ -3,9 +3,10 @@ import { Button, LayerCard, Select, Text } from "@cloudflare/kumo";
 import { PlayIcon, StopIcon } from "@phosphor-icons/react";
 import { Guard } from "./Guard";
 import { startTest, stopTest } from "../server/admin";
-import { duration } from "../lib/format";
+import { duration, plural } from "../lib/format";
 import { useAction } from "../lib/hooks";
 import type { TestView } from "../lib/types";
+import { TEST_TRAFFIC_MS } from "@vado/server/admin/config.ts";
 
 const LEVELS = { light: "Light", medium: "Medium", heavy: "Heavy" };
 
@@ -32,7 +33,7 @@ export function TestTraffic({
       <LayerCard.Primary className="flex flex-col gap-3">
         <Text variant="secondary" size="sm">
           Writes keys from Cloudflare locations, then reads them back three times, so you can watch the database under
-          load. It stops by itself after 10 minutes.
+          load. It stops by itself after {plural(TEST_TRAFFIC_MS / 60_000, "minute")}.
         </Text>
         <div className="grid grid-cols-2 gap-3">
           <Select

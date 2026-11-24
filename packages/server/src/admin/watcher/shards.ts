@@ -1,8 +1,9 @@
 import { MEMORY_HIGH, MEMORY_OK, WATCH_RATE_POLLS } from "../config";
 import type { Place, Replica, ReplicaState, Shard, ShardDown } from "../live-types";
-import type { ShardReading } from "../types";
-import type { Changes, EventInput } from "./events";
+import type { ShardReading, ShardSeen } from "../types";
+import type { Changes, EventInput } from "./types";
 import { keep, rate } from "./state";
+import { place } from "../views";
 
 interface TrackedReplica {
   state: ReplicaState | null;
@@ -22,15 +23,13 @@ interface Tracked {
   rewriteAt: number | undefined; // undefined: none seen yet
 }
 
-export type Seen = ShardReading | { i: number; down: string };
-
 export interface Look {
   shards: Shard[];
   changes: Changes;
   alerts: EventInput[];
 }
 
-const NOWHERE: Place = { colo: null, city: null, lat: null, lon: null };
+const NOWHERE = place(null);
 
 export class Shards {
   #tracked = new Map<number, Tracked>();
@@ -49,7 +48,7 @@ export class Shards {
     this.#tracked.clear();
   }
 
-  see(views: Seen[], at: number): Look {
+  see(views: ShardSeen[], at: number): Look {
     const look: Look = { shards: [], changes: { restarts: [], replicas: [], rewrites: [] }, alerts: [] };
 
     for (const v of views) look.shards.push(this.#see(v, at, look));
@@ -57,7 +56,7 @@ export class Shards {
     return look;
   }
 
-  #see(v: Seen, at: number, look: Look): Shard {
+  #see(v: ShardSeen, at: number, look: Look): Shard {
     let k = this.#tracked.get(v.i);
 
     if (!k) {

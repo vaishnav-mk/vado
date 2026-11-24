@@ -24,15 +24,19 @@ export interface ReplicaStub {
   retire(): Promise<void>;
 }
 
-export interface ReplicaNamespace {
-  getByName(name: string, options: { locationHint: Hint }): ReplicaStub;
+export interface Namespace<Stub> {
+  getByName(name: string, options: { locationHint: Hint }): Stub;
 }
+
+export type ReplicaNamespace = Namespace<ReplicaStub>;
 
 export type ReplicaPhase = "idle" | "copying" | "live";
 
+export type ReplicaState = "ready" | "copying" | "catching up" | "idle" | "asleep";
+
 export interface ReplicaStatus {
   region: Hint;
-  state: "asleep" | "ready" | "catching up" | "idle" | "copying";
+  state: ReplicaState;
   lagMs: number | null;
   colo: string | null;
   behindBytes: number;

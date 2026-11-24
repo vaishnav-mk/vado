@@ -1,7 +1,10 @@
+import { VERSIONS } from "@vado/server/catalog/flavours.ts";
+import type { Server } from "@vado/server/catalog/types.ts";
+
 // Measured on production, one account. Cold starts: TCP from one client to shards in one region.
 // Pipeline: 20,000 mixed commands over Spectrum TCP from one laptop.
 
-export type Server = "valkey" | "redis";
+export type { Server };
 
 export interface ServerFacts {
   name: string;
@@ -18,8 +21,8 @@ export interface ServerFacts {
 export const SERVERS: Record<Server, ServerFacts> = {
   valkey: {
     name: "Valkey",
-    version: "9.1.1",
-    info: "valkey_version:9.1.1",
+    version: VERSIONS.valkey,
+    info: `valkey_version:${VERSIONS.valkey}`,
     wasm: "1.94 MB (0.75 MB gzipped)",
     licence: "BSD-3-Clause",
     firstSet: "547-812 ms",
@@ -29,8 +32,8 @@ export const SERVERS: Record<Server, ServerFacts> = {
   },
   redis: {
     name: "Redis",
-    version: "8.12.0",
-    info: "redis_version:8.12.0",
+    version: VERSIONS.redis,
+    info: `redis_version:${VERSIONS.redis}`,
     wasm: "2.38 MB (0.93 MB gzipped)",
     licence: "AGPL-3.0",
     firstSet: "574-659 ms",

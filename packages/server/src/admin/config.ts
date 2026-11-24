@@ -34,6 +34,8 @@ export const TEST_TRAFFIC_MS = 10 * 60_000;
 // Shared by all of a test's senders: about 8 MB of a shard's 64 MB.
 export const TEST_KEYS_PER_SHARD = 50_000;
 
+export const TEST_LEVELS = ["light", "medium", "heavy"] as const;
+
 export const TEST_SENDERS: Record<TestLevel, number> = { light: 1, medium: 3, heavy: 6 };
 
 export const WAIT_MS = 3_000;

@@ -7,7 +7,7 @@ import { openLocal } from "../router/local";
 export const dbName = (q: URLSearchParams): string => q.get("db") ?? "default";
 
 // via=shard goes straight to one shard's connect() (shard=<i>), with no router.
-export async function open(env: Env, q: URLSearchParams, stallMs = 30_000): Promise<RespClient> {
+export async function open(env: Env, q: URLSearchParams, stallMs?: number): Promise<RespClient> {
   if (q.get("via") !== "shard") return openLocal(env, dbName(q), stallMs);
   const db = await database(env, dbName(q));
 
@@ -15,10 +15,6 @@ export async function open(env: Env, q: URLSearchParams, stallMs = 30_000): Prom
 }
 
 export const num = (q: URLSearchParams, key: string, fallback: number): number => Number(q.get(key) ?? fallback);
-
-// Sorts `xs` in place.
-export const pct = (xs: number[], p: number): number | undefined =>
-  xs.sort((a, b) => a - b)[Math.min(xs.length - 1, Math.floor(xs.length * p))];
 
 export async function allShards<T>(
   env: Env,

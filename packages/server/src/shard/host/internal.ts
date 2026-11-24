@@ -1,14 +1,14 @@
 // Clients are pooled, so commands that leave connection state behind (WATCH, SUBSCRIBE) must never come here.
-import { command, EMPTY, frameEnd, HELLO3 } from "../../protocol/resp";
+import { command, EMPTY, frameEnd, HELLO3, TYPE } from "../../protocol/resp";
 import { POOL_MAX } from "./config";
 import { Gauge } from "./gauge";
 import type { Loop } from "./loop";
 import type { Sockets } from "./sockets";
-import type { PooledClient, Protocol } from "./types";
+import type { Protocol } from "../../protocol/types";
+import type { PooledClient } from "./types";
 
 const QUIT = command(["QUIT"]);
 const WRITTEN = Promise.resolve();
-const PUSH = 62; // ">": RESP3 pushes aren't replies
 
 export function received(c: PooledClient, bytes: Uint8Array): void {
   if (c.len + bytes.length > c.out.length) {
@@ -23,7 +23,7 @@ export function received(c: PooledClient, bytes: Uint8Array): void {
   c.len += bytes.length;
 
   for (let e; c.frames < c.want && (e = frameEnd(c.out, c.pos, c.len, c.resume)) >= 0; c.pos = e) {
-    if (c.out[c.pos] !== PUSH) c.frames++;
+    if (c.out[c.pos] !== TYPE.push) c.frames++; // pushes aren't replies
   }
 }
 

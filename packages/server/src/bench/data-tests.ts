@@ -1,7 +1,7 @@
 import type { RespClient } from "../protocol/resp-client";
-import { failure, noop } from "../shared";
+import { failure, noop, percentile } from "../shared";
 import type { Test } from "./types";
-import { alive, allShards, dbName, num, open, pct } from "./util";
+import { alive, allShards, dbName, num, open } from "./util";
 
 async function writeKeys(c: RespClient, prefix: string, tag: string, n: number, batch: number): Promise<number> {
   let acked = 0;
@@ -177,7 +177,7 @@ const staleness: Test = async (env, q) => {
 
   a.close();
   b.close();
-  const ms = (p: number) => Math.round(pct(xs, p) ?? NaN);
+  const ms = (p: number) => Math.round(percentile(xs, p) ?? NaN);
 
   return {
     n,

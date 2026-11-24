@@ -1,34 +1,19 @@
 import { command, concat, lineEnd, str } from "../protocol/resp";
 import { noop } from "../shared";
+import { ACK_MS, FENCE_MS } from "./config";
 import { storeRdb } from "./rdb";
 import { LOG } from "./store";
 import type { BoxStore, Generation } from "./store";
-
-const ACK_MS = 1_000;
-
-export const FENCE_MS = 15_000;
-
-type Waiter = { offset: number; resolve: () => void; reject: (e: Error) => void };
-
-// Where a stored stream can go on: the history to ask for and the offset of its last stored byte. `only`: a full copy
-// from this server isn't trusted, so a refusal fails the link before any copy.
-export interface Resume {
-  from: Generation;
-  replid: string;
-  offset: number;
-  only: boolean;
-}
+import type { Resume, Waiter } from "./types";
 
 export const CANT_CONTINUE = "the server can't continue the stored stream";
 
-// This object is a replica of the container's server. It stores the server's own replication stream: an RDB, then
-// the effects of every write, which replay deterministically. `received` is the offset of the last byte written to
-// storage; the output gate holds anything this object sends afterwards until those writes commit.
-export class ReplicaLink {
-  received = 0;
+// This object as a replica of the container's server, storing its replication stream.
+export class StreamLink {
+  received = 0; // offset of the last byte stored; the output gate holds what this object sends until it commits
   broken: Error | null = null;
   generation: Generation = { gen: 0, replid: "", offset: 0 };
-  continued = false; // the stream went on into the stored generation: no new copy
+  continued = false; // went on in the stored generation, with no new copy
   readonly #reader: ReadableStreamDefaultReader<Uint8Array>;
   readonly #writer: WritableStreamDefaultWriter<Uint8Array>;
   readonly #store: BoxStore;
@@ -37,7 +22,7 @@ export class ReplicaLink {
   #waiters: Waiter[] = [];
   #ack: ReturnType<typeof setInterval> | null = null;
   #closed = false;
-  #catchUp: { other: ReplicaLink; resolve: () => void } | null = null;
+  #catchUp: { other: StreamLink; resolve: () => void } | null = null;
 
   private constructor(socket: Socket, store: BoxStore) {
     this.#socket = socket;
@@ -46,16 +31,15 @@ export class ReplicaLink {
     this.#store = store;
   }
 
-  // Resolves with the stream running: continued from `resume` when the server still has it, else after a full copy
-  // stored as generation `gen`. The caller makes the link's generation current.
+  // The caller makes the link's generation current.
   static async open(
     socket: Socket,
     store: BoxStore,
     gen: number,
     resume: Resume | null,
     onBroken: (e: Error) => void,
-  ): Promise<ReplicaLink> {
-    const link = new ReplicaLink(socket, store);
+  ): Promise<StreamLink> {
+    const link = new StreamLink(socket, store);
 
     await link.#sync(gen, resume);
     void link.#stream().catch((e: Error) => link.#break(e, onBroken));
@@ -63,7 +47,6 @@ export class ReplicaLink {
     return link;
   }
 
-  // The offset ROLE reported, once its stream bytes are stored.
   reached(offset: number, ms: number): Promise<void> {
     if (this.broken) return Promise.reject(this.broken);
 
@@ -86,8 +69,7 @@ export class ReplicaLink {
     });
   }
 
-  // Once this link has stored everything `other` has, its generation holds every acknowledged write.
-  caughtUp(other: ReplicaLink): Promise<void> {
+  caughtUp(other: StreamLink): Promise<void> {
     if (this.received >= other.received) return Promise.resolve();
 
     return new Promise((resolve) => {
@@ -95,8 +77,8 @@ export class ReplicaLink {
     });
   }
 
-  // Waiters move to the link that replaces this one: both are replicas of one master, so offsets mean the same.
-  handOver(next: ReplicaLink): void {
+  // Both links replicate one server, so offsets mean the same on each.
+  handOver(next: StreamLink): void {
     for (const w of this.#waiters) next.reached(w.offset, FENCE_MS).then(w.resolve, w.reject);
     this.#waiters = [];
     this.close();
@@ -191,7 +173,7 @@ export class ReplicaLink {
   }
 
   #break(e: Error, onBroken: (e: Error) => void): void {
-    if (this.#closed) return; // closed on purpose: replaced by a compaction, or shut down idle
+    if (this.#closed) return; // closed on purpose
     this.broken = e;
     this.close();
 

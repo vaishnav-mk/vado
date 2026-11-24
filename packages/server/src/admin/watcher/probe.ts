@@ -2,15 +2,15 @@
 import type { RespClient } from "../../protocol/resp-client";
 import { openLocal } from "../../router/local";
 import { PROBE_KEY, PROBE_STALL_MS, WATCH_RATE_POLLS } from "../config";
-import { keep, type ProbeSample } from "./state";
-import { failure } from "../../shared";
+import { keep } from "./state";
+import type { ProbeSample } from "./types";
+import { ok } from "../../shared";
 
 async function timed(c: RespClient, argv: string[]): Promise<number> {
   const t = performance.now();
-  const [r] = await c.call(argv);
-  const err = failure(r);
+  const [r = null] = await c.call(argv);
 
-  if (err !== null) throw new Error(err);
+  ok(r);
 
   return performance.now() - t;
 }

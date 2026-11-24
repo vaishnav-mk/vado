@@ -1,7 +1,6 @@
 import { shardOfSlot, slotOf, SLOTS } from "@vado/server/protocol/slots.ts";
 import { useState } from "react";
-
-const SHARD_COUNTS = [1, 4, 16, 64];
+import { SHARD_COUNTS } from "@vado/server/catalog/names.ts";
 
 const encoder = new TextEncoder();
 

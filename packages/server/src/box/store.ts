@@ -16,27 +16,24 @@ CREATE TABLE IF NOT EXISTS box_data (gen INTEGER NOT NULL, kind INTEGER NOT NULL
 export const BASE = 0;
 export const LOG = 1;
 
-export type Kind = typeof BASE | typeof LOG;
+type Kind = typeof BASE | typeof LOG;
 
-// replid and offset: the server history and offset the base was taken at. master: the history the log goes on in now,
-// and shift: its offset less the log's length, so the log's last byte is at shift + logged bytes (link.ts). A restored
-// server takes over with a history and offsets of its own.
+// replid and offset: the history and offset the base was taken at.
 const GenerationSchema = v.object({
   gen: v.number(),
   replid: v.string(),
   offset: v.number(),
-  master: v.optional(v.string()),
-  shift: v.optional(v.number()),
+  master: v.optional(v.string()), // the history the log continues in
+  shift: v.optional(v.number()), // master offset just before the log's first byte
 });
 
 export type Generation = v.InferOutput<typeof GenerationSchema>;
 
-// A generation is one base RDB plus the replication stream after it. Only a committed switch makes it current, so
-// a sync cut short leaves the previous generation whole. Every sync gets a number of its own (begin), so a retry
-// never appends to rows a failed one left; those and replaced generations go later, a batch at a time (prune).
+// A generation is a base RDB plus the stream after it. Every sync takes a fresh number (begin), so a retry never
+// appends to rows a failed one left.
 export class BoxStore {
   readonly #sql: SqlStorage;
-  readonly sync: () => Promise<void>; // resolves once every write so far is durable
+  readonly sync: () => Promise<void>;
   readonly #seq = new Map<string, number>();
   readonly #bytes = new Map<string, number>();
   #building: number | null = null;
@@ -104,8 +101,7 @@ export class BoxStore {
     this.#forgetAllBut([next.gen]);
   }
 
-  // Deletes about `budget` bytes of generations neither current nor being built; true while any remain. A reply
-  // waits for every write before it, deletes too, so one big delete would hold them all.
+  // Deletes about `budget` bytes of generations neither current nor being built; true while any remain.
   prune(budget: number): boolean {
     const keep = [this.current()?.gen ?? -1, this.#building ?? -1];
 

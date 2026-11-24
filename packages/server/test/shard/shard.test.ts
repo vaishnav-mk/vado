@@ -1,5 +1,5 @@
 import { expect, test } from "vite-plus/test";
-import { infoFields } from "../../src/shard/info";
+import { infoFields, subField } from "../../src/shard/info";
 import { droppable } from "../../src/shard/tombstone";
 import { mayRestart } from "../../src/shard/upgrade";
 import { valkeyArgs } from "../../src/shard/valkey-args";
@@ -52,4 +52,11 @@ test("infoFields reads an INFO reply's raw bytes", () => {
   const fields = infoFields("$40\r\n# Persistence\r\naof_base_size:10\r\naof_current_size:25\r\n\r\n");
 
   expect(fields).toEqual({ aof_base_size: "10", aof_current_size: "25" });
+});
+
+test("subField reads one number from a keyspace or cmdstat value", () => {
+  expect(subField("keys=3,expires=1,avg_ttl=0", "expires")).toBe(1);
+  expect(subField("calls=12,usec=40,usec_per_call=3.33", "calls")).toBe(12);
+  expect(subField("keys=3", "expires")).toBe(0);
+  expect(subField(undefined, "keys")).toBe(0);
 });

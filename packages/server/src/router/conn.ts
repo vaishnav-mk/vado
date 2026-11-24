@@ -8,16 +8,8 @@ import { ReadYourWrites } from "./read-your-writes";
 import { ReplyQueue } from "./replies";
 import { droppedDatabase } from "./replies-text";
 import { Tx } from "./transaction-state";
-import type {
-  ClientSocket,
-  DatabaseHandles,
-  ReplyOwner,
-  RouterOptions,
-  ShardStub,
-  UpKey,
-  Upstream,
-  UpstreamOwner,
-} from "./types";
+import type { DatabaseHandles, ReplyOwner, RouterOptions, ShardStub, UpKey, Upstream, UpstreamOwner } from "./types";
+import type { ByteSocket, Protocol } from "../protocol/types";
 
 export class Conn implements UpstreamOwner, ReplyOwner {
   static #ids = 0;
@@ -25,7 +17,7 @@ export class Conn implements UpstreamOwner, ReplyOwner {
   commands = 0;
   // Refreshed by the watchdog, so commands needn't call Date.now().
   now = Date.now();
-  proto: 2 | 3 = 2;
+  proto: Protocol = 2;
   name: string | null = null;
   closed = false;
   authed: boolean;
@@ -33,14 +25,14 @@ export class Conn implements UpstreamOwner, ReplyOwner {
   target: DatabaseHandles;
   readonly dial: string;
   readonly options: RouterOptions;
-  readonly socket: ClientSocket;
+  readonly socket: ByteSocket;
   readonly replies: ReplyQueue;
   readonly pool = new UpstreamPool(this);
   readonly tx = new Tx();
   readonly writes = new ReadYourWrites();
   #waiter: (() => void) | null = null;
 
-  constructor(socket: ClientSocket, target: DatabaseHandles, options: RouterOptions) {
+  constructor(socket: ByteSocket, target: DatabaseHandles, options: RouterOptions) {
     this.socket = socket;
     this.target = target;
     this.options = options;

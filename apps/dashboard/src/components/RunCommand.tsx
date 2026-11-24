@@ -7,8 +7,9 @@ import { COMMANDS, OTHER, replicationLine, showArgv, showReply, toArgv, type Arg
 import { ms } from "../lib/format";
 import { useAction } from "../lib/hooks";
 import { place } from "@vado/server/admin/views.ts";
-import { REGION_NAMES } from "@vado/server/replication/regions.ts";
+import { regionName } from "@vado/server/replication/regions.ts";
 import type { LastCommand, Shard } from "../lib/types";
+import { messageOf } from "@vado/server/shared.ts";
 
 const ITEMS = Object.fromEntries(Object.keys(COMMANDS).map((c) => [c, c === OTHER ? "Other command" : c]));
 
@@ -20,7 +21,7 @@ function story(r: LastCommand, shards: Shard[]) {
     r.shard === null
       ? null
       : r.read && r.replica
-        ? `the replica in ${REGION_NAMES[r.replica] ?? r.replica}`
+        ? `the replica in ${regionName(r.replica)}`
         : shard?.city
           ? `the shard in ${shard.city}`
           : `shard ${r.shard}`;
@@ -64,7 +65,7 @@ export function RunCommand({
   try {
     argv = toArgv(cmd, values);
   } catch (e) {
-    parseError = e instanceof Error ? e.message : String(e);
+    parseError = messageOf(e);
   }
 
   const submit = (e: FormEvent) => {

@@ -1,7 +1,7 @@
 // A Worker can't tell what a WebSocket client has read, so with "vado-acks" it sends text messages counting bytes.
 import { WS_MAX_QUEUED, WS_UNACKED } from "./config";
-import type { ClientSocket } from "./types";
 import { encoder } from "../shared";
+import type { ByteSocket } from "../protocol/types";
 
 export const ACKS = "vado-acks";
 
@@ -13,7 +13,7 @@ const quietly = (f: () => void) => {
   }
 };
 
-export function wsSocket(ws: WebSocket, acks = false): ClientSocket {
+export function wsSocket(ws: WebSocket, acks = false): ByteSocket {
   // Newer compat dates default to "blob".
   ws.binaryType = "arraybuffer";
   let input: ReadableStreamDefaultController<Uint8Array> | null = null;

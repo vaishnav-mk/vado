@@ -1,13 +1,14 @@
 import { useState } from "react";
 import { Badge, LayerCard, Text } from "@cloudflare/kumo";
 import { REPLICA, replicaWords } from "../../lib/colors";
-import { ms, num, plural } from "../../lib/format";
+import { ms, num, plural, share } from "../../lib/format";
 import { replicaCounts, replicaLine, SLEEP_NOTE } from "../../lib/replicas";
 import type { LiveState } from "../../lib/types";
 import { Legend } from "../Legend";
 import { LAG, READS, ROW, STRIP } from "./layout";
 import { ReplicaRow } from "./ReplicaRow";
 import { rows } from "./rows";
+import { REPL_IDLE_MS } from "@vado/server/replication/config.ts";
 
 export function Replicas({
   state,
@@ -41,7 +42,7 @@ export function Replicas({
 
       const bits =
         r.state === "asleep"
-          ? ["Asleep: no traffic to this shard for 10 minutes"]
+          ? [`Asleep: no traffic to this shard for ${plural(REPL_IDLE_MS / 60_000, "minute")}`]
           : [
               replicaWords(r.state),
               r.state === "ready" && r.lagMs !== null ? `${ms(r.lagMs)} behind` : null,
@@ -66,7 +67,7 @@ export function Replicas({
           />
           <Figure value={counts.ready ? ms(worst) : "–"} label="behind the shards, at most" />
           <Figure
-            value={reads ? `${Math.min(100, Math.round((100 * served) / reads))}%` : "–"}
+            value={reads ? `${Math.round(share(served, reads) ?? 0)}%` : "–"}
             label="of reads answered by a replica"
           />
           {counts.ready !== counts.total && (

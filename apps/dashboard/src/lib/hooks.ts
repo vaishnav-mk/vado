@@ -1,4 +1,5 @@
 import { useEffect, useState, useSyncExternalStore } from "react";
+import { messageOf } from "@vado/server/shared.ts";
 
 const media = (q: string) => ({
   subscribe: (f: () => void) => {
@@ -40,7 +41,7 @@ export function useAction() {
     try {
       await f();
     } catch (e) {
-      setError(e instanceof Error ? e.message : String(e));
+      setError(messageOf(e));
     }
 
     setBusy(false);

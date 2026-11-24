@@ -1,9 +1,10 @@
 import type { ReactNode } from "react";
 import { Grid, LayerCard, Meter, Text } from "@cloudflare/kumo";
-import { bytes, ms, num, plural } from "../lib/format";
+import { bytes, ms, num, plural, share } from "../lib/format";
 import { replicaCounts, replicaLine } from "../lib/replicas";
 import { useViewer } from "./Guard";
 import type { LiveState } from "../lib/types";
+import { REPL_IDLE_MS } from "@vado/server/replication/config.ts";
 
 // Titles must fit one line, or the six inner panels stop lining up.
 function Stat({
@@ -62,7 +63,7 @@ export function Stats({ state, reads }: { state: LiveState | null; reads: number
         : `Writes ${ms(probe?.writeMs)}${copy && probed?.city ? `, to ${probed.city}` : ""}.`;
 
   const reps = replicaCounts(state?.shards);
-  const share = reads && t?.replicaReads ? Math.round((100 * t.replicaReads) / reads) : null;
+  const replicaShare = t?.replicaReads ? share(t.replicaReads, reads) : null;
 
   return (
     <Grid variant="6up" gap="base">
@@ -82,13 +83,7 @@ export function Stats({ state, reads }: { state: LiveState | null; reads: number
         hint={shards ? `Over ${plural(shards, "shard")}` : undefined}
       />
       <Stat title="Memory" value={t ? bytes(t.memory) : waiting}>
-        {t && (
-          <Meter
-            label={`of ${bytes(t.maxMemory)}`}
-            value={t.maxMemory ? Math.min(100, (100 * t.memory) / t.maxMemory) : 0}
-            showValue={false}
-          />
-        )}
+        {t && <Meter label={`of ${bytes(t.maxMemory)}`} value={share(t.memory, t.maxMemory) ?? 0} showValue={false} />}
       </Stat>
       <Stat title="Saved log" value={t ? bytes(t.logBytes) : waiting} hint="Every write, kept to rebuild shards" />
       <Stat
@@ -102,9 +97,9 @@ export function Stats({ state, reads }: { state: LiveState | null; reads: number
               : reps.ready
                 ? reps.asleep
                   ? `The other ${reps.asleep.toLocaleString("en")} are asleep (no recent traffic)`
-                  : `${share !== null ? `${share}% of reads, ` : ""}up to ${ms(t.replicaLagMs)} behind`
+                  : `${replicaShare !== null ? `${Math.round(replicaShare)}% of reads, ` : ""}up to ${ms(t.replicaLagMs)} behind`
                 : reps.asleep === reps.total
-                  ? "Asleep: no traffic for 10 minutes"
+                  ? `Asleep: no traffic for ${plural(REPL_IDLE_MS / 60_000, "minute")}`
                   : replicaLine(reps).text
         }
       />

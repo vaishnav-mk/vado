@@ -1,6 +1,7 @@
 import { expect, test } from "vite-plus/test";
 import { shardName } from "../../src/catalog/placement";
-import { isReplicaName, replicaBinding, replicaDial, replicaName, replicaOf } from "../../src/replication/names";
+import { isReplicaName, replicaBinding, replicaName, replicaOf } from "../../src/replication/names";
+import { dialAddress } from "../../src/shard/version";
 import { PongCounter } from "../../src/replication/wire";
 
 const db = { name: "app", created: 1_700_000_000_000, flavour: "valkey" as const };
@@ -13,7 +14,8 @@ test("replica names, bindings and dials stay what old code expects", () => {
   expect(isReplicaName("app.loyw3v28.3")).toBe(false);
   expect(replicaBinding(0)).toBe("SHARD8");
   expect(replicaBinding(7)).toBe("SHARD15");
-  expect(replicaDial(42)).toBe("repl-42:6379");
+  expect(dialAddress("repl", 42)).toBe("repl-42:6379");
+  expect(dialAddress("router", 42)).toBe("router-42:6379");
 
   const asked: [string, string][] = [];
 

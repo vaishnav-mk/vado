@@ -1,4 +1,4 @@
-import { elements, str } from "../protocol/resp";
+import { elements, isError, str } from "../protocol/resp";
 import type { CommandEntry } from "../protocol/types";
 import type { Conn } from "./conn";
 import { replicaFailed, replicaResting } from "./isolate";
@@ -74,7 +74,7 @@ export function getkeys(c: Conn, entry: CommandEntry, argv: Uint8Array[], raw: U
       .shard(0)
       .runRaw([["COMMAND", "GETKEYS", ...argv.map(str)]])
       .then((f) => {
-        if (f[0] === 45) return c.replies.resolve(s, f);
+        if (isError(f)) return c.replies.resolve(s, f);
 
         const keys = elements(f).map(bulkBytes),
           shard = shardOfKeys(keys, target.db.shards);

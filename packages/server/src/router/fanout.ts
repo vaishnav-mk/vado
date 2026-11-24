@@ -1,11 +1,12 @@
 import { decode } from "../protocol/decode";
-import { arrayOf, bulk, elements, EMPTY, integer, lower, str } from "../protocol/resp";
+import { arrayOf, bulk, elements, EMPTY, integer, isError, lower, str } from "../protocol/resp";
 import type { CommandEntry } from "../protocol/types";
 import { CONFIG_SET, FUNCTION_EVERYWHERE, SCRIPT_EVERYWHERE } from "./command-sets";
 import { FAN_OUT } from "./config";
 import type { Conn } from "./conn";
 import { bulkText, OK, unsupported } from "./replies-text";
 import { forward } from "./routing";
+import { infoFields, subField } from "../shard/info";
 
 type Merge = (frames: Uint8Array[]) => Uint8Array;
 
@@ -31,7 +32,7 @@ export function fanout(c: Conn, entry: CommandEntry | undefined, argv: Uint8Arra
 
     if (!entry?.flags.has("readonly")) c.writes.all(c.db.shards);
 
-    return frames.find((f) => f[0] === 45) ?? merge(frames);
+    return frames.find((f) => isError(f)) ?? merge(frames);
   });
 }
 
@@ -86,12 +87,9 @@ export function info(c: Conn, argv: Uint8Array[]): void {
       expires = 0;
 
     for (const f of spaces) {
-      const m = /db0:keys=(\d+),expires=(\d+)/.exec(bulkText(f));
-
-      if (m) {
-        keys += Number(m[1]);
-        expires += Number(m[2]);
-      }
+      const db0 = infoFields(bulkText(f)).db0;
+      keys += subField(db0, "keys");
+      expires += subField(db0, "expires");
     }
 
     const body =

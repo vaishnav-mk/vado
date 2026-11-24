@@ -2,13 +2,10 @@
 import { place } from "@vado/server/admin/views.ts";
 import { HIGHLIGHT, replicaColor, replicaWords, SHARD, traffic } from "../../lib/colors";
 import { MAX_ENTRY_ARCS, MAX_STREAMS } from "../../lib/config";
-import { cities, ms, num, plural } from "../../lib/format";
+import { list, ms, num, plural } from "../../lib/format";
 import type { LastCommand, LiveState, ReplicaState } from "../../lib/types";
 import { arc, has, hash, key } from "./geo";
 import type { Arc, Layer, LonLat, Scene, Spot } from "./types";
-
-const shardList = (xs: number[]) =>
-  xs.length > 6 ? `${xs.slice(0, 6).join(", ")} and ${xs.length - 6} more` : xs.join(", ");
 
 const WORST: ReplicaState[] = ["idle", "copying", "catching up", "ready", "asleep"];
 
@@ -107,7 +104,7 @@ export function scene(state: LiveState | null, last: LastCommand | null, dark: b
       h.at,
       h.city,
       { kind: "shard", color: SHARD, size: 5 + Math.min(5, Math.sqrt(h.shards.length)) },
-      `${h.shards.length === 1 ? "Shard" : "Shards"} ${shardList(h.shards)}${h.writes ? `, taking ${num(h.writes)} writes/s` : ""}`,
+      `${h.shards.length === 1 ? "Shard" : "Shards"} ${list(h.shards, 6)}${h.writes ? `, taking ${num(h.writes)} writes/s` : ""}`,
     );
   }
 
@@ -180,8 +177,8 @@ export function summary(state: LiveState | null): string {
   const anyReplicas = shards.some((s) => s.replicas?.length);
 
   return from.length
-    ? `Traffic from ${cities(from)}${anyReplicas ? ". Reads go to the nearest replica; writes go to" : " reaches"} shards in ${cities(homes)}.`
+    ? `Traffic from ${list(from)}${anyReplicas ? ". Reads go to the nearest replica; writes go to" : " reaches"} shards in ${list(homes)}.`
     : homes.length
-      ? `Shards in ${cities(homes)}. No traffic right now.`
+      ? `Shards in ${list(homes)}. No traffic right now.`
       : "Waiting for the first numbers.";
 }

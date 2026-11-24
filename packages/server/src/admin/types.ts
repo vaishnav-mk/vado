@@ -23,6 +23,8 @@ export interface Down {
   down: string;
 }
 
+export type ShardSeen = ShardReading | (Down & { i: number });
+
 export type ReplicaLook = { region: string } & (ShardSnapshot | Down);
 
 export type ShardLook = (ShardSnapshot | Down) & { replicaSnapshots: ReplicaLook[] };

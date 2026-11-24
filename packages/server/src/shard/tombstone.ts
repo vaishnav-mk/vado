@@ -4,6 +4,8 @@ import { migrate } from "../migrate";
 import { tombstoneMigrations } from "./migrations";
 import { dropped } from "./schema";
 
+export const DATABASE_DROPPED = "ERR database dropped";
+
 export const isDropped = (storage: Pick<SqlStorage, "exec">): boolean =>
   storage.exec("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'dropped'").toArray().length > 0;
 

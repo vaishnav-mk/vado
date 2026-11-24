@@ -1,5 +1,5 @@
 import { decode } from "../protocol/decode";
-import { arrayOf, command, elements, integer } from "../protocol/resp";
+import { arrayOf, command, elements, integer, isError } from "../protocol/resp";
 import type { Conn } from "./conn";
 import { groupByShard } from "./key-shards";
 import { OK, wrongArity } from "./replies-text";
@@ -36,7 +36,7 @@ function scatter(
     c.pool.get(shard).send(request(idx), (f) => {
       if (writes) c.writes.done(shard);
 
-      if (f[0] === 45) failed ??= f;
+      if (isError(f)) failed ??= f;
       else frames[at] = f;
 
       if (--left === 0) c.replies.resolve(s, failed ?? merge(frames, idxs));

@@ -1,6 +1,6 @@
 import { frameEnd } from "../protocol/resp";
 import type { FrameResume } from "../protocol/types";
-import { append } from "./buffer";
+import { append } from "../protocol/bytes";
 import { noop } from "../shared";
 
 export async function readFrames(

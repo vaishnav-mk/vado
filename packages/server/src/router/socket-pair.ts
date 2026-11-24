@@ -1,4 +1,4 @@
-import type { ClientSocket } from "./types";
+import type { ByteSocket } from "../protocol/types";
 
 // Buffered like a TCP socket, so a write doesn't wait for the other end to read (both ends waiting is a deadlock).
 const buffered = () =>
@@ -7,7 +7,7 @@ const buffered = () =>
     size: (chunk) => chunk.byteLength,
   });
 
-export function socketPair(): [ClientSocket, ClientSocket] {
+export function socketPair(): [ByteSocket, ByteSocket] {
   const up = buffered(),
     down = buffered();
 

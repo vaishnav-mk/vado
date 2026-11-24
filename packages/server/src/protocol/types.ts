@@ -39,9 +39,13 @@ export interface CommandEntry {
 // Keyed by lowercase name; a subcommand without its container's prefix.
 export type CommandTable = Map<string, CommandEntry>;
 
-export interface RespSocket {
+// Any duplex of bytes: a Workers socket, a WebSocket's streams, a test's pipe.
+export interface ByteSocket {
   readable: ReadableStream<Uint8Array>;
   writable: WritableStream<Uint8Array>;
 }
 
 export type CommandArg = string | number | Uint8Array;
+
+// RESP2 or RESP3 (HELLO 3).
+export type Protocol = 2 | 3;

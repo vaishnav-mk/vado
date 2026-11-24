@@ -10,7 +10,7 @@ import { deployedAt } from "../version";
 import { Vfs } from "../vfs/vfs";
 import { FNV0, fnv, line, readExactly, readLine } from "./protocol";
 import type { RewriteRequest } from "./protocol";
-import { closeWith, encoder, failure, messageOf, noop } from "../../shared";
+import { closeWith, encoder, messageOf, noop, ok } from "../../shared";
 
 async function receiveFiles(
   vfs: Vfs,
@@ -57,10 +57,9 @@ export class ValkeyRewriter extends DurableObject<Env> {
         log: (l: string) => logs.push(l),
       });
 
-      const [reply] = decodeAll(await host.execBatch(command(["BGREWRITEAOF"]), 1));
-      const err = failure(reply);
+      const [reply = null] = decodeAll(await host.execBatch(command(["BGREWRITEAOF"]), 1));
 
-      if (err !== null) throw new Error(err);
+      ok(reply);
       const { base } = aofFiles(host);
 
       if (!base) throw new Error("no base after the rewrite");

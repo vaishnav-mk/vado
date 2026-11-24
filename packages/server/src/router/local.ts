@@ -1,11 +1,11 @@
 import { RespClient } from "../protocol/resp-client";
 import { serve } from "./serve";
 import { socketPair } from "./socket-pair";
-import type { ClientSocket } from "./types";
 import { failure } from "../shared";
+import type { ByteSocket } from "../protocol/types";
 
 // Trusted like a service binding: it's our own code.
-export function connectLocal(env: Env, name: string): ClientSocket {
+export function connectLocal(env: Env, name: string): ByteSocket {
   const [client, server] = socketPair();
   void serve(server, env, name, "binding");
 

@@ -1,6 +1,7 @@
-import { bulk, command, error, lineEnd, simple, str } from "../protocol/resp";
+import { bulk, command, error, lineEnd, simple, str, TYPE } from "../protocol/resp";
 import type { CommandEntry } from "../protocol/types";
 import { encoder, messageOf } from "../shared";
+import { DATABASE_DROPPED } from "../shard/tombstone";
 
 export const OK = simple("OK");
 export const QUEUED = simple("QUEUED");
@@ -28,15 +29,12 @@ export const MULTI = command(["MULTI"]);
 export const EXEC = command(["EXEC"]);
 export const UNWATCH = command(["UNWATCH"]);
 
-// What a dropped shard's methods throw (ValkeyShard #live).
-const DROPPED = /database dropped/;
-
 export const lostOr = (cause: unknown, dropped: () => Uint8Array): Uint8Array =>
-  cause instanceof Error && DROPPED.test(cause.message) ? dropped() : LOST;
+  cause instanceof Error && cause.message.includes(DATABASE_DROPPED) ? dropped() : LOST;
 
 export const bulkBytes = (f: Uint8Array) => f.subarray(lineEnd(f, 1, f.length) + 2, f.length - 2);
 
-export const bulkText = (f: Uint8Array) => (f[0] === 36 ? str(bulkBytes(f)) : "");
+export const bulkText = (f: Uint8Array) => (f[0] === TYPE.bulk ? str(bulkBytes(f)) : "");
 
 export const errorOf = (cause: unknown) => error(`ERR ${messageOf(cause)}`);
 export const unsupported = (name: string) => error(`ERR '${name}' is not supported by the sharded router`);

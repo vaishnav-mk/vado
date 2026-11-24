@@ -8,6 +8,18 @@ export const messageOf = (cause: unknown): string => (cause instanceof Error ? c
 
 export const failure = (r: Reply): string | null => (r instanceof Object && "err" in r ? r.err : null);
 
+export const percentile = (xs: readonly number[], p: number): number | null =>
+  xs.length ? [...xs].sort((a, b) => a - b)[Math.min(xs.length - 1, Math.floor(xs.length * p))] : null;
+
+// The reply, unless it's an error: that is thrown.
+export function ok(r: Reply): Reply {
+  const err = failure(r);
+
+  if (err !== null) throw new Error(err);
+
+  return r;
+}
+
 export function text(r: Reply): string {
   if (r instanceof Object) throw new Error(failure(r) ?? "expected a text reply");
 

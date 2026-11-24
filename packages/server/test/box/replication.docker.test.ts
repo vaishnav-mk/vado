@@ -4,7 +4,7 @@ import { execSync } from "node:child_process";
 import { mkdirSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { afterAll, beforeAll, describe, expect, test } from "vitest";
-import { CANT_CONTINUE, ReplicaLink } from "../../src/box/link";
+import { CANT_CONTINUE, StreamLink } from "../../src/box/link";
 import { replay } from "../../src/box/server";
 import { BASE, BoxStore, LOG } from "../../src/box/store";
 import { roleOffset } from "../../src/box/proxy";
@@ -101,7 +101,7 @@ describe.skipIf(!IMAGE)(`${SERVER}: replication into storage, then restore`, () 
     const a = await client(16390);
 
     await a.call(["SET", "before", "sync"], ["SADD", "s", "1", "2", "3", "4"]);
-    const link = await ReplicaLink.open(socket(16390), store, 1, null, () => {});
+    const link = await StreamLink.open(socket(16390), store, 1, null, () => {});
 
     expect(link.continued).toBe(false);
     store.switchTo(link.generation);
@@ -123,7 +123,7 @@ describe.skipIf(!IMAGE)(`${SERVER}: replication into storage, then restore`, () 
     expect(store.bytes(1, LOG)).toBeGreaterThan(2000 * 20);
 
     // Compaction: a second link takes generation 2 while the first keeps storing, then replaces it.
-    const next = await ReplicaLink.open(socket(16390), store, 2, null, () => {});
+    const next = await StreamLink.open(socket(16390), store, 2, null, () => {});
 
     for (let i = 0; i < 500; i++) await a.send(["SET", `late${i}`, `x${i}`]);
     await a.read(500);
@@ -152,11 +152,11 @@ describe.skipIf(!IMAGE)(`${SERVER}: replication into storage, then restore`, () 
     // A server with another history (a restore cut short gets a new one) fails the link instead of sending a copy.
     const other = { from: g, replid: "0".repeat(40), offset: end, only: true };
 
-    await expect(ReplicaLink.open(socket(16390), store, g.gen + 1, other, () => {})).rejects.toThrow(CANT_CONTINUE);
+    await expect(StreamLink.open(socket(16390), store, g.gen + 1, other, () => {})).rejects.toThrow(CANT_CONTINUE);
     expect(current().gen).toBe(g.gen);
 
     const resume = { from: g, replid: g.master ?? g.replid, offset: end, only: true };
-    const link = await ReplicaLink.open(socket(16390), store, g.gen + 1, resume, () => {});
+    const link = await StreamLink.open(socket(16390), store, g.gen + 1, resume, () => {});
 
     expect(link.continued).toBe(true);
     store.switchTo(link.generation);
@@ -178,7 +178,7 @@ describe.skipIf(!IMAGE)(`${SERVER}: replication into storage, then restore`, () 
     const { master_replid: replid = "", master_repl_offset: offset = "0" } = infoFields(text(info));
     const g = current();
     const resume = { from: g, replid, offset: Number(offset), only: false };
-    const link = await ReplicaLink.open(socket(16391), store, g.gen + 1, resume, () => {});
+    const link = await StreamLink.open(socket(16391), store, g.gen + 1, resume, () => {});
 
     expect(link.continued).toBe(true);
     store.switchTo(link.generation);
@@ -192,7 +192,7 @@ describe.skipIf(!IMAGE)(`${SERVER}: replication into storage, then restore`, () 
   });
 
   test("a server restored from a bare base goes on with the stream, and storage keeps up with it", async () => {
-    const fold = await ReplicaLink.open(socket(16390), store, current().gen + 1, null, () => {});
+    const fold = await StreamLink.open(socket(16390), store, current().gen + 1, null, () => {});
 
     store.switchTo(fold.generation);
     fold.close();
@@ -203,7 +203,7 @@ describe.skipIf(!IMAGE)(`${SERVER}: replication into storage, then restore`, () 
     serve("vado-box-c", 16392, concat([...store.chunks(g.gen, BASE)]));
     const c = await client(16392);
     const bare = { from: g, replid: g.replid, offset: g.offset, only: false };
-    const link = await ReplicaLink.open(socket(16392), store, g.gen + 1, bare, () => {});
+    const link = await StreamLink.open(socket(16392), store, g.gen + 1, bare, () => {});
 
     expect(link.continued).toBe(true);
     store.switchTo(link.generation);

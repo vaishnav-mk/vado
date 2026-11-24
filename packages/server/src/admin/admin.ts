@@ -1,17 +1,16 @@
 // The dashboard's server functions check input shapes, and sign-in for anything that changes something; this checks the rules.
 import { FLAVOUR_NAMES } from "../catalog/flavours";
 import { catalogStub, current, database, existing, parseFlavour } from "../catalog/databases";
-import { DB_NAME, DB_NAME_RULE } from "../catalog/names";
+import { DB_NAME, DB_NAME_RULE, SHARD_COUNTS } from "../catalog/names";
 import { configureReplicas, shardStub } from "../catalog/placement";
 import type { DatabaseRecord } from "../catalog/types";
-import { isHint, REGION_NAMES, WORLD } from "../replication/regions";
+import { isHint, REGION_NAMES, regionName, WORLD } from "../replication/regions";
 import { noop } from "../shared";
 import { command } from "./command";
 import type { CommandResult, Database, TestLevel, TestView } from "./live-types";
 import type { NewDatabase } from "./types";
 import { dbView } from "./views";
-
-const SHARD_COUNTS = new Set([1, 4, 16, 64]);
+import { plural } from "../format";
 
 export class Admin {
   #env: Env;
@@ -37,7 +36,7 @@ export class Admin {
   async create({ name, shards, place, replicas, flavour: asked = "valkey" }: NewDatabase): Promise<Database> {
     if (!DB_NAME.test(name)) throw new Error(DB_NAME_RULE);
 
-    if (!SHARD_COUNTS.has(shards)) throw new Error("shards is 1, 4, 16 or 64");
+    if (!SHARD_COUNTS.some((n) => n === shards)) throw new Error(`shards is one of ${SHARD_COUNTS.join(", ")}`);
     const hint = isHint(place) ? place : null;
 
     if (place !== "world" && !hint) throw new Error("place is world or a region");
@@ -48,10 +47,10 @@ export class Admin {
     const db = await database(this.#env, name, shards, regions, replicas ? WORLD : undefined, undefined, null, flavour);
 
     if (db.replicas) await configureReplicas(this.#env, db);
-    const where = hint ? `in ${REGION_NAMES[hint] ?? hint}` : "spread around the world";
+    const where = hint ? `in ${regionName(hint)}` : "spread around the world";
     await this.#env.WATCHER.getByName(name).note(
       "action",
-      `Created ${name}, on ${FLAVOUR_NAMES[flavour]}: ${shards} shard${shards === 1 ? "" : "s"}, ${where}${replicas ? ", with read replicas in every region" : ""}`,
+      `Created ${name}, on ${FLAVOUR_NAMES[flavour]}: ${plural(shards, "shard")}, ${where}${replicas ? ", with read replicas in every region" : ""}`,
     );
 
     return dbView(db);

@@ -1,4 +1,4 @@
-import type { CommandEntry } from "../protocol/types";
+import type { CommandEntry, Protocol } from "../protocol/types";
 import { bulk, command, EMPTY, error, integer, lower, str } from "../protocol/resp";
 import { slotOf } from "../protocol/slots";
 import { login } from "./auth";
@@ -37,7 +37,7 @@ export function hello(c: Conn, argv: Uint8Array[]): void {
   helloAs(c, proto, setname);
 }
 
-function helloAs(c: Conn, proto: 2 | 3, setname: string | null): void {
+function helloAs(c: Conn, proto: Protocol, setname: string | null): void {
   if (setname !== null) c.name = setname;
 
   const changed = proto !== c.proto,

@@ -18,6 +18,9 @@ const HINT_LIST = [
 
 export const HINTS: ReadonlySet<string> = new Set(HINT_LIST);
 
+// For messages that list the valid regions.
+export const HINT_NAMES = HINT_LIST.join(", ");
+
 export const isHint = (name: string): name is Hint => HINTS.has(name);
 
 export const WORLD: Hint[] = ["wnam", "enam", "sam", "weur", "eeur", "me", "afr", "apac", "oc"];
@@ -40,6 +43,8 @@ export const REGION_NAMES: RegionNames = {
   apac: "Asia Pacific",
   oc: "Oceania",
 };
+
+export const regionName = (region: string): string => REGION_NAMES[region] ?? region;
 
 export const REGION_OF = new Map<string, Hint>();
 
