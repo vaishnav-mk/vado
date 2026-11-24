@@ -1,8 +1,11 @@
 import { expect, test } from "vite-plus/test";
 import { bulk } from "../../src/protocol/resp";
 import type { CommandEntry } from "../../src/protocol/types";
-import { CONFIG_SET, NOT_IN_MULTI, UNSUPPORTED } from "../../src/router/command-sets";
-import { arityError, bulkBytes, bulkText, unknownCommand } from "../../src/router/replies-text";
+import { NOT_IN_MULTI, UNSUPPORTED } from "../../src/router/command-sets";
+import { CONFIG_SET } from "../../src/protocol/commands";
+import { arityError, unknownCommand } from "../../src/router/replies-text";
+import { bulkText } from "../../src/protocol/resp";
+import { bulkBytes } from "../../src/protocol/resp";
 
 const enc = new TextEncoder();
 const dec = new TextDecoder();

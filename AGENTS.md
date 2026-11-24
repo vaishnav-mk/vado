@@ -20,7 +20,7 @@ Rules for anyone, human or agent, changing this repo. Paths starting `server/` a
   may go to a replica, so a failed replica read can go again to the primary.
 - **A container shard (`valkey-native`, `redis-native`) replies only after its writes are stored.** Its object is a
   replica of the server in its container and stores the replication stream; a batch's replies wait until the stream
-  reaches the batch's `ROLE` offset (`server/box/proxy.ts`, `mux.ts`). A generation becomes current only once it holds
+  reaches the batch's `ROLE` offset (`server/container-shard/proxy.ts`, `mux.ts`). A generation becomes current only once it holds
   everything the one before does; a link continues a stored stream only when the server answers `+CONTINUE` for its
   last stored byte; and a running container that can't continue it exactly is destroyed, never synced from
   (`packages/box/README.md`).
@@ -60,14 +60,14 @@ Rules for anyone, human or agent, changing this repo. Paths starting `server/` a
   new client entry point on `ValkeyShard` must count as activity (`#active()`), or the database can sleep under
   traffic that only reaches the new path. Retired replicas never serve reads.
 - **Replicas never share a class with a primary.** Shard class `k` keeps its replicas in `SHARD{8 + k}`
-  (`replicaBinding` in `server/replication/names.ts`); routers and primaries both use it.
+  (`replicaBinding` in `server/wasm-shard/replication/names.ts`); routers and primaries both use it.
 - **Every buffer is bounded.** Each queue has a high and low mark in its directory's `config.ts`, and stops reading
   its source at the high mark. Client input is bounded by `MAX_REQUEST`, or `MAX_UNAUTHED` before AUTH. Replication
   bytes go through `hold`/`release` on the host, so they count toward `SHARD_HIGH_WATER`, and a replica past
   `REPL_BACKLOG` is dropped. No unbounded queue, however unlikely its growth looks.
 - **A failure says what it knows.** When a shard resets mid-command, the client gets `LOST` ("may or may not have
   run"), never a guess. Only read-only commands retry. A WATCH lost to a reset makes EXEC abort. If Valkey throws
-  mid-command, the shard resets (the `fatal` option `bootShard` gives `ValkeyHost`) rather than run on with memory it
+  mid-command, the shard resets (the `fatal` option `bootShard` gives `WasmHost`) rather than run on with memory it
   can't trust.
 - **One server, as clients see it.** Commands the router answers itself (connection state, fan-out, AUTH) are
   refused inside MULTI (`NOT_IN_MULTI` in `server/router/command-sets.ts`), since queued they would reach one
@@ -93,6 +93,21 @@ Rules for anyone, human or agent, changing this repo. Paths starting `server/` a
   (`server/router/command-sets.ts`), which change how data behaves. Never add one for durability, memory, networking
   or auth. SAVE, BGREWRITEAOF and ACL stay unsupported.
 
+## Durable Objects
+
+| Class | Binding | Directory | What one object is |
+| --- | --- | --- | --- |
+| `ValkeyShard`, `ValkeyShard1` to `ValkeyShard15` | `SHARD`, `SHARD1` to `SHARD15` | `server/wasm-shard/` | One shard of a wasm database, with its server inside; classes 8-15 are read replicas |
+| `ValkeyRewriter`, `ValkeyRewriter1` to `ValkeyRewriter7` | `REWRITER`, `REWRITER1` to `REWRITER7` | `server/wasm-shard/rewriter/` | Rewrites one wasm primary's AOF in its own isolate |
+| `RedisBox` | `REDIS_BOX` | `server/container-shard/` | One shard of a container database: starts the container and is its replica |
+| `Catalog` | `CATALOG` | `server/catalog/` | Every database's record |
+| `Watcher` | `WATCHER` | `server/admin/watcher/` | The dashboard's live view of one database |
+| `Pulse` | `PULSE` | `server/admin/` | Which router isolates have connections open |
+| `Sender` | `SENDER` | `server/bench/` | Load from a chosen region, for bench tests and test traffic |
+
+The router (`server/router/`) is not an object: it runs in the Worker, one per client connection, and talks to shards
+through `Shard` (`server/shard/types.ts`).
+
 ## Layout
 
 | Path | What |
@@ -105,16 +120,17 @@ Rules for anyone, human or agent, changing this repo. Paths starting `server/` a
 | `server/isolate-cache.ts` | `IsolateCache`: values fetched once per isolate ([isolate cache](#isolate-cache)) |
 | `server/env.d.ts` | Optional settings a deploy may add on top of the generated bindings |
 | `server/router/` | `router.ts`: one `Router` per connection: parses each request (with its size limit) and hands it to the handlers below. `serve.ts`: a connection to a Router. `routing.ts`: a request to one shard's upstream, and replica reads with their fallback to the primary. `replies.ts`: `ReplyQueue`, replies in request order. `read-your-writes.ts`: `ReadYourWrites`. `socket-upstream.ts`, `rpc-upstream.ts`, `pool.ts`: upstreams over a socket or RPC batches, and the per-isolate socket budget. `fanout.ts`, `split.ts`, `rpc-commands.ts`: commands that go to every shard, multi-key commands split by shard, and SCAN, RANDOMKEY, WAIT. `transaction.ts`, `session.ts`, `pubsub.ts`, `auth.ts`, `sign-ins.ts`. `command-sets.ts`, `command-table.ts`, `replies-text.ts`: command sets, key positions per command, and the replies the router writes itself. `pulse-report.ts`, `websocket.ts`, `secrets.ts` |
-| `server/protocol/` | `request.ts` (the client request parser), `resp.ts` (frame ends, encoding), `decode.ts` (whole replies), `resp-client.ts` (a small RESP client for the bench, `Admin` and the Watcher), `slots.ts` (hash slots), `commands.ts` (key positions from Valkey's COMMAND) |
-| `server/shard/` | `shard.ts`: `ValkeyShard` (thin: refuses a dropped shard, delegates the rest). `classes.ts`: `ValkeyShard1` to `ValkeyShard15` (0-7 primaries, 8-15 read replicas). `boot.ts`: schema, Valkey, and the role. `primary.ts`: a primary's alarms and replication. `replica.ts`, `rewrites.ts` (when to rewrite), `upgrade.ts` (restarts onto newer code), `tombstone.ts`, `reset.ts`, `stats.ts`, `probes.ts`, `valkey-args.ts`, `servers.ts`, `version.ts` |
-| `server/shard/host/` | `valkey-host.ts`: `ValkeyHost`, runs valkey.wasm. `loop.ts` (event loop, group commit, `rk_tick`), `sockets.ts` (client fds and the byte budget), `serve.ts`, `internal.ts` (pooled clients for RPC batches), `aof-rewrite.ts` (the `aof_rewrite` import), `wasi.ts`, `gauge.ts` |
-| `server/shard/vfs/` | `vfs.ts`: `Vfs`, WASI files on SQLite. `store.ts`, `chunks.ts`, `statements.ts`, `listing.ts` (rows and queries), `wasi-*.ts` (the preview1 calls), `memory.ts` |
-| `server/shard/rewriter/` | `rewriter.ts`: `ValkeyRewriter`. `classes.ts`: `ValkeyRewriter1` to `ValkeyRewriter7`. `client.ts`: `rewriteByHelper`, the shard's side. `protocol.ts`: the socket protocol |
-| `server/replication/` | `replicator.ts`: `Replicator` (copies, streams to and measures a primary's replicas). `link.ts`: one replica's socket and queue. `wire.ts`: the bytes on that socket. `names.ts`: replica names, bindings, dial addresses. `aof-files.ts`. `regions.ts`: location hints, region names, colo to region, `coloOf`. `colos.json`: colo city and coordinates (generated by `packages/server/scripts/colos.mjs`) |
-| `server/catalog/` | `catalog.ts`: `Catalog` (databases: shard count, `regions`, `replicas`, `classes`, `secret`, `dropped`, `flavour`). `databases.ts`: the per-isolate record cache. `placement.ts`: shard and replica stubs, names, which replica a router reads (`NEAR`). `epochs.ts`: `SHARD_EPOCHS`. `names.ts`: `DB_NAME` |
+| `server/protocol/` | `request.ts` (the client request parser), `resp.ts` (frame ends, encoding), `decode.ts` (whole replies), `resp-client.ts` (a small RESP client for the bench, `Admin` and the Watcher), `slots.ts` (hash slots), `commands.ts` (key positions from Valkey's COMMAND), `frames.ts` (whole frames off a stream), `info.ts` (INFO fields) |
+| `server/shard/` | What every shard keeps, whichever kind: `types.ts` (`Shard`, the RPC interface both kinds implement, and the stats both report), `stats.ts` (`droppedStats`, `snapshotOf`, `DATABASE_DROPPED`), `version.ts` (deploy times and dial addresses), `servers.ts` (which flavours this build runs, and their wasm modules) |
+| `server/wasm-shard/` | `ValkeyShard`, a shard whose server is compiled to wasm and runs inside the object. `shard.ts`: `ValkeyShard` (thin: refuses a dropped shard, delegates the rest). `classes.ts`: `ValkeyShard1` to `ValkeyShard15` (0-7 primaries, 8-15 read replicas). `boot.ts`: schema, the server, and the role. `primary.ts`: a primary's alarms and replication. `replica.ts`, `rewrites.ts` (when to rewrite), `upgrade.ts` (restarts onto newer code), `tombstone.ts`, `reset.ts`, `probes.ts`, `valkey-args.ts`, `aof-files.ts` |
+| `server/wasm-shard/host/` | `wasm-host.ts`: `WasmHost`, runs valkey.wasm. `loop.ts` (event loop, group commit, `rk_tick`), `sockets.ts` (client fds and the byte budget), `serve.ts`, `internal.ts` (pooled clients for RPC batches), `aof-rewrite.ts` (the `aof_rewrite` import), `wasi.ts`, `gauge.ts` |
+| `server/wasm-shard/vfs/` | `vfs.ts`: `Vfs`, WASI files on SQLite. `store.ts`, `chunks.ts`, `statements.ts`, `listing.ts` (rows and queries), `wasi-*.ts` (the preview1 calls), `memory.ts` |
+| `server/wasm-shard/rewriter/` | `rewriter.ts`: `ValkeyRewriter`. `classes.ts`: `ValkeyRewriter1` to `ValkeyRewriter7`. `client.ts`: `rewriteByHelper`, the shard's side. `protocol.ts`: the socket protocol |
+| `server/wasm-shard/replication/` | Read replicas of a wasm primary. `replicator.ts`: `Replicator` (copies, streams to and measures a primary's replicas). `link.ts`: one replica's socket and queue. `wire.ts`: the bytes on that socket. `names.ts`: replica names, bindings, dial addresses |
+| `server/catalog/` | `catalog.ts`: `Catalog` (databases: shard count, `regions`, `replicas`, `classes`, `secret`, `dropped`, `flavour`). `databases.ts`: the per-isolate record cache. `placement.ts`: shard and replica stubs, names, which replica a router reads (`NEAR`). `epochs.ts`: `SHARD_EPOCHS`. `names.ts`: `DB_NAME`. `flavours.ts`: the flavour list and names. `regions.ts`: location hints, region names, colo to region, `coloOf`. `colos.json`: colo city and coordinates (generated by `packages/server/scripts/colos.mjs`) |
 | `server/admin/` | `admin.ts`: `Admin`, what the dashboard does besides watching. `watcher/`: `Watcher`, one per watched database, behind `/live`, with its probes, events, state and test traffic. `pulse.ts`: `Pulse`. `snapshot.ts`, `views.ts`: shards and replicas in plain numbers. `access.ts`: who may change things. `command.ts`. `live-types.ts`: what `/live` and `Admin` return, types only, so the browser imports them |
-| `packages/server/test/`, `apps/dashboard/test/` | Unit tests, at the same paths as the `src/` files they test. `test/shard/vfs/fake-storage.ts` is SQL storage over `node:sqlite` |
-| `server/box/` | The `-native` flavours: `box.ts`: `RedisBox` (either server; the class keeps its first name), a shard whose server runs in a container. `engine.ts` (the running container, compaction, pruning, idle stop), `attach.ts` (where a stream resumes, opening the link), `container.ts` (start and restore), `server.ts` (readiness, replay, history), `link.ts` (the replica link into storage), `rdb.ts` (a full sync's RDB into storage), `proxy.ts`, `mux.ts` (client connections, fenced), `store.ts`. Built only with `VADO_CONTAINERS=1`; the image is `packages/box/Dockerfile`. `server/catalog/flavours.ts` holds the flavour list and names |
+| `packages/server/test/`, `apps/dashboard/test/` | Unit tests, at the same paths as the `src/` files they test. `test/wasm-shard/vfs/fake-storage.ts` is SQL storage over `node:sqlite` |
+| `server/container-shard/` | `RedisBox`, a shard whose server runs in a container, for the `-native` flavours (either server; the class keeps its first name). `box.ts`: `RedisBox`. `engine.ts` (the running container, compaction, pruning, idle stop), `attach.ts` (where a stream resumes, opening the link), `container.ts` (start and restore), `server.ts` (readiness, replay, history), `link.ts` (the replica link into storage), `rdb.ts` (a full sync's RDB into storage), `proxy.ts`, `mux.ts` (client connections, fenced), `store.ts`. Built only with `VADO_CONTAINERS=1`; the image is `packages/box/Dockerfile` |
 | `server/bench/` | `bench.ts`: the token-protected bench API and its `tests` map. `catalog-tests.ts`, `shard-probes.ts`, `data-tests.ts`, `load-tests.ts`: the tests. `sender.ts`: `Sender`, runs a test from a chosen region, and the dashboard's test traffic |
 | `packages/client/` | `src/ioredis.ts`: `bindingConnector`, ioredis over a service binding. `ws-shim.mjs`: a local TCP port for `/ws` (`node packages/client/ws-shim.mjs <url> <port>`, Node 22+). Neither is published to npm |
 | `packages/wasm/` | The builds: `valkey/` and `redis/` (each with `build.sh`, `patches/`, the committed wasm and `interface.txt`), the shared `wasi/`, `common.sh` and `interface.mjs`. CI rebuilds both from the official releases (`.github/workflows/wasm.yml`) |
@@ -139,14 +155,14 @@ Rules for anyone, human or agent, changing this repo. Paths starting `server/` a
   protocol (a JSON line, the files, then the base back), since old shards send rewrites to new rewriters. Use
   `#private` members so helpers aren't exposed over RPC.
 - Keep Durable Object classes thin. `ValkeyShard` refuses a dropped shard and delegates to what `bootShard` builds:
-  `ValkeyHost` (`server/shard/host/valkey-host.ts`), `Vfs` (`server/shard/vfs/vfs.ts`), `PrimaryRole`
-  (`server/shard/primary.ts`, with `Replicator` and `Rewrites`), `ReplicaRole` and `Upgrader`.
+  `WasmHost` (`server/wasm-shard/host/wasm-host.ts`), `Vfs` (`server/wasm-shard/vfs/vfs.ts`), `PrimaryRole`
+  (`server/wasm-shard/primary.ts`, with `Replicator` and `Rewrites`), `ReplicaRole` and `Upgrader`.
 - A database's shard count, regions, replicas and classes are fixed when it is created. Change capacity for new
   databases by appending to `SHARD_EPOCHS`, never by editing an existing epoch.
 - New Durable Object classes need a migration tag in `wrangler.jsonc`, and a named export in
   `apps/dashboard/src/server.ts` (wrangler reads those names to type the bindings).
 - Keep shard classes and rewriter classes in step: `ValkeyShard<k>` (binding `SHARD<k>`) finds `ValkeyRewriter<k>`
-  (`REWRITER<k>`) by binding name (`REWRITERS` in `server/shard/boot.ts`). Adding classes means bindings and a
+  (`REWRITER<k>`) by binding name (`REWRITERS` in `server/wasm-shard/boot.ts`). Adding classes means bindings and a
   migration for both. Never remove a shard class: a database keeps shard `i` in class `i % classes`, as recorded in
   the catalog.
 - Changes to a server go in `packages/wasm/<server>/patches/` or `packages/wasm/wasi/`, with its wasm rebuilt by its
@@ -158,13 +174,13 @@ Rules for anyone, human or agent, changing this repo. Paths starting `server/` a
 ## SQL
 
 - Each object's tables are drizzle `sqliteTable` definitions in its directory's `schema.ts`
-  (`server/catalog/schema.ts`, `server/shard/schema.ts`, `server/shard/vfs/schema.ts`,
-  `server/replication/schema.ts`). Queries go through drizzle (`drizzle-orm/durable-sqlite`).
+  (`server/catalog/schema.ts`, `server/wasm-shard/schema.ts`, `server/wasm-shard/vfs/schema.ts`,
+  `server/wasm-shard/replication/schema.ts`). Queries go through drizzle (`drizzle-orm/durable-sqlite`).
 - The tables themselves come from `DurableMigrations` lists in `migrations.ts` next to each schema. `migrate()` in
   `server/migrate.ts` applies the ones an object hasn't run, in one transaction, with workers-qb's `DOQB`, recorded
   in `durability_migrations`. A schema change is a new migration appended to the list; never edit one that shipped.
 - Objects from before migrations already have their tables, which a migration's `CREATE TABLE IF NOT EXISTS` skips.
-  `legacy.ts` (`server/catalog/legacy.ts`, `server/shard/vfs/legacy.ts`) adds the columns those old tables lack
+  `legacy.ts` (`server/catalog/legacy.ts`, `server/wasm-shard/vfs/legacy.ts`) adds the columns those old tables lack
   before the migrations run.
 - Table and column names never change: old code reads the same storage during a deploy and after a rollback.
 
@@ -174,7 +190,7 @@ Each object has one physical alarm. Named alarms from durability's `DurabilityAl
 delegates (`this.#alarms.alarm(info)`, or the shard's `DurabilityScheduler`). Lint (`durability/alarm-runner-only`
 and friends) keeps it that way.
 
-- A primary shard (`server/shard/primary.ts`): `rewriteCheck` (the AOF size check, `AOF_CHECK_MS` after an append),
+- A primary shard (`server/wasm-shard/primary.ts`): `rewriteCheck` (the AOF size check, `AOF_CHECK_MS` after an append),
   `replicaTick` (every `REPL_TICK_MS` while replicas are configured and awake; it also runs the AOF check) and
   `upgrade` (the retry of a restart onto newer code).
 - The Watcher: `poll`, every `WATCH_MS` while anyone watches. Each poll schedules the next.

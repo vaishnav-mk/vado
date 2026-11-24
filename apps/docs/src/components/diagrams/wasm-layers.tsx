@@ -125,7 +125,7 @@ export function LayersDiagram() {
         </div>
         <div className="layer-box">
           <span className="layer-box-title">
-            The shard's Durable Object, TypeScript in <code>shard/host/</code>
+            The shard's Durable Object, TypeScript in <code>wasm-shard/host/</code>
           </span>
           <div className="layer-grid">
             {HOST.map(([file, text]) => (

@@ -1,4 +1,4 @@
-import type { Reply } from "./protocol/types";
+import type { ByteSocket, Reply } from "./protocol/types";
 
 export const encoder = new TextEncoder();
 export const decoder = new TextDecoder();
@@ -26,7 +26,7 @@ export function text(r: Reply): string {
   return String(r);
 }
 
-export async function closeWith(socket: Socket, bytes: Uint8Array | null): Promise<void> {
+export async function closeWith(socket: Pick<ByteSocket, "writable">, bytes: Uint8Array | null): Promise<void> {
   const writer = socket.writable.getWriter();
 
   if (bytes) await writer.write(bytes).catch(noop);
@@ -42,3 +42,10 @@ export function withTimeout<T>(work: Promise<T>, ms: number, what: string): Prom
 
   return Promise.race([work, late]).finally(() => clearTimeout(timer));
 }
+
+// Whether `work` settled within `ms`.
+export const within = (work: Promise<void>, ms: number): Promise<boolean> =>
+  withTimeout(work, ms, "work").then(
+    () => true,
+    () => false,
+  );

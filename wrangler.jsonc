@@ -13,7 +13,7 @@
   "durable_objects": {
     "bindings": [
       { "name": "SHARD", "class_name": "ValkeyShard" },
-      // Native Redis in a container, one per shard (packages/server/src/box); its containers come with VADO_CONTAINERS=1.
+      // Native Redis in a container, one per shard (packages/server/src/container-shard); its containers come with VADO_CONTAINERS=1.
       { "name": "REDIS_BOX", "class_name": "RedisBox" },
       { "name": "SHARD1", "class_name": "ValkeyShard1" },
       { "name": "SHARD2", "class_name": "ValkeyShard2" },

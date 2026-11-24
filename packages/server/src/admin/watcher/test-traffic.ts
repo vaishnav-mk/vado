@@ -1,7 +1,7 @@
 // Stored, so a restarted Watcher can still show and stop the running test.
 import * as v from "valibot";
 import { existing } from "../../catalog/databases";
-import { regionName, WORLD } from "../../replication/regions";
+import { regionName, WORLD } from "../../catalog/regions";
 import { noop } from "../../shared";
 import { TEST_KEYS_PER_SHARD, TEST_LEVELS, TEST_SENDERS, TEST_TRAFFIC_MS } from "../config";
 import type { TestLevel, TestView } from "../live-types";

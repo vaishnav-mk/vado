@@ -2,7 +2,7 @@
 import type { Flavour } from "../catalog/types";
 import type { TypedReply } from "../protocol/types";
 import type { TEST_LEVELS } from "./config";
-import type { ReplicaState } from "../replication/types";
+import type { ReplicaState } from "../wasm-shard/replication/types";
 
 export type { TypedReply };
 

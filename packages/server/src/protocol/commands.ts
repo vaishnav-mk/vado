@@ -134,3 +134,33 @@ export function keyIndexes(table: CommandTable, name: string, argv: Uint8Array[]
 
   return out;
 }
+
+export const SUBSCRIBE = new Set(["subscribe", "psubscribe", "ssubscribe"]);
+
+// How data behaves only: durability, memory, networking and auth belong to the service, and shards share memory.
+// No keyspace events (SUBSCRIBE goes to the pub/sub shard) or time limits (the clock stands still during a pass).
+export const CONFIG_SET = new Set([
+  "maxmemory-policy",
+  "maxmemory-samples",
+  "hash-max-listpack-entries",
+  "hash-max-listpack-value",
+  "hash-max-ziplist-entries",
+  "hash-max-ziplist-value",
+  "list-max-listpack-size",
+  "list-max-ziplist-size",
+  "list-compress-depth",
+  "set-max-intset-entries",
+  "set-max-listpack-entries",
+  "set-max-listpack-value",
+  "zset-max-listpack-entries",
+  "zset-max-listpack-value",
+  "zset-max-ziplist-entries",
+  "zset-max-ziplist-value",
+  "hll-sparse-max-bytes",
+  "stream-node-max-bytes",
+  "stream-node-max-entries",
+  "lfu-log-factor",
+  "lfu-decay-time",
+  "slowlog-max-len",
+  "activerehashing",
+]);

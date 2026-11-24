@@ -4,7 +4,7 @@ import { bytes, ms, num, plural, share } from "../lib/format";
 import { replicaCounts, replicaLine } from "../lib/replicas";
 import { useViewer } from "./Guard";
 import type { LiveState } from "../lib/types";
-import { REPL_IDLE_MS } from "@vado/server/replication/config.ts";
+import { REPL_IDLE_MS } from "@vado/server/wasm-shard/replication/config.ts";
 
 // Titles must fit one line, or the six inner panels stop lining up.
 function Stat({

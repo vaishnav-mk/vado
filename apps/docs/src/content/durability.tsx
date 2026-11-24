@@ -138,11 +138,11 @@ export const durability: Doc = {
     },
   ],
   sources: [
-    server("shard/vfs/vfs.ts"),
-    server("shard/host/loop.ts"),
-    server("shard/rewrites.ts"),
-    server("shard/rewriter/rewriter.ts"),
-    server("shard/upgrade.ts"),
+    server("wasm-shard/vfs/vfs.ts"),
+    server("wasm-shard/host/loop.ts"),
+    server("wasm-shard/rewrites.ts"),
+    server("wasm-shard/rewriter/rewriter.ts"),
+    server("wasm-shard/upgrade.ts"),
     source("packages/wasm/valkey/patches/0004-host-aof-rewrite.patch"),
   ],
 };

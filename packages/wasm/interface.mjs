@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// Print a wasm module's imports and exports, sorted. The host in packages/server/src/shard/host/
+// Print a wasm module's imports and exports, sorted. The host in packages/server/src/wasm-shard/host/
 // must provide every import, so a change to this list needs a host change too.
 //
 //   node packages/wasm/interface.mjs [file.wasm]                  print (default: valkey/valkey.wasm)

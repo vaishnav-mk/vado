@@ -1,4 +1,4 @@
-import { isHint, regionName, WORLD } from "@vado/server/replication/regions.ts";
+import { isHint, regionName, WORLD } from "@vado/server/catalog/regions.ts";
 import { replicaReads } from "../../lib/replicas";
 import type { LiveState, Replica } from "../../lib/types";
 import type { Row } from "./types";

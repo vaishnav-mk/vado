@@ -8,7 +8,7 @@ import { Legend } from "../Legend";
 import { LAG, READS, ROW, STRIP } from "./layout";
 import { ReplicaRow } from "./ReplicaRow";
 import { rows } from "./rows";
-import { REPL_IDLE_MS } from "@vado/server/replication/config.ts";
+import { REPL_IDLE_MS } from "@vado/server/wasm-shard/replication/config.ts";
 
 export function Replicas({
   state,

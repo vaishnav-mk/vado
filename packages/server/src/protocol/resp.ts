@@ -173,3 +173,7 @@ export const TYPE = { simple: 43, error: 45, integer: 58, bulk: 36, push: 62 } a
 
 export const isError = (frame: Uint8Array): boolean => frame[0] === TYPE.error;
 export const HELLO3 = command(["HELLO", "3"]);
+
+export const bulkBytes = (f: Uint8Array) => f.subarray(lineEnd(f, 1, f.length) + 2, f.length - 2);
+
+export const bulkText = (f: Uint8Array) => (f[0] === TYPE.bulk ? str(bulkBytes(f)) : "");

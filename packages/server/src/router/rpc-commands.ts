@@ -1,7 +1,8 @@
 import { arrayOf, bulk, elements, EMPTY, error, integer, isError, str } from "../protocol/resp";
 import { sameBytes } from "../protocol/bytes";
 import type { Conn } from "./conn";
-import { bulkText, NOT_INTEGER, NULL_BULK, wrongArity } from "./replies-text";
+import { NOT_INTEGER, NULL_BULK, wrongArity } from "./replies-text";
+import { bulkText } from "../protocol/resp";
 
 // The cursor is the shard's cursor * shards + the shard index, so it stays one integer.
 export function scan(c: Conn, argv: Uint8Array[]): void {

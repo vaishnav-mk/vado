@@ -12,7 +12,7 @@ import { errorOf } from "./replies-text";
 import { Router } from "./router";
 import { signIns } from "./sign-ins";
 import type { DatabaseHandles, LiveConn, Via, Where } from "./types";
-import { noop } from "../shared";
+import { closeWith, noop } from "../shared";
 
 export { live } from "./pulse-report";
 
@@ -65,9 +65,7 @@ async function serveRouter(socket: ByteSocket, env: Env, name: string, conn: Liv
     const [db, valkey] = await Promise.all([database(env, name), commands(env)]);
     target = handles(env, db, serverOf(db.flavour) === "valkey" ? valkey : await commands(env, db.flavour));
   } catch (cause) {
-    const w = socket.writable.getWriter();
-    await w.write(errorOf(cause)).catch(noop);
-    await w.close().catch(noop);
+    await closeWith(socket, errorOf(cause));
     // Nothing reads the client's commands now; cancelling fails their writes instead of leaving them waiting.
     await socket.readable.cancel().catch(noop);
 

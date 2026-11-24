@@ -2,7 +2,7 @@ import { concat, isError, str, TYPE } from "../protocol/resp";
 import { sameBytes } from "../protocol/bytes";
 import { GREETING_MS, PROBE_AFTER_MS, WRITE_FAILED_MS } from "./config";
 import { isolateAdd, socketClosed, socketOpened } from "./isolate";
-import { readFrames } from "./frames";
+import { readFrames } from "../protocol/frames";
 import { isPrimary } from "./key-shards";
 import { Pending } from "./pending";
 import { LOST } from "./replies-text";

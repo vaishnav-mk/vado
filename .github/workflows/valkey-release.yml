@@ -78,7 +78,7 @@ jobs:
               if node packages/wasm/interface.mjs packages/wasm/valkey/build/valkey.wasm --check packages/wasm/valkey/interface.txt >interface.log 2>&1; then
                 echo "- Interface: unchanged."
               else
-                echo "- Interface: **changed**, the JS host (packages/server/src/shard/host/valkey-host.ts) may need updating:"
+                echo "- Interface: **changed**, the JS host (packages/server/src/wasm-shard/host/wasm-host.ts) may need updating:"
                 echo
                 echo '```diff'
                 cat interface.log

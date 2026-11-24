@@ -2,7 +2,7 @@ import { expect, test } from "vite-plus/test";
 import { error, simple } from "../../src/protocol/resp";
 import { ReplyQueue } from "../../src/router/replies";
 import { LOST } from "../../src/router/replies-text";
-import { DATABASE_DROPPED } from "../../src/shard/tombstone";
+import { DATABASE_DROPPED } from "../../src/shard/stats";
 
 const dec = new TextDecoder();
 const settle = () => new Promise((r) => setTimeout(r, 0));

@@ -117,11 +117,11 @@ export const CHANGE_SECTIONS: DocSection[] = [
             <code>__attribute__((export_name(...)))</code> in a patch or shim.
           </>,
           <>
-            Provide the import in the <code>host</code> object in <code>valkey-host.ts</code>. Socket imports live in{" "}
-            <code>sockets.ts</code>, WASI ones in <code>wasi.ts</code> or <code>shard/vfs</code>.
+            Provide the import in the <code>host</code> object in <code>wasm-host.ts</code>. Socket imports live in{" "}
+            <code>sockets.ts</code>, WASI ones in <code>wasi.ts</code> or <code>wasm-shard/vfs</code>.
           </>,
           <>
-            Add any new export to <code>ValkeyExports</code> in <code>host/types.ts</code>.
+            Add any new export to <code>WasmExports</code> in <code>host/types.ts</code>.
           </>,
           <>
             Rebuild and regenerate <code>interface.txt</code> for both servers. The host passes the same imports to both
@@ -144,7 +144,7 @@ export const CHANGE_SECTIONS: DocSection[] = [
             </>,
             <>
               <code>npm test</code>: <code>host.test.ts</code> fails unless the host provides exactly the imports both{" "}
-              <code>interface.txt</code> files list. <code>valkey-host.test.ts</code> boots <code>valkey.wasm</code> on
+              <code>interface.txt</code> files list. <code>wasm-host.test.ts</code> boots <code>valkey.wasm</code> on
               fake storage, writes and reloads its AOF, and serves a socket.
             </>,
             <>

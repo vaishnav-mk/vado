@@ -1,4 +1,4 @@
-import { REPL_RETRY_MS } from "../replication/config";
+import { REPL_RETRY_MS } from "../wasm-shard/replication/config";
 import { ISOLATE_HIGH, ISOLATE_LOW, SOCKET_BUDGET } from "./config";
 
 interface Waiter {

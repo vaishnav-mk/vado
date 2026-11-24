@@ -1,4 +1,4 @@
-/* Imports from the "host" module, implemented in packages/server/src/shard/host/ (sockets.ts and
+/* Imports from the "host" module, implemented in packages/server/src/wasm-shard/host/ (sockets.ts and
  * aof-rewrite.ts). */
 #ifndef VALKEY_WASM_HOST_H
 #define VALKEY_WASM_HOST_H

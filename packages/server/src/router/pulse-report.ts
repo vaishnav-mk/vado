@@ -1,4 +1,4 @@
-import { coloOf } from "../replication/regions";
+import { coloOf } from "../catalog/regions";
 import { COLO_RETRY_MS, PULSE_MS } from "./config";
 import type { Live } from "./types";
 import { isolate } from "../shard/stats";

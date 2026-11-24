@@ -145,11 +145,11 @@ export const replicas: Doc = {
     },
   ],
   sources: [
-    server("replication/replicator.ts"),
-    server("replication/config.ts"),
+    server("wasm-shard/replication/replicator.ts"),
+    server("wasm-shard/replication/config.ts"),
     server("router/read-your-writes.ts"),
     server("router/routing.ts"),
     server("catalog/placement.ts"),
-    server("shard/replica.ts"),
+    server("wasm-shard/replica.ts"),
   ],
 };

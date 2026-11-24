@@ -1,6 +1,7 @@
 import { decode } from "../protocol/decode";
 import { arrayOf, bulk, concat, integer, lower, str, TYPE } from "../protocol/resp";
-import { PUBSUB, SUBSCRIBE, WHILE_SUBSCRIBED } from "./command-sets";
+import { PUBSUB, WHILE_SUBSCRIBED } from "./command-sets";
+import { SUBSCRIBE } from "../protocol/commands";
 import type { Conn } from "./conn";
 import { notWhileSubscribed, OK } from "./replies-text";
 import type { Upstream } from "./types";

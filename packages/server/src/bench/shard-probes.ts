@@ -5,7 +5,7 @@ import { decodeAll } from "../protocol/decode";
 import type { Test } from "./types";
 import { messageOf, ok, percentile, sleep, text } from "../shared";
 import { dbName, liveStats, num, open } from "./util";
-import { infoFields } from "../shard/info";
+import { infoFields } from "../protocol/info";
 
 const shardZero = async (env: Env, q: URLSearchParams) => wasmShardStub(env, await database(env, dbName(q)), 0);
 

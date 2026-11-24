@@ -3,7 +3,7 @@ import { migrate } from "../src/migrate";
 import { str } from "../src/protocol/resp";
 import { encoder } from "../src/shared";
 import { keepSettings, reapply, settingsMigrations } from "../src/settings";
-import { fakeStorage } from "./shard/vfs/fake-storage";
+import { fakeStorage } from "./wasm-shard/vfs/fake-storage";
 
 const OK = encoder.encode("+OK\r\n");
 

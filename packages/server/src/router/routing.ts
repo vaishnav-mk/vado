@@ -4,7 +4,8 @@ import type { Conn } from "./conn";
 import { replicaFailed, replicaResting } from "./isolate";
 import { shardAt, shardOfKeys } from "./key-shards";
 import type { Slot } from "./replies";
-import { bulkBytes, CROSSSLOT, LOST } from "./replies-text";
+import { CROSSSLOT, LOST } from "./replies-text";
+import { bulkBytes } from "../protocol/resp";
 import { split } from "./split";
 import type { UpKey } from "./types";
 

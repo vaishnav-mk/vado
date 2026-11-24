@@ -1,5 +1,5 @@
 import { Tooltip } from "@cloudflare/kumo";
-import { HOSTED_ELSEWHERE } from "@vado/server/replication/regions.ts";
+import { HOSTED_ELSEWHERE } from "@vado/server/catalog/regions.ts";
 import { replicaColor } from "../../lib/colors";
 import { SERVING_READS } from "../../lib/config";
 import { ms, num } from "../../lib/format";

@@ -1,11 +1,11 @@
 // Browser-safe: the dashboard imports `place`.
-import colos from "../replication/colos.json";
-import { regionName } from "../replication/regions";
+import colos from "../catalog/colos.json";
+import { regionName } from "../catalog/regions";
 import type { DatabaseRecord, DatabaseSummary } from "../catalog/types";
 import type { CommandTable } from "../protocol/types";
 import type { Database, Place, ReplicaState } from "./live-types";
 import type { Calls, ShardLook, ShardSeen } from "./types";
-import { subField } from "../shard/info";
+import { subField } from "../protocol/info";
 
 const COLOS = new Map(
   Object.entries(colos).map(([colo, [city, lat, lon]]) => [

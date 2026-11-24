@@ -2,7 +2,7 @@ import * as v from "valibot";
 import { catalogStub, database, forget, lookup, parseFlavour } from "../catalog/databases";
 import { configureReplicas, replicaStub, shardStub } from "../catalog/placement";
 import { shardSnapshots } from "../admin/snapshot";
-import { HINT_NAMES, isHint, WORLD } from "../replication/regions";
+import { HINT_NAMES, isHint, WORLD } from "../catalog/regions";
 import { UNSUPPORTED } from "../router/command-sets";
 import { hashSecret } from "../router/secrets";
 import type { Hint } from "../catalog/types";

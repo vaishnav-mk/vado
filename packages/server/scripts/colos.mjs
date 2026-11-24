@@ -1,4 +1,4 @@
-// Regenerates src/replication/colos.json: each Cloudflare colo's city, coordinates and location hint, for maps,
+// Regenerates src/catalog/colos.json: each Cloudflare colo's city, coordinates and location hint, for maps,
 // labels and finding the replica in a router's region.
 //   node scripts/colos.mjs
 import { writeFile } from "node:fs/promises";
@@ -34,6 +34,6 @@ const rows = list.map(
   (c) => `  ${JSON.stringify(c.iata)}: ${JSON.stringify([c.city, +c.lat.toFixed(2), +c.lon.toFixed(2), hintOf(c)])}`,
 );
 
-await writeFile(new URL("../src/replication/colos.json", import.meta.url), `{\n${rows.join(",\n")}\n}\n`);
+await writeFile(new URL("../src/catalog/colos.json", import.meta.url), `{\n${rows.join(",\n")}\n}\n`);
 
 console.log(`${list.length} colos`);

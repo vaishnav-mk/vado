@@ -1,4 +1,4 @@
-/* Exports for the host in packages/server/src/shard/host/. The 0002 patch makes main() return
+/* Exports for the host in packages/server/src/wasm-shard/host/. The 0002 patch makes main() return
  * after init, so the host runs the event loop one pass at a time. */
 #include "server.h"
 #include "ae.h"

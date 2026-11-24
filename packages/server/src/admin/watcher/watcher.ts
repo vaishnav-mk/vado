@@ -6,7 +6,7 @@ import * as v from "valibot";
 import { existing } from "../../catalog/databases";
 import { replicaRegion } from "../../catalog/placement";
 import { shardOfSlot, slotOf } from "../../protocol/slots";
-import { coloOf } from "../../replication/regions";
+import { coloOf } from "../../catalog/regions";
 import { commands } from "../../router/command-table";
 import { replicaResting } from "../../router/isolate";
 import { encoder, messageOf } from "../../shared";

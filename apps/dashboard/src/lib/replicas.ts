@@ -1,6 +1,6 @@
 import { plural } from "./format";
 import type { Replica, Shard } from "./types";
-import { REPL_IDLE_MS } from "@vado/server/replication/config.ts";
+import { REPL_IDLE_MS } from "@vado/server/wasm-shard/replication/config.ts";
 
 export interface ReplicaCounts {
   total: number;

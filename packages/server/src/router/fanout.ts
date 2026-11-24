@@ -1,12 +1,14 @@
 import { decode } from "../protocol/decode";
 import { arrayOf, bulk, elements, EMPTY, integer, isError, lower, str } from "../protocol/resp";
 import type { CommandEntry } from "../protocol/types";
-import { CONFIG_SET, FUNCTION_EVERYWHERE, SCRIPT_EVERYWHERE } from "./command-sets";
+import { FUNCTION_EVERYWHERE, SCRIPT_EVERYWHERE } from "./command-sets";
+import { CONFIG_SET } from "../protocol/commands";
 import { FAN_OUT } from "./config";
 import type { Conn } from "./conn";
-import { bulkText, OK, unsupported } from "./replies-text";
+import { OK, unsupported } from "./replies-text";
+import { bulkText } from "../protocol/resp";
 import { forward } from "./routing";
-import { infoFields, subField } from "../shard/info";
+import { infoFields, subField } from "../protocol/info";
 
 type Merge = (frames: Uint8Array[]) => Uint8Array;
 

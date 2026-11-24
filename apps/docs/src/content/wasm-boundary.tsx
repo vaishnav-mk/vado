@@ -12,7 +12,7 @@ export const BOUNDARY_SECTIONS: DocSection[] = [
         <p>
           <code>interface.txt</code> in each build directory lists every import and export, sorted, as printed by{" "}
           <code>packages/wasm/interface.mjs</code>. It is the contract with the host in{" "}
-          <code>packages/server/src/shard/host/</code>.
+          <code>packages/server/src/wasm-shard/host/</code>.
         </p>
         <Note title="A missing import fails instantiation">
           <p>
@@ -40,8 +40,8 @@ export const BOUNDARY_SECTIONS: DocSection[] = [
                 <code>fd_*</code>, <code>path_*</code>
               </>,
               <>
-                Files, in <code>shard/vfs</code>: a file system in the object's SQLite, with one preopened directory,{" "}
-                <code>/data</code>
+                Files, in <code>wasm-shard/vfs</code>: a file system in the object's SQLite, with one preopened
+                directory, <code>/data</code>
               </>,
             ],
             [<code>fd_write</code>, "On fds 1 and 2: lines go to the shard's log"],

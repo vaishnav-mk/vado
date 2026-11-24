@@ -1,9 +1,9 @@
-import { replicaBinding, replicaName, SHARD_BINDINGS } from "../replication/names";
+import { replicaBinding, replicaName, SHARD_BINDINGS } from "../wasm-shard/replication/names";
 import { isNative } from "./flavours";
-import type { ShardBinding } from "../replication/names";
-import { isHint, REGION_OF } from "../replication/regions";
-import type { ReplicaNamespace } from "../replication/types";
-import type { ValkeyShard } from "../shard/shard";
+import type { ShardBinding } from "../wasm-shard/replication/names";
+import { isHint, REGION_OF } from "./regions";
+import type { ReplicaNamespace } from "../wasm-shard/replication/types";
+import type { ValkeyShard } from "../wasm-shard/shard";
 import type { Shard } from "../shard/types";
 import type { DatabaseRecord, Hint, ShardIndex } from "./types";
 

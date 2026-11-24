@@ -1,8 +1,8 @@
-import { regionName } from "../../replication/regions";
+import { regionName } from "../../catalog/regions";
 import { EVENT_REPEAT_MS, EVENTS_KEPT } from "../config";
 import type { EventLevel, LiveEvent } from "../live-types";
 import { bytes, ms, plural } from "../../format";
-import { REPL_IDLE_MS } from "../../replication/config";
+import { REPL_IDLE_MS } from "../../wasm-shard/replication/config";
 import type { EventInput, Restart, ReplicaChange, Rewrite, Changes } from "./types";
 
 export class EventLog {

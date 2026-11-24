@@ -1,7 +1,7 @@
 import { worker } from "@vado/server";
 
 // Named, not `export *`: wrangler reads these names to type the bindings in worker-configuration.d.ts.
-export { ValkeyShard } from "@vado/server/shard/shard.ts";
+export { ValkeyShard } from "@vado/server/wasm-shard/shard.ts";
 
 export {
   ValkeyShard1,
@@ -19,9 +19,9 @@ export {
   ValkeyShard13,
   ValkeyShard14,
   ValkeyShard15,
-} from "@vado/server/shard/classes.ts";
+} from "@vado/server/wasm-shard/classes.ts";
 
-export { ValkeyRewriter } from "@vado/server/shard/rewriter/rewriter.ts";
+export { ValkeyRewriter } from "@vado/server/wasm-shard/rewriter/rewriter.ts";
 
 export {
   ValkeyRewriter1,
@@ -31,9 +31,9 @@ export {
   ValkeyRewriter5,
   ValkeyRewriter6,
   ValkeyRewriter7,
-} from "@vado/server/shard/rewriter/classes.ts";
+} from "@vado/server/wasm-shard/rewriter/classes.ts";
 
-export { RedisBox } from "@vado/server/box/box.ts";
+export { RedisBox } from "@vado/server/container-shard/box.ts";
 
 export { Catalog } from "@vado/server/catalog/catalog.ts";
 

@@ -1,7 +1,7 @@
 import { describe, expect, test } from "vite-plus/test";
 import { flavourOf, FLAVOURS, isFlavour, isNative, serverOf } from "../../src/catalog/flavours";
 import { shardName } from "../../src/catalog/placement";
-import { replicaName } from "../../src/replication/names";
+import { replicaName } from "../../src/wasm-shard/replication/names";
 
 describe("flavours", () => {
   test("every object knows its flavour from its name", () => {

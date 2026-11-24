@@ -56,3 +56,6 @@ export const COLO_RETRY_MS = 10_000;
 
 // A socket whose write failed is dead unless its read side ends by then (it may still hold a restart marker).
 export const WRITE_FAILED_MS = 2_000;
+
+// After a connection writes to a shard, its reads of that shard go to the primary for this long.
+export const READ_YOUR_WRITES_MS = 2_000;

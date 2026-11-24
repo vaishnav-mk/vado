@@ -1,4 +1,4 @@
-import { READ_YOUR_WRITES_MS } from "../replication/config";
+import { READ_YOUR_WRITES_MS } from "./config";
 
 export class ReadYourWrites {
   readonly #writing = new Map<number, number>();

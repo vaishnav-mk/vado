@@ -112,6 +112,6 @@ export const lifecycle: Doc = {
     server("protocol/request.ts"),
     server("router/routing.ts"),
     server("router/replies.ts"),
-    server("shard/host/loop.ts"),
+    server("wasm-shard/host/loop.ts"),
   ],
 };

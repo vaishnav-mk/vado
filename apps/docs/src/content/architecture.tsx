@@ -85,9 +85,9 @@ export const architecture: Doc = {
   sources: [
     server("index.ts"),
     server("router/router.ts"),
-    server("shard/shard.ts"),
-    server("replication/replicator.ts"),
-    server("shard/rewriter/rewriter.ts"),
+    server("wasm-shard/shard.ts"),
+    server("wasm-shard/replication/replicator.ts"),
+    server("wasm-shard/rewriter/rewriter.ts"),
     server("catalog/catalog.ts"),
     server("admin/watcher/watcher.ts"),
     source("AGENTS.md"),

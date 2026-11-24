@@ -3,7 +3,7 @@ import type { DatabaseRecord } from "../catalog/types";
 import { keyIndexes } from "../protocol/commands";
 import { decodeTyped } from "../protocol/decode";
 import { shardOfSlot, slotOf } from "../protocol/slots";
-import { coloOf } from "../replication/regions";
+import { coloOf } from "../catalog/regions";
 import { commands } from "../router/command-table";
 import { openLocal } from "../router/local";
 import { COMMAND_STALL_MS, WAIT_MS } from "./config";

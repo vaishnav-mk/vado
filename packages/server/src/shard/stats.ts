@@ -1,4 +1,4 @@
-import { infoFields } from "./info";
+import { infoFields } from "../protocol/info";
 import type { DroppedStats, ShardSnapshot, ShardStats } from "./types";
 
 // Objects of one class share isolates (and an isolate's memory limit), so stats() says which one this is.
@@ -28,3 +28,5 @@ export const SNAPSHOT_INFO = [
 export function snapshotOf({ files: _files, ...stats }: ShardStats, info: string): ShardSnapshot {
   return { ...stats, info: infoFields(info) };
 }
+
+export const DATABASE_DROPPED = "ERR database dropped";

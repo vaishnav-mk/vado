@@ -7,7 +7,7 @@ site's [Flavours](https://vado-docs.vaishnav.one/docs/flavours) page.
 `Dockerfile` builds one server (`--build-arg SERVER=valkey|redis`) from the same pinned tarballs as `packages/wasm`,
 plus netcat, which a restore uses to take the stored RDB.
 
-## Code (`packages/server/src/box/`)
+## Code (`packages/server/src/container-shard/`)
 
 | File | What |
 |---|---|
@@ -32,7 +32,7 @@ plus netcat, which a restore uses to take the stored RDB.
 
 ```sh
 docker build --platform linux/amd64 -t vado-valkey --build-arg SERVER=valkey packages/box
-BOX_IMAGE=vado-valkey BOX_SERVER=valkey npx vitest run packages/server/test/box
+BOX_IMAGE=vado-valkey BOX_SERVER=valkey npx vitest run packages/server/test/container-shard
 ```
 
 Without `BOX_IMAGE` the Docker tests are skipped; the others run with `npm test`.

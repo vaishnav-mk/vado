@@ -7,7 +7,7 @@ import { COMMANDS, OTHER, replicationLine, showArgv, showReply, toArgv, type Arg
 import { ms } from "../lib/format";
 import { useAction } from "../lib/hooks";
 import { place } from "@vado/server/admin/views.ts";
-import { regionName } from "@vado/server/replication/regions.ts";
+import { regionName } from "@vado/server/catalog/regions.ts";
 import type { LastCommand, Shard } from "../lib/types";
 import { messageOf } from "@vado/server/shared.ts";
 

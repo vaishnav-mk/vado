@@ -1,7 +1,7 @@
-import { bulk, command, error, lineEnd, simple, str, TYPE } from "../protocol/resp";
+import { bulk, command, error, simple, str } from "../protocol/resp";
 import type { CommandEntry } from "../protocol/types";
 import { encoder, messageOf } from "../shared";
-import { DATABASE_DROPPED } from "../shard/tombstone";
+import { DATABASE_DROPPED } from "../shard/stats";
 
 export const OK = simple("OK");
 export const QUEUED = simple("QUEUED");
@@ -31,10 +31,6 @@ export const UNWATCH = command(["UNWATCH"]);
 
 export const lostOr = (cause: unknown, dropped: () => Uint8Array): Uint8Array =>
   cause instanceof Error && cause.message.includes(DATABASE_DROPPED) ? dropped() : LOST;
-
-export const bulkBytes = (f: Uint8Array) => f.subarray(lineEnd(f, 1, f.length) + 2, f.length - 2);
-
-export const bulkText = (f: Uint8Array) => (f[0] === TYPE.bulk ? str(bulkBytes(f)) : "");
 
 export const errorOf = (cause: unknown) => error(`ERR ${messageOf(cause)}`);
 export const unsupported = (name: string) => error(`ERR '${name}' is not supported by the sharded router`);

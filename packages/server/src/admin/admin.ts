@@ -4,7 +4,7 @@ import { catalogStub, current, database, existing, parseFlavour } from "../catal
 import { DB_NAME, DB_NAME_RULE, SHARD_COUNTS } from "../catalog/names";
 import { configureReplicas, shardStub } from "../catalog/placement";
 import type { DatabaseRecord } from "../catalog/types";
-import { isHint, REGION_NAMES, regionName, WORLD } from "../replication/regions";
+import { isHint, REGION_NAMES, regionName, WORLD } from "../catalog/regions";
 import { noop } from "../shared";
 import { command } from "./command";
 import type { CommandResult, Database, TestLevel, TestView } from "./live-types";

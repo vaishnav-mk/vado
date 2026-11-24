@@ -4,7 +4,7 @@ import { defineConfig } from "vite-plus";
 const GENERATED = [
   "apps/*/src/routeTree.gen.ts",
   "worker-configuration.d.ts",
-  "packages/server/src/replication/colos.json",
+  "packages/server/src/catalog/colos.json",
 ];
 
 // Vendored code, and agent tooling that isn't the project's source.

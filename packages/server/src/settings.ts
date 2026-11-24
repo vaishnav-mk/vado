@@ -1,7 +1,7 @@
 import type { DurableMigrations } from "@durability/storage";
 import { command, isError, str } from "./protocol/resp";
 import type { CommandArg } from "./protocol/types";
-import { CONFIG_SET } from "./router/command-sets";
+import { CONFIG_SET } from "./protocol/commands";
 import { messageOf } from "./shared";
 
 // Neither the AOF nor the replication stream carries CONFIG SET, so a shard stores what its server accepted and sets it
