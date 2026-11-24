@@ -18,10 +18,12 @@ restore uses to take the stored RDB.
 | File | What it does |
 |---|---|
 | `box.ts` | `RedisBox`, the shard's Durable Object for either server: boots the engine, takes client sockets and RPC batches |
-| `engine.ts` | A running container and its replication link: resume, compaction, and the idle stop |
+| `engine.ts` | A running container and its replication link: compaction, pruning, and the idle stop |
+| `attach.ts` | Where a stored stream can go on, and opening the replica link |
 | `container.ts` | Starting and restoring a container: reuse or replace, the copy over netcat, retries |
 | `server.ts` | Reaching the server in the container: readiness, the replay in batches, its replication history |
 | `link.ts` | The replica link: continue the stored stream or take a full sync, then store the stream |
+| `rdb.ts` | Storing a full sync's RDB, a window at a time, each committed before the next is read |
 | `proxy.ts` | A client connection to the server, with each batch's replies held until its writes are stored |
 | `mux.ts` | One pipelined server connection shared by RPC batches |
 | `store.ts` | Generations of stored RDB and stream in SQLite |
@@ -30,6 +32,8 @@ restore uses to take the stored RDB.
 
 - A reply leaves only once the replication stream up to the batch's `ROLE` offset is stored.
 - A generation becomes current only once it holds everything the one before it does.
+- Every sync gets a generation number no earlier one used, so a retry never appends to a failed one's rows. Replaced
+  and abandoned generations are deleted later, 8 MB at a time.
 - A link continues a stored stream only when the server answers `+CONTINUE` for the offset after its last stored
   byte; the server checks its replication history, so a wrong guess costs a full sync, never a gap.
 - A restored server continues from its own history after the replay; the generation's `shift` lines its offsets up
