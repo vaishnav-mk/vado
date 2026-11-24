@@ -1,18 +1,11 @@
-import { Badge, Select, Text, Tooltip } from "@cloudflare/kumo";
-import { useNavigate } from "@tanstack/react-router";
-import { FLAVOUR_NAMES } from "@vado/server/catalog/flavours.ts";
+import { Badge, Text, Tooltip } from "@cloudflare/kumo";
+import { DatabasePicker } from "./DatabasePicker";
 import { NewDatabase } from "./NewDatabase";
 import { SignIn } from "./SignIn";
 import { plural } from "../lib/format";
 import type { Connection } from "../lib/live";
 import { replicaCounts, replicaLine } from "../lib/replicas";
 import type { Database, LiveState, Options } from "../lib/types";
-
-function describe(d: Database) {
-  const spread = (d.regions?.length ?? 0) > 1 ? " around the world" : "";
-
-  return `${d.name} · ${FLAVOUR_NAMES[d.flavour]} · ${plural(d.shards, "shard")}${spread}${d.replicas?.length ? " · replicas" : ""}`;
-}
 
 function Health({ state, connection }: { state: LiveState | null; connection: Connection }) {
   if (connection === "retrying")
@@ -85,11 +78,6 @@ export function Header({
   state: LiveState | null;
   connection: Connection;
 }) {
-  const navigate = useNavigate();
-  const items = Object.fromEntries(databases.map((d) => [d.name, describe(d)]));
-
-  if (name && !items[name]) items[name] = name;
-
   return (
     <header className="border-b border-kumo-hairline bg-kumo-base">
       <div className="mx-auto flex max-w-7xl flex-wrap items-center gap-3 px-6 py-3">
@@ -104,16 +92,7 @@ export function Header({
             vado
           </Text>
         </div>
-        {databases.length > 0 && (
-          <Select
-            aria-label="Database"
-            placeholder="Pick a database"
-            value={name ?? null}
-            items={items}
-            className="min-w-72"
-            onValueChange={(v) => v && navigate({ to: "/db/$name", params: { name: v } })}
-          />
-        )}
+        {databases.length > 0 && <DatabasePicker name={name} databases={databases} />}
         <NewDatabase options={options} />
         <div className="ml-auto flex flex-wrap items-center gap-3">
           {name && <Health state={state} connection={connection} />}
